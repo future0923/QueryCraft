@@ -1,0 +1,10 @@
+START TRANSACTION READ ONLY;
+SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
+SAVEPOINT `before_update`;
+ROLLBACK TO SAVEPOINT `before_update`;
+COMMIT AND CHAIN;
+
+USE `test_estate_business`;
+SHOW CREATE TABLE `admin_user`;
+SHOW INDEX FROM `admin_user` FROM `test_estate_business`;
+ANALYZE TABLE `admin_user`;

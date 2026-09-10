@@ -1,0 +1,191 @@
+name: Package and publish QueryCraft
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Upload client artifacts and create the GitHub Release
+        required: true
+        default: false
+        type: boolean
+      source_run_id:
+        description: Reuse macOS artifacts from an earlier workflow run
+        required: false
+        type: string
+      publish_drivers:
+        description: Build and publish all external database drivers
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: querycraft-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      build: ${{ steps.release.outputs.build }}
+      publish: ${{ steps.release.outputs.publish }}
+      source_run_id: ${{ steps.release.outputs.source_run_id }}
+      publish_drivers: ${{ steps.release.outputs.publish_drivers }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: release
+        env:
+          REQUESTED_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+          REQUESTED_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          REQUESTED_PUBLISH_DRIVERS: ${{ inputs.publish_drivers || false }}
+        run: |
+          set -euo pipefail
+          version="$(awk -F ' = ' '/^MARKETING_VERSION = / { print $2; exit }' Config/Shared.xcconfig)"
+          build="$(awk -F ' = ' '/^CURRENT_PROJECT_VERSION = / { print $2; exit }' Config/Shared.xcconfig)"
+          source_run_id="${REQUESTED_SOURCE_RUN_ID:-}"
+          test -n "$version"
+          test -n "$build"
+          test -f "docs/releases/$version.md"
+
+          if [[ -n "$source_run_id" && ! "$source_run_id" =~ ^[0-9]+$ ]]; then
+            echo "Source run ID must be numeric." >&2
+            exit 1
+          fi
+          if [[ -n "$source_run_id" && "$REQUESTED_PUBLISH" != "true" ]]; then
+            echo "Reusing a source run requires publish=true." >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            [[ "${GITHUB_REF_NAME#v}" == "$version" ]]
+          elif [[ "$REQUESTED_PUBLISH" == "true" ]]; then
+            test -n "$source_run_id"
+            git ls-remote --exit-code origin "refs/tags/v$version" >/dev/null
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "publish=$REQUESTED_PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "source_run_id=$source_run_id" >> "$GITHUB_OUTPUT"
+          echo "publish_drivers=$REQUESTED_PUBLISH_DRIVERS" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: metadata
+    if: needs.metadata.outputs.source_run_id == ''
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: macos-15-intel
+            universal_update: true
+          - architecture: arm64
+            runner: macos-15
+            universal_update: false
+    env:
+      SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
+      QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
+      QUERYCRAFT_BUILD_DRIVERS: ${{ needs.metadata.outputs.publish_drivers }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
+      - name: Install XcodeBuildMCP
+        run: npm install --global xcodebuildmcp@2.6.2
+
+      - name: Validate signing secret
+        run: |
+          if [[ "${{ matrix.universal_update }}" == "true" && -z "$SPARKLE_PRIVATE_KEY" ]]; then
+            echo "Required GitHub secret is missing: SPARKLE_PRIVATE_KEY" >&2
+            exit 1
+          fi
+
+      - name: Build and package client artifacts
+        env:
+          QUERYCRAFT_RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          QUERYCRAFT_RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
+          QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: ${{ matrix.universal_update }}
+          DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
+        run: scripts/ci/build-release-artifacts.sh "${{ matrix.architecture }}" "artifacts/${{ matrix.architecture }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: querycraft-release-${{ matrix.architecture }}
+          path: artifacts/${{ matrix.architecture }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs:
+      - metadata
+      - build
+    if: >-
+      ${{
+        always() &&
+        needs.metadata.result == 'success' &&
+        needs.metadata.outputs.publish == 'true' &&
+        (
+          needs.metadata.outputs.source_run_id != '' ||
+          needs.build.result == 'success'
+        )
+      }}
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      actions: read
+      contents: write
+    env:
+      QUERYCRAFT_RESOURCE_DEPLOY_URL: ${{ vars.QUERYCRAFT_RESOURCE_DEPLOY_URL || 'https://querycraft.debug-tools.cc/admin/resources/deploy' }}
+      QUERYCRAFT_RESOURCE_DEPLOY_TOKEN: ${{ secrets.QUERYCRAFT_RESOURCE_DEPLOY_TOKEN }}
+      QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
+      QUERYCRAFT_DEPLOY_DRIVERS: ${{ needs.metadata.outputs.publish_drivers }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install publish dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libxml2-utils
+
+      - uses: actions/download-artifact@v8
+        if: needs.metadata.outputs.source_run_id == ''
+        with:
+          pattern: querycraft-release-*
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        if: needs.metadata.outputs.source_run_id != ''
+        with:
+          pattern: querycraft-release-*
+          path: dist
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.metadata.outputs.source_run_id }}
+
+      - name: Publish client resources
+        run: scripts/deploy-release-artifacts.sh "${{ needs.metadata.outputs.version }}" dist
+
+      - name: Create or update GitHub Release
+        env:
+          RELEASE_TAG: v${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --title "QueryCraft ${{ needs.metadata.outputs.version }}" \
+              --notes-file "docs/releases/${{ needs.metadata.outputs.version }}.md"
+          fi
+          gh release upload "$RELEASE_TAG" --clobber dist/*

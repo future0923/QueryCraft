@@ -1,0 +1,11 @@
+{
+  "databaseType": "doris",
+  "version": "__VERSION__",
+  "build": "__BUILD__",
+  "minimumAppVersion": "0.1.2",
+  "driverAPIVersion": __DRIVER_API_VERSION__,
+  "supportedArchitectures": __ARCHITECTURES__,
+  "downloadSize": __SIZE__,
+  "sha256": "__SHA256__",
+  "downloadURL": "__DOWNLOAD_BASE_URL__/__ARCHIVE_NAME__"
+}

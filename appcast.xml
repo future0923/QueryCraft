@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+    <channel>
+        <title>QueryCraft</title>
+        <description>QueryCraft software updates.</description>
+        <language>en</language>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Wed, 12 Aug 2026 16:56:32 +0800</pubDate>
+            <sparkle:version>10</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://querycraft.debug-tools.cc/releases/QueryCraft-0.1.0.zip" length="25379039" type="application/octet-stream" sparkle:edSignature="NXdduRiHzCU0Uda+X8R8BySjpZoFrDoq+4yEzOtOlNoWRY2Q6ZZO+4cDbf71bNH6Lf/JChkrpPbIX8xvQt6PDg=="/>
+            <description sparkle:format="markdown"><![CDATA[# QueryCraft 0.1.0
+
+## 本次更新
+
+- 首个公开版本。
+- 支持在应用内检查、下载并安装更新。
+- 接通在线许可证验证服务。
+- 修复许可证验证反复请求钥匙串授权的问题。
+- 许可证改用仅限当前设备的安全凭证，许可证密钥不再保存在本机。
+- 改进应用稳定性。
+
+## What's New
+
+- First public release.
+- Added in-app update checking, downloading, and installation.
+- Connected the online license validation service.
+- Fixed repeated Keychain authorization prompts during license validation.
+- License keys are no longer stored locally; activation now uses a device-bound secure credential.
+- Improved application stability.
+]]></description>
+        </item>
+    </channel>
+</rss>
