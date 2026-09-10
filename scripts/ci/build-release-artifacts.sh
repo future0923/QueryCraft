@@ -6,8 +6,11 @@ usage() {
 Usage: scripts/ci/build-release-artifacts.sh <x86_64|arm64> <output-directory>
 
 Optional environment:
+  QUERYCRAFT_BUILD_CLIENT           Build application release artifacts (default: true)
   QUERYCRAFT_BUILD_UNIVERSAL_UPDATE Build the universal Sparkle ZIP (default: false)
   QUERYCRAFT_BUILD_DRIVERS          Build external driver artifacts (default: true)
+  QUERYCRAFT_DRIVER_TARGET          all, mysql, postgresql, doris, redis, or
+                                    elasticsearch (default: all)
   QUERYCRAFT_UPDATE_BASE_URL        Default: https://querycraft.debug-tools.cc
   QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL
                                     Default: <update-base-url>/drivers
@@ -38,7 +41,9 @@ workspace="$project_root/QueryCraft.xcworkspace"
 configuration_file="$project_root/Config/Shared.xcconfig"
 xcodebuildmcp_bin="${XCODEBUILDMCP_BIN:-$(command -v xcodebuildmcp || true)}"
 build_universal_update="${QUERYCRAFT_BUILD_UNIVERSAL_UPDATE:-false}"
+build_client="${QUERYCRAFT_BUILD_CLIENT:-true}"
 build_drivers="${QUERYCRAFT_BUILD_DRIVERS:-true}"
+driver_target="${QUERYCRAFT_DRIVER_TARGET:-all}"
 update_base_url="${QUERYCRAFT_UPDATE_BASE_URL:-https://querycraft.debug-tools.cc}"
 update_base_url="${update_base_url%/}"
 driver_download_base_url="${QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL:-$update_base_url/drivers}"
@@ -60,8 +65,27 @@ if [[ "$build_universal_update" != "true" && "$build_universal_update" != "false
     echo "QUERYCRAFT_BUILD_UNIVERSAL_UPDATE must be true or false." >&2
     exit 65
 fi
+if [[ "$build_client" != "true" && "$build_client" != "false" ]]; then
+    echo "QUERYCRAFT_BUILD_CLIENT must be true or false." >&2
+    exit 65
+fi
 if [[ "$build_drivers" != "true" && "$build_drivers" != "false" ]]; then
     echo "QUERYCRAFT_BUILD_DRIVERS must be true or false." >&2
+    exit 65
+fi
+if [[ "$driver_target" != "all" && \
+      "$driver_target" != "mysql" && \
+      "$driver_target" != "postgresql" && \
+      "$driver_target" != "doris" && \
+      "$driver_target" != "redis" && \
+      "$driver_target" != "elasticsearch" ]]; then
+    echo "Unsupported QUERYCRAFT_DRIVER_TARGET: $driver_target" >&2
+    exit 65
+fi
+if [[ "$build_client" != "true" && \
+      "$build_drivers" != "true" && \
+      "$build_universal_update" != "true" ]]; then
+    echo "At least one release artifact type must be enabled." >&2
     exit 65
 fi
 if [[ "$update_base_url" != https://* || "$driver_download_base_url" != https://* ]]; then
@@ -198,44 +222,61 @@ create_dmg() {
     hdiutil verify "$dmg_path"
 }
 
-echo "Building QueryCraft $release_version ($release_build) for $architecture."
-build_scheme QueryCraft "$architecture_derived_data" "$architecture"
+selected_driver_targets=()
 if [[ "$build_drivers" == "true" ]]; then
-    for driver_scheme in \
-        QueryCraftMySQLDriver \
-        QueryCraftPostgreSQLDriver \
-        QueryCraftDorisDriver \
-        QueryCraftRedisDriver \
-        QueryCraftElasticsearchDriver
-    do
+    if [[ "$driver_target" == "all" ]]; then
+        selected_driver_targets=(mysql postgresql doris redis elasticsearch)
+    else
+        selected_driver_targets=("$driver_target")
+    fi
+fi
+
+if [[ "$build_client" == "true" ]]; then
+    echo "Building QueryCraft $release_version ($release_build) for $architecture."
+    build_scheme QueryCraft "$architecture_derived_data" "$architecture"
+fi
+
+if [[ "$build_drivers" == "true" ]]; then
+    for selected_driver in "${selected_driver_targets[@]}"; do
+        case "$selected_driver" in
+            mysql) driver_scheme=QueryCraftMySQLDriver ;;
+            postgresql) driver_scheme=QueryCraftPostgreSQLDriver ;;
+            doris) driver_scheme=QueryCraftDorisDriver ;;
+            redis) driver_scheme=QueryCraftRedisDriver ;;
+            elasticsearch) driver_scheme=QueryCraftElasticsearchDriver ;;
+        esac
+        echo "Building $selected_driver driver for $architecture."
         build_scheme "$driver_scheme" "$architecture_derived_data" "$architecture"
     done
 fi
 
-app_path="$architecture_derived_data/Build/Products/Release/QueryCraft.app"
-app_binary="$app_path/Contents/MacOS/QueryCraft"
-if [[ ! -x "$app_binary" ]]; then
-    echo "Built application is missing: $app_path" >&2
-    exit 66
-fi
-if [[ "$(lipo -archs "$app_binary")" != "$architecture" ]]; then
-    echo "Application does not contain only the requested $architecture slice." >&2
-    exit 65
-fi
-if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Contents/Info.plist")" != "$release_version" || \
-      "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Contents/Info.plist")" != "$release_build" ]]; then
-    echo "Built application version does not match release metadata." >&2
-    exit 65
+if [[ "$build_client" == "true" ]]; then
+    app_path="$architecture_derived_data/Build/Products/Release/QueryCraft.app"
+    app_binary="$app_path/Contents/MacOS/QueryCraft"
+    if [[ ! -x "$app_binary" ]]; then
+        echo "Built application is missing: $app_path" >&2
+        exit 66
+    fi
+    if [[ "$(lipo -archs "$app_binary")" != "$architecture" ]]; then
+        echo "Application does not contain only the requested $architecture slice." >&2
+        exit 65
+    fi
+    if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Contents/Info.plist")" != "$release_version" || \
+          "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Contents/Info.plist")" != "$release_build" ]]; then
+        echo "Built application version does not match release metadata." >&2
+        exit 65
+    fi
 fi
 
 if [[ "$build_drivers" == "true" ]]; then
-    for package_script in \
-        package-mysql-driver.sh \
-        package-postgresql-driver.sh \
-        package-doris-driver.sh \
-        package-redis-driver.sh \
-        package-elasticsearch-driver.sh
-    do
+    for selected_driver in "${selected_driver_targets[@]}"; do
+        case "$selected_driver" in
+            mysql) package_script=package-mysql-driver.sh ;;
+            postgresql) package_script=package-postgresql-driver.sh ;;
+            doris) package_script=package-doris-driver.sh ;;
+            redis) package_script=package-redis-driver.sh ;;
+            elasticsearch) package_script=package-elasticsearch-driver.sh ;;
+        esac
         CONFIGURATION=Release \
         DRIVER_ARCH="$architecture" \
         DERIVED_DATA="$architecture_derived_data" \
@@ -250,17 +291,20 @@ if [[ "$build_drivers" == "true" ]]; then
             cp "$driver_file" "$output_directory/"
         fi
     done
-    if [[ "$(find "$output_directory" -maxdepth 1 -type f -name "*-driver-*-$architecture-*.zip" | wc -l | tr -d ' ')" != "5" || \
-          "$(find "$output_directory" -maxdepth 1 -type f -name "*-$architecture.json" | wc -l | tr -d ' ')" != "5" ]]; then
-        echo "Expected five driver archives and manifests for $architecture." >&2
+    expected_driver_count="${#selected_driver_targets[@]}"
+    if [[ "$(find "$output_directory" -maxdepth 1 -type f -name "*-driver-*-$architecture-*.zip" | wc -l | tr -d ' ')" != "$expected_driver_count" || \
+          "$(find "$output_directory" -maxdepth 1 -type f -name "*-$architecture.json" | wc -l | tr -d ' ')" != "$expected_driver_count" ]]; then
+        echo "Expected $expected_driver_count driver archive(s) and manifest(s) for $architecture." >&2
         exit 65
     fi
 fi
 
-prepare_release_app "$app_path"
-verify_ad_hoc_app "$app_path"
-dmg_path="$output_directory/QueryCraft-$release_version-$architecture.dmg"
-create_dmg "$app_path" "$dmg_path"
+if [[ "$build_client" == "true" ]]; then
+    prepare_release_app "$app_path"
+    verify_ad_hoc_app "$app_path"
+    dmg_path="$output_directory/QueryCraft-$release_version-$architecture.dmg"
+    create_dmg "$app_path" "$dmg_path"
+fi
 
 if [[ "$build_universal_update" == "true" ]]; then
     require_environment SPARKLE_PRIVATE_KEY

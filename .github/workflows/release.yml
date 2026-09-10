@@ -37,6 +37,7 @@ jobs:
       publish: ${{ steps.release.outputs.publish }}
       source_run_id: ${{ steps.release.outputs.source_run_id }}
       publish_drivers: ${{ steps.release.outputs.publish_drivers }}
+      build_client: ${{ steps.release.outputs.build_client }}
     steps:
       - uses: actions/checkout@v7
 
@@ -50,6 +51,10 @@ jobs:
           version="$(awk -F ' = ' '/^MARKETING_VERSION = / { print $2; exit }' Config/Shared.xcconfig)"
           build="$(awk -F ' = ' '/^CURRENT_PROJECT_VERSION = / { print $2; exit }' Config/Shared.xcconfig)"
           source_run_id="${REQUESTED_SOURCE_RUN_ID:-}"
+          build_client=true
+          if [[ "$REQUESTED_PUBLISH_DRIVERS" == "true" && "$REQUESTED_PUBLISH" != "true" ]]; then
+            build_client=false
+          fi
           test -n "$version"
           test -n "$build"
           test -f "docs/releases/$version.md"
@@ -76,26 +81,62 @@ jobs:
           echo "publish=$REQUESTED_PUBLISH" >> "$GITHUB_OUTPUT"
           echo "source_run_id=$source_run_id" >> "$GITHUB_OUTPUT"
           echo "publish_drivers=$REQUESTED_PUBLISH_DRIVERS" >> "$GITHUB_OUTPUT"
+          echo "build_client=$build_client" >> "$GITHUB_OUTPUT"
 
-  build:
+  build_client:
     needs: metadata
-    if: needs.metadata.outputs.source_run_id == ''
+    if: needs.metadata.outputs.source_run_id == '' && needs.metadata.outputs.build_client == 'true'
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
           - architecture: x86_64
             runner: macos-15-intel
-            universal_update: true
           - architecture: arm64
             runner: macos-15
-            universal_update: false
+    env:
+      QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
+      QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
+      QUERYCRAFT_BUILD_CLIENT: true
+      QUERYCRAFT_BUILD_DRIVERS: false
+      QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
+      - name: Install XcodeBuildMCP
+        run: npm install --global xcodebuildmcp@2.6.2
+
+      - name: Build and package client artifacts
+        env:
+          QUERYCRAFT_RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          QUERYCRAFT_RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
+          DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
+        run: scripts/ci/build-release-artifacts.sh "${{ matrix.architecture }}" "artifacts/${{ matrix.architecture }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: querycraft-release-client-${{ matrix.architecture }}
+          path: artifacts/${{ matrix.architecture }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  build_update:
+    needs: metadata
+    if: needs.metadata.outputs.source_run_id == '' && needs.metadata.outputs.build_client == 'true'
+    runs-on: macos-15
+    timeout-minutes: 60
     env:
       SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
       QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
       QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
-      QUERYCRAFT_BUILD_DRIVERS: ${{ needs.metadata.outputs.publish_drivers }}
+      QUERYCRAFT_BUILD_CLIENT: false
+      QUERYCRAFT_BUILD_DRIVERS: false
+      QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: true
     steps:
       - uses: actions/checkout@v7
 
@@ -107,30 +148,84 @@ jobs:
 
       - name: Validate signing secret
         run: |
-          if [[ "${{ matrix.universal_update }}" == "true" && -z "$SPARKLE_PRIVATE_KEY" ]]; then
+          if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
             echo "Required GitHub secret is missing: SPARKLE_PRIVATE_KEY" >&2
             exit 1
           fi
 
-      - name: Build and package client artifacts
+      - name: Build and package universal update
         env:
           QUERYCRAFT_RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
           QUERYCRAFT_RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
-          QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: ${{ matrix.universal_update }}
           DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
-        run: scripts/ci/build-release-artifacts.sh "${{ matrix.architecture }}" "artifacts/${{ matrix.architecture }}"
+        run: scripts/ci/build-release-artifacts.sh arm64 artifacts/update
 
       - uses: actions/upload-artifact@v7
         with:
-          name: querycraft-release-${{ matrix.architecture }}
-          path: artifacts/${{ matrix.architecture }}/
+          name: querycraft-release-client-update
+          path: artifacts/update/
+          if-no-files-found: error
+          retention-days: 14
+
+  build_drivers:
+    needs: metadata
+    if: needs.metadata.outputs.source_run_id == '' && needs.metadata.outputs.publish_drivers == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        database:
+          - mysql
+          - postgresql
+          - doris
+          - redis
+          - elasticsearch
+        architecture:
+          - x86_64
+          - arm64
+        include:
+          - architecture: x86_64
+            runner: macos-15-intel
+          - architecture: arm64
+            runner: macos-15
+    env:
+      QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
+      QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
+      QUERYCRAFT_BUILD_CLIENT: false
+      QUERYCRAFT_BUILD_DRIVERS: true
+      QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: false
+      QUERYCRAFT_DRIVER_TARGET: ${{ matrix.database }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
+      - name: Install XcodeBuildMCP
+        run: npm install --global xcodebuildmcp@2.6.2
+
+      - name: Build and package ${{ matrix.database }} driver
+        env:
+          QUERYCRAFT_RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          QUERYCRAFT_RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
+          DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
+        run: scripts/ci/build-release-artifacts.sh "${{ matrix.architecture }}" "artifacts/${{ matrix.database }}-${{ matrix.architecture }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: querycraft-release-driver-${{ matrix.database }}-${{ matrix.architecture }}
+          path: artifacts/${{ matrix.database }}-${{ matrix.architecture }}/
           if-no-files-found: error
           retention-days: 14
 
   publish:
     needs:
       - metadata
-      - build
+      - build_client
+      - build_update
+      - build_drivers
     if: >-
       ${{
         always() &&
@@ -141,7 +236,19 @@ jobs:
         ) &&
         (
           needs.metadata.outputs.source_run_id != '' ||
-          needs.build.result == 'success'
+          (
+            (
+              needs.metadata.outputs.build_client != 'true' ||
+              (
+                needs.build_client.result == 'success' &&
+                needs.build_update.result == 'success'
+              )
+            ) &&
+            (
+              needs.metadata.outputs.publish_drivers != 'true' ||
+              needs.build_drivers.result == 'success'
+            )
+          )
         )
       }}
     runs-on: ubuntu-latest
