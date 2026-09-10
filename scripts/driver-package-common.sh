@@ -3,6 +3,7 @@
 # Keep this synchronized with
 # DatabaseDriverCompatibilityValidator.currentDriverAPIVersion.
 querycraft_driver_api_version=3
+querycraft_driver_minimum_app_version=0.1.5
 
 # Shared preflight for every external database-driver package.
 querycraft_validate_driver_package_inputs() {
@@ -89,4 +90,55 @@ querycraft_manifest_references_archive() {
         || download_url="$(plutil -extract releases.0.downloadURL raw -o - "$manifest" 2>/dev/null)" \
         || return 1
     [[ "${download_url:t}" == "${archive:t}" ]]
+}
+
+# Keep the installer's strict bundle/manifest identity check from becoming a
+# runtime download failure. Every field is verified before an archive is
+# allowed into a release artifact.
+querycraft_validate_driver_package_metadata() {
+    local info_plist="$1"
+    local manifest="$2"
+    local database_type="$3"
+    local driver_version="$4"
+    local driver_build="$5"
+    local driver_architecture="$6"
+
+    local bundle_database_type
+    local bundle_version
+    local bundle_build
+    local bundle_api_version
+    local bundle_minimum_app_version
+    local manifest_database_type
+    local manifest_version
+    local manifest_build
+    local manifest_api_version
+    local manifest_minimum_app_version
+    local manifest_architecture
+
+    bundle_database_type="$(/usr/libexec/PlistBuddy -c 'Print :QCDriverDatabaseType' "$info_plist")"
+    bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_plist")"
+    bundle_build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$info_plist")"
+    bundle_api_version="$(/usr/libexec/PlistBuddy -c 'Print :QCDriverAPIVersion' "$info_plist")"
+    bundle_minimum_app_version="$(/usr/libexec/PlistBuddy -c 'Print :QCMinimumAppVersion' "$info_plist")"
+    manifest_database_type="$(plutil -extract databaseType raw -o - "$manifest")"
+    manifest_version="$(plutil -extract version raw -o - "$manifest")"
+    manifest_build="$(plutil -extract build raw -o - "$manifest")"
+    manifest_api_version="$(plutil -extract driverAPIVersion raw -o - "$manifest")"
+    manifest_minimum_app_version="$(plutil -extract minimumAppVersion raw -o - "$manifest")"
+    manifest_architecture="$(plutil -extract supportedArchitectures.0 raw -o - "$manifest")"
+
+    if [[ "$bundle_database_type" != "$database_type" || \
+          "$manifest_database_type" != "$database_type" || \
+          "$bundle_version" != "$driver_version" || \
+          "$manifest_version" != "$driver_version" || \
+          "$bundle_build" != "$driver_build" || \
+          "$manifest_build" != "$driver_build" || \
+          "$bundle_api_version" != "$querycraft_driver_api_version" || \
+          "$manifest_api_version" != "$querycraft_driver_api_version" || \
+          "$bundle_minimum_app_version" != "$querycraft_driver_minimum_app_version" || \
+          "$manifest_minimum_app_version" != "$querycraft_driver_minimum_app_version" || \
+          "$manifest_architecture" != "$driver_architecture" ]]; then
+        print -u2 "Driver bundle metadata does not match its manifest: $manifest"
+        return 1
+    fi
 }

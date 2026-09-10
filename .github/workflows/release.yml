@@ -58,14 +58,16 @@ jobs:
             echo "Source run ID must be numeric." >&2
             exit 1
           fi
-          if [[ -n "$source_run_id" && "$REQUESTED_PUBLISH" != "true" ]]; then
-            echo "Reusing a source run requires publish=true." >&2
+          if [[ -n "$source_run_id" && "$REQUESTED_PUBLISH" != "true" && "$REQUESTED_PUBLISH_DRIVERS" != "true" ]]; then
+            echo "Reusing a source run requires application or driver publishing." >&2
             exit 1
           fi
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             [[ "${GITHUB_REF_NAME#v}" == "$version" ]]
           elif [[ "$REQUESTED_PUBLISH" == "true" ]]; then
             test -n "$source_run_id"
+            git ls-remote --exit-code origin "refs/tags/v$version" >/dev/null
+          elif [[ "$REQUESTED_PUBLISH_DRIVERS" == "true" ]]; then
             git ls-remote --exit-code origin "refs/tags/v$version" >/dev/null
           fi
 
@@ -133,7 +135,10 @@ jobs:
       ${{
         always() &&
         needs.metadata.result == 'success' &&
-        needs.metadata.outputs.publish == 'true' &&
+        (
+          needs.metadata.outputs.publish == 'true' ||
+          needs.metadata.outputs.publish_drivers == 'true'
+        ) &&
         (
           needs.metadata.outputs.source_run_id != '' ||
           needs.build.result == 'success'
@@ -148,6 +153,7 @@ jobs:
       QUERYCRAFT_RESOURCE_DEPLOY_URL: ${{ vars.QUERYCRAFT_RESOURCE_DEPLOY_URL || 'https://querycraft.debug-tools.cc/admin/resources/deploy' }}
       QUERYCRAFT_RESOURCE_DEPLOY_TOKEN: ${{ secrets.QUERYCRAFT_RESOURCE_DEPLOY_TOKEN }}
       QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
+      QUERYCRAFT_DEPLOY_CLIENT: ${{ needs.metadata.outputs.publish }}
       QUERYCRAFT_DEPLOY_DRIVERS: ${{ needs.metadata.outputs.publish_drivers }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -174,10 +180,11 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ needs.metadata.outputs.source_run_id }}
 
-      - name: Publish client resources
+      - name: Publish selected resources
         run: scripts/deploy-release-artifacts.sh "${{ needs.metadata.outputs.version }}" dist
 
-      - name: Create or update GitHub Release
+      - name: Create or update GitHub client release
+        if: needs.metadata.outputs.publish == 'true'
         env:
           RELEASE_TAG: v${{ needs.metadata.outputs.version }}
         run: |
@@ -188,4 +195,20 @@ jobs:
               --title "QueryCraft ${{ needs.metadata.outputs.version }}" \
               --notes-file "docs/releases/${{ needs.metadata.outputs.version }}.md"
           fi
-          gh release upload "$RELEASE_TAG" --clobber dist/*
+          gh release upload "$RELEASE_TAG" --clobber \
+            dist/QueryCraft-*.dmg \
+            dist/QueryCraft-*.zip \
+            dist/appcast.xml \
+            dist/release-notes.md
+
+      - name: Update GitHub driver assets
+        if: needs.metadata.outputs.publish_drivers == 'true'
+        env:
+          RELEASE_TAG: v${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" >/dev/null
+          gh release upload "$RELEASE_TAG" --clobber \
+            dist/*-driver-*.zip \
+            dist/*-x86_64.json \
+            dist/*-arm64.json

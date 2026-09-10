@@ -5,7 +5,7 @@ usage() {
     cat <<'EOF'
 Usage: scripts/deploy-release-artifacts.sh <version> <artifact-directory>
 
-The artifact directory must contain:
+When QUERYCRAFT_DEPLOY_CLIENT=true, the artifact directory must contain:
   QueryCraft-<version>.zip
   QueryCraft-<version>-x86_64.dmg
   QueryCraft-<version>-arm64.dmg
@@ -23,6 +23,7 @@ Required environment when publishing:
 Optional environment:
   QUERYCRAFT_UPDATE_BASE_URL        Default: https://querycraft.debug-tools.cc
   QUERYCRAFT_DEPLOY_VALIDATE_ONLY   Validate without uploading (default: false)
+  QUERYCRAFT_DEPLOY_CLIENT          Upload application artifacts (default: true)
   QUERYCRAFT_DEPLOY_DRIVERS         Upload driver artifacts (default: true)
 EOF
 }
@@ -40,6 +41,7 @@ deploy_token="${QUERYCRAFT_RESOURCE_DEPLOY_TOKEN:-}"
 base_url="${QUERYCRAFT_UPDATE_BASE_URL:-https://querycraft.debug-tools.cc}"
 base_url="${base_url%/}"
 validate_only="${QUERYCRAFT_DEPLOY_VALIDATE_ONLY:-false}"
+deploy_client="${QUERYCRAFT_DEPLOY_CLIENT:-true}"
 deploy_drivers="${QUERYCRAFT_DEPLOY_DRIVERS:-true}"
 temporary_driver_manifest_directory="$(mktemp -d "${RUNNER_TEMP:-/tmp}/querycraft-driver-manifests.XXXXXX")"
 
@@ -60,8 +62,16 @@ if [[ "$validate_only" != "true" && "$validate_only" != "false" ]]; then
     echo "QUERYCRAFT_DEPLOY_VALIDATE_ONLY must be true or false." >&2
     exit 65
 fi
+if [[ "$deploy_client" != "true" && "$deploy_client" != "false" ]]; then
+    echo "QUERYCRAFT_DEPLOY_CLIENT must be true or false." >&2
+    exit 65
+fi
 if [[ "$deploy_drivers" != "true" && "$deploy_drivers" != "false" ]]; then
     echo "QUERYCRAFT_DEPLOY_DRIVERS must be true or false." >&2
+    exit 65
+fi
+if [[ "$deploy_client" == "false" && "$deploy_drivers" == "false" ]]; then
+    echo "At least one application or driver deployment must be enabled." >&2
     exit 65
 fi
 
@@ -77,28 +87,33 @@ intel_dmg="$artifact_directory/QueryCraft-$version-x86_64.dmg"
 arm_dmg="$artifact_directory/QueryCraft-$version-arm64.dmg"
 appcast="$artifact_directory/appcast.xml"
 release_notes="$artifact_directory/release-notes.md"
-for required_file in \
-    "$update_zip" \
-    "$intel_dmg" \
-    "$arm_dmg" \
-    "$appcast" \
-    "$release_notes"
-do
-    if [[ ! -f "$required_file" ]]; then
-        echo "Required release artifact not found: $required_file" >&2
-        exit 66
-    fi
-done
+release_build=""
+minimum_system_version=""
+ed_signature=""
+if [[ "$deploy_client" == "true" ]]; then
+    for required_file in \
+        "$update_zip" \
+        "$intel_dmg" \
+        "$arm_dmg" \
+        "$appcast" \
+        "$release_notes"
+    do
+        if [[ ! -f "$required_file" ]]; then
+            echo "Required release artifact not found: $required_file" >&2
+            exit 66
+        fi
+    done
 
-item_xpath="//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version']]"
-release_build="$(xmllint --xpath "string(($item_xpath/*[local-name()='version'])[1])" "$appcast")"
-minimum_system_version="$(xmllint --xpath "string(($item_xpath/*[local-name()='minimumSystemVersion'])[1])" "$appcast")"
-ed_signature="$(xmllint --xpath "string(($item_xpath/*[local-name()='enclosure']/@*[local-name()='edSignature'])[1])" "$appcast")"
-update_url="$(xmllint --xpath "string(($item_xpath/*[local-name()='enclosure']/@url)[1])" "$appcast")"
-if [[ ! "$release_build" =~ ^[0-9]+$ || -z "$minimum_system_version" || -z "$ed_signature" || \
-      "$update_url" != "$base_url/releases/QueryCraft-$version.zip" ]]; then
-    echo "The appcast metadata for QueryCraft $version is incomplete or invalid." >&2
-    exit 65
+    item_xpath="//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version']]"
+    release_build="$(xmllint --xpath "string(($item_xpath/*[local-name()='version'])[1])" "$appcast")"
+    minimum_system_version="$(xmllint --xpath "string(($item_xpath/*[local-name()='minimumSystemVersion'])[1])" "$appcast")"
+    ed_signature="$(xmllint --xpath "string(($item_xpath/*[local-name()='enclosure']/@*[local-name()='edSignature'])[1])" "$appcast")"
+    update_url="$(xmllint --xpath "string(($item_xpath/*[local-name()='enclosure']/@url)[1])" "$appcast")"
+    if [[ ! "$release_build" =~ ^[0-9]+$ || -z "$minimum_system_version" || -z "$ed_signature" || \
+          "$update_url" != "$base_url/releases/QueryCraft-$version.zip" ]]; then
+        echo "The appcast metadata for QueryCraft $version is incomplete or invalid." >&2
+        exit 65
+    fi
 fi
 
 driver_archives=()
@@ -185,7 +200,7 @@ for database_type in mysql postgresql doris redis elasticsearch; do
 done
 
 if [[ "$validate_only" == "true" ]]; then
-    echo "Validated QueryCraft $version release artifacts."
+    echo "Validated QueryCraft $version selected release artifacts."
     exit 0
 fi
 
@@ -224,7 +239,6 @@ if [[ "$deploy_drivers" == "true" ]]; then
     done
 fi
 
-published_appcast=""
 published_application_matches() {
     local candidate remote_signature architecture
     if ! candidate="$(curl --fail --silent --show-error --location "$base_url/appcast.xml")"; then
@@ -252,44 +266,46 @@ published_application_matches() {
     published_appcast="$candidate"
 }
 
-if published_application_matches; then
-    echo "QueryCraft $version application artifacts are already published; skipping upload."
-else
-    if ! curl_deploy \
-        --retry 0 \
-        --form-string "version=$version" \
-        --form-string "build=$release_build" \
-        --form-string "minimum_system_version=$minimum_system_version" \
-        --form-string "ed_signature=$ed_signature" \
-        --form "release_notes=<$release_notes" \
-        --form "archive=@$update_zip;type=application/zip" \
-        --form "dmg_x86_64=@$intel_dmg;type=application/octet-stream" \
-        --form "dmg_arm64=@$arm_dmg;type=application/octet-stream" \
-        "$deploy_url/applications"
-    then
-        echo "Application upload response failed; verifying the published state." >&2
+if [[ "$deploy_client" == "true" ]]; then
+    if published_application_matches; then
+        echo "QueryCraft $version application artifacts are already published; skipping upload."
+    else
+        if ! curl_deploy \
+            --retry 0 \
+            --form-string "version=$version" \
+            --form-string "build=$release_build" \
+            --form-string "minimum_system_version=$minimum_system_version" \
+            --form-string "ed_signature=$ed_signature" \
+            --form "release_notes=<$release_notes" \
+            --form "archive=@$update_zip;type=application/zip" \
+            --form "dmg_x86_64=@$intel_dmg;type=application/octet-stream" \
+            --form "dmg_arm64=@$arm_dmg;type=application/octet-stream" \
+            "$deploy_url/applications"
+        then
+            echo "Application upload response failed; verifying the published state." >&2
+        fi
     fi
-fi
 
-published_appcast="$(curl --fail --silent --show-error --location "$base_url/appcast.xml")"
-if ! xmllint --xpath \
-    "boolean(//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version'] and *[local-name()='version' and text()='$release_build']])" \
-    - <<<"$published_appcast" | grep -q true
-then
-    echo "Published appcast does not contain QueryCraft $version ($release_build)." >&2
-    exit 65
+    published_appcast="$(curl --fail --silent --show-error --location "$base_url/appcast.xml")"
+    if ! xmllint --xpath \
+        "boolean(//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version'] and *[local-name()='version' and text()='$release_build']])" \
+        - <<<"$published_appcast" | grep -q true
+    then
+        echo "Published appcast does not contain QueryCraft $version ($release_build)." >&2
+        exit 65
+    fi
+    published_signature="$(xmllint --xpath \
+        "string((//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version']]/*[local-name()='enclosure']/@*[local-name()='edSignature'])[1])" \
+        - <<<"$published_appcast")"
+    if [[ "$published_signature" != "$ed_signature" ]]; then
+        echo "Published appcast signature does not match QueryCraft $version." >&2
+        exit 65
+    fi
+    for architecture in x86_64 arm64; do
+        curl --fail --silent --show-error --head --location \
+            "$base_url/releases/QueryCraft-$version-$architecture.dmg" -o /dev/null
+    done
 fi
-published_signature="$(xmllint --xpath \
-    "string((//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version']]/*[local-name()='enclosure']/@*[local-name()='edSignature'])[1])" \
-    - <<<"$published_appcast")"
-if [[ "$published_signature" != "$ed_signature" ]]; then
-    echo "Published appcast signature does not match QueryCraft $version." >&2
-    exit 65
-fi
-for architecture in x86_64 arm64; do
-    curl --fail --silent --show-error --head --location \
-        "$base_url/releases/QueryCraft-$version-$architecture.dmg" -o /dev/null
-done
 for manifest in "${driver_manifests[@]}"; do
     manifest_name="$(basename "$manifest")"
     database_type="$(jq -er '.databaseType' "$manifest")"
@@ -319,6 +335,8 @@ for manifest in "${driver_manifests[@]}"; do
 done
 
 echo "Published QueryCraft $version through LicenseServer resource management."
-echo "Feed: $base_url/appcast.xml"
-echo "Intel DMG: $base_url/releases/QueryCraft-$version-x86_64.dmg"
-echo "Apple Silicon DMG: $base_url/releases/QueryCraft-$version-arm64.dmg"
+if [[ "$deploy_client" == "true" ]]; then
+    echo "Feed: $base_url/appcast.xml"
+    echo "Intel DMG: $base_url/releases/QueryCraft-$version-x86_64.dmg"
+    echo "Apple Silicon DMG: $base_url/releases/QueryCraft-$version-arm64.dmg"
+fi

@@ -125,7 +125,7 @@ done
 /usr/libexec/PlistBuddy -c 'Add :NSPrincipalClass string QueryCraftDorisDriverEntry' "$info_plist"
 /usr/libexec/PlistBuddy -c 'Add :QCDriverDatabaseType string doris' "$info_plist"
 /usr/libexec/PlistBuddy -c "Add :QCDriverAPIVersion integer $querycraft_driver_api_version" "$info_plist"
-/usr/libexec/PlistBuddy -c 'Add :QCMinimumAppVersion string 0.1.2' "$info_plist"
+/usr/libexec/PlistBuddy -c "Add :QCMinimumAppVersion string $querycraft_driver_minimum_app_version" "$info_plist"
 
 build_frameworks_rpath="$products/PackageFrameworks"
 querycraft_prepare_driver_rpaths "$binary" "$build_frameworks_rpath"
@@ -161,10 +161,14 @@ sed \
     -e "s|__SHA256__|$sha256|g" \
     -e "s|__SIZE__|$size|g" \
     -e "s|__DRIVER_API_VERSION__|$querycraft_driver_api_version|g" \
+    -e "s|__MINIMUM_APP_VERSION__|$querycraft_driver_minimum_app_version|g" \
     -e "s|__ARCHITECTURES__|$architectures|g" \
     -e "s|__DOWNLOAD_BASE_URL__|$download_base_url|g" \
     -e "s|__ARCHIVE_NAME__|$archive_name|g" \
     "$project_root/scripts/doris-driver-manifest.json.in" > "$manifest_temp"
+querycraft_validate_driver_package_metadata \
+    "$info_plist" "$manifest_temp" doris \
+    "$driver_version" "$driver_build" "$driver_arch"
 mv "$manifest_temp" "$manifest"
 manifest_temp=""
 
