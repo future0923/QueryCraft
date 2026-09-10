@@ -2,7 +2,7 @@
   "databaseType": "doris",
   "version": "__VERSION__",
   "build": "__BUILD__",
-  "minimumAppVersion": "0.1.2",
+  "minimumAppVersion": "0.1.5",
   "driverAPIVersion": __DRIVER_API_VERSION__,
   "supportedArchitectures": __ARCHITECTURES__,
   "downloadSize": __SIZE__,

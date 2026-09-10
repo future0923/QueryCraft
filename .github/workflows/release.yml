@@ -44,7 +44,7 @@ jobs:
         env:
           REQUESTED_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
           REQUESTED_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          REQUESTED_PUBLISH_DRIVERS: ${{ inputs.publish_drivers || false }}
+          REQUESTED_PUBLISH_DRIVERS: ${{ github.event_name == 'push' || inputs.publish_drivers }}
         run: |
           set -euo pipefail
           version="$(awk -F ' = ' '/^MARKETING_VERSION = / { print $2; exit }' Config/Shared.xcconfig)"
