@@ -324,6 +324,49 @@ struct DatabaseDriverRegistryTests {
         }
     }
 
+    @Test func packageInstallerRemovesUnusableInstalledDriverBundle() async throws {
+        let driversDirectory = FileManager.default.temporaryDirectory
+            .appending(
+                path: "QueryCraftUnusableDriverTest-\(UUID().uuidString)",
+                directoryHint: .isDirectory
+            )
+        let bundleURL = driversDirectory.appending(
+            path: "Doris-x86_64.querycraftdriver",
+            directoryHint: .isDirectory
+        )
+        let contentsURL = bundleURL.appending(
+            path: "Contents",
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(
+            at: contentsURL,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: driversDirectory) }
+
+        let info: [String: Any] = [
+            "CFBundleIdentifier": "io.github.future0923.QueryCraft.Driver.Doris",
+            "CFBundleShortVersionString": "1.0.2",
+            "CFBundleVersion": "3",
+            "NSPrincipalClass": "QueryCraftDorisDriverEntry",
+            "QCDriverDatabaseType": "doris",
+            "QCDriverAPIVersion": 3,
+            "QCMinimumAppVersion": "0.1.2",
+        ]
+        let plist = try PropertyListSerialization.data(
+            fromPropertyList: info,
+            format: .xml,
+            options: 0
+        )
+        try plist.write(to: contentsURL.appending(path: "Info.plist"))
+
+        let installer = DatabaseDriverPackageInstaller(
+            driversDirectory: driversDirectory
+        )
+        #expect(await installer.loadInstalledDrivers().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: bundleURL.path))
+    }
+
     @Test func routesConfigurationToMatchingDriver() async throws {
         let mysql = RecordingDatabaseDriver(databaseType: .mysql)
         let postgresql = RecordingDatabaseDriver(databaseType: .postgresql)

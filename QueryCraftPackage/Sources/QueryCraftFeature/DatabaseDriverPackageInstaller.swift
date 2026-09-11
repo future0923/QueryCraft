@@ -74,6 +74,22 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
                 logger.error(
                     "Unable to load installed driver at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
+                // Driver bundles are downloaded cache entries. Keep a bundle
+                // that cannot pass signature, compatibility, or activation
+                // checks from masking the current catalog and blocking a
+                // clean reinstall of the driver.
+                if (try? Self.metadata(at: url)) != nil {
+                    do {
+                        try fileManager.removeItem(at: url)
+                        logger.notice(
+                            "Removed unusable installed driver bundle at \(url.path, privacy: .public)"
+                        )
+                    } catch {
+                        logger.error(
+                            "Unable to remove unusable driver bundle at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                        )
+                    }
+                }
                 continue
             }
         }
