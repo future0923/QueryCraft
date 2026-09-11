@@ -52,9 +52,6 @@ jobs:
           build="$(awk -F ' = ' '/^CURRENT_PROJECT_VERSION = / { print $2; exit }' Config/Shared.xcconfig)"
           source_run_id="${REQUESTED_SOURCE_RUN_ID:-}"
           build_client=true
-          if [[ "$REQUESTED_PUBLISH_DRIVERS" == "true" && "$REQUESTED_PUBLISH" != "true" ]]; then
-            build_client=false
-          fi
           test -n "$version"
           test -n "$build"
           test -f "docs/releases/$version.md"
