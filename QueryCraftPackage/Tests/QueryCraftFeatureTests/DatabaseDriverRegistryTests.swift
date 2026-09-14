@@ -741,6 +741,26 @@ struct DatabaseDriverRegistryTests {
         #expect(await installer.installCount() == 0)
     }
 
+    @Test func currentHostRejectsPreSplitDriverABI() throws {
+        let validator = DatabaseDriverCompatibilityValidator(
+            appVersion: "0.1.5",
+            architecture: .x86_64
+        )
+
+        // This is the installed Elasticsearch generation that dispatched to
+        // address zero in LicenseAccessGate before reaching its HTTP request.
+        #expect(throws: DatabaseDriverInstallError.incompatibleDriverAPI) {
+            try validator.validateInstalledDriver(
+                driverAPIVersion: 3,
+                minimumAppVersion: "0.1.2"
+            )
+        }
+        try validator.validateInstalledDriver(
+            driverAPIVersion: DatabaseDriverCompatibilityValidator.currentDriverAPIVersion,
+            minimumAppVersion: "0.1.5"
+        )
+    }
+
     @Test func validatorRejectsIncompatibleDriverAPI() {
         let validator = DatabaseDriverCompatibilityValidator(
             appVersion: "1.0.0",

@@ -311,7 +311,7 @@ struct CreateConnectionView: View {
         } catch is CancellationError {
             connectionTestState = .idle
         } catch {
-            connectionTestState = .failed(String(describing: error))
+            connectionTestState = .failed(error.localizedDescription)
         }
     }
 

@@ -501,6 +501,12 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
         ).first ?? fileManager.temporaryDirectory
         return applicationSupport
             .appending(path: "QueryCraft", directoryHint: .isDirectory)
+            // Keep incompatible app generations from loading or deleting each
+            // other's drivers and pending updates when users switch builds.
+            .appending(
+                path: "DriverAPI-\(DatabaseDriverCompatibilityValidator.currentDriverAPIVersion)",
+                directoryHint: .isDirectory
+            )
             .appending(path: "Drivers", directoryHint: .isDirectory)
     }
 

@@ -26,7 +26,11 @@
 	<string>QueryCraft connects to database servers on your local network.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsLocalNetworking</key>
+		<!-- Database endpoints are user supplied and may intentionally use HTTP.
+		     TLS selection remains explicit in the connection configuration.
+		     Do not combine this with NSAllowsLocalNetworking: on macOS 10.12+
+		     that key makes NSAllowsArbitraryLoads effective for these endpoints. -->
+		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
 	<key>QCLicenseAPIBaseURL</key>

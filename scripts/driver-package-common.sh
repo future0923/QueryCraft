@@ -2,7 +2,7 @@
 
 # Keep this synchronized with
 # DatabaseDriverCompatibilityValidator.currentDriverAPIVersion.
-querycraft_driver_api_version=3
+querycraft_driver_api_version=4
 querycraft_driver_minimum_app_version=0.1.5
 
 # Shared preflight for every external database-driver package.
