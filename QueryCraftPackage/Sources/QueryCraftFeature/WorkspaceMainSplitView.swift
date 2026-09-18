@@ -4,6 +4,7 @@ import SwiftUI
 struct WorkspaceMainSplitView: NSViewControllerRepresentable {
     let showsSidebar: Bool
     let showsInspector: Bool
+    let onInspectorVisibilityChange: @MainActor (Bool) -> Void
     let sidebarMinimumWidth: CGFloat
     let sidebarMaximumWidth: CGFloat
     let detailMinimumWidth: CGFloat
@@ -15,6 +16,7 @@ struct WorkspaceMainSplitView: NSViewControllerRepresentable {
     init<Sidebar: View, Detail: View, Inspector: View>(
         showsSidebar: Bool,
         showsInspector: Bool,
+        onInspectorVisibilityChange: @escaping @MainActor (Bool) -> Void = { _ in },
         sidebarMinimumWidth: CGFloat,
         sidebarMaximumWidth: CGFloat,
         detailMinimumWidth: CGFloat,
@@ -25,6 +27,7 @@ struct WorkspaceMainSplitView: NSViewControllerRepresentable {
     ) {
         self.showsSidebar = showsSidebar
         self.showsInspector = showsInspector
+        self.onInspectorVisibilityChange = onInspectorVisibilityChange
         self.sidebarMinimumWidth = sidebarMinimumWidth
         self.sidebarMaximumWidth = sidebarMaximumWidth
         self.detailMinimumWidth = detailMinimumWidth
@@ -43,6 +46,7 @@ struct WorkspaceMainSplitView: NSViewControllerRepresentable {
             inspector: inspector,
             showsSidebar: showsSidebar,
             showsInspector: showsInspector,
+            onInspectorVisibilityChange: onInspectorVisibilityChange,
             sidebarMinimumWidth: sidebarMinimumWidth,
             sidebarMaximumWidth: sidebarMaximumWidth,
             detailMinimumWidth: detailMinimumWidth,
@@ -65,6 +69,7 @@ struct WorkspaceMainSplitView: NSViewControllerRepresentable {
             detailMinimumWidth: detailMinimumWidth,
             inspectorMinimumWidth: inspectorMinimumWidth
         )
+        controller.onInspectorVisibilityChange = onInspectorVisibilityChange
     }
 
     func sizeThatFits(
@@ -83,12 +88,18 @@ struct WorkspaceMainSplitView: NSViewControllerRepresentable {
 final class WorkspaceMainSplitViewController: NSSplitViewController {
     private static let autosaveName =
         NSSplitView.AutosaveName("QueryCraftWorkspaceMainSplit")
+    private static let inspectorWidthKey =
+        "QueryCraftWorkspaceInspectorLastWidth"
 
     private let sidebarHostingController: NSHostingController<AnyView>
     private let detailHostingController: NSHostingController<AnyView>
     private let inspectorHostingController: NSHostingController<AnyView>
     private let initialShowsSidebar: Bool
     private let initialShowsInspector: Bool
+    var onInspectorVisibilityChange: @MainActor (Bool) -> Void
+    private var requestedInspectorVisibility: Bool?
+    private var isUpdatingInspectorVisibility = false
+    private var shouldRestoreInspectorWidth = false
     private var sidebarMinimumWidth: CGFloat
     private var sidebarMaximumWidth: CGFloat
     private var detailMinimumWidth: CGFloat
@@ -103,6 +114,7 @@ final class WorkspaceMainSplitViewController: NSSplitViewController {
         inspector: AnyView,
         showsSidebar: Bool,
         showsInspector: Bool,
+        onInspectorVisibilityChange: @escaping @MainActor (Bool) -> Void = { _ in },
         sidebarMinimumWidth: CGFloat,
         sidebarMaximumWidth: CGFloat,
         detailMinimumWidth: CGFloat,
@@ -113,6 +125,7 @@ final class WorkspaceMainSplitViewController: NSSplitViewController {
         inspectorHostingController = NSHostingController(rootView: inspector)
         initialShowsSidebar = showsSidebar
         initialShowsInspector = showsInspector
+        self.onInspectorVisibilityChange = onInspectorVisibilityChange
         self.sidebarMinimumWidth = sidebarMinimumWidth
         self.sidebarMaximumWidth = sidebarMaximumWidth
         self.detailMinimumWidth = detailMinimumWidth
@@ -168,6 +181,29 @@ final class WorkspaceMainSplitViewController: NSSplitViewController {
     override func viewDidLayout() {
         super.viewDidLayout()
         enforceThicknessConstraintsIfNeeded()
+        restoreInspectorWidthIfNeeded()
+    }
+
+    override func splitViewDidResizeSubviews(_ notification: Notification) {
+        super.splitViewDidResizeSubviews(notification)
+        guard !isUpdatingInspectorVisibility,
+              let requestedInspectorVisibility,
+              let inspectorSplitItem
+        else { return }
+        let isVisible = !inspectorSplitItem.isCollapsed
+        if isVisible != requestedInspectorVisibility {
+            self.requestedInspectorVisibility = isVisible
+            onInspectorVisibilityChange(isVisible)
+        }
+        if isVisible {
+            let width = inspectorSplitItem.viewController.view.frame.width
+            if width >= inspectorMinimumWidth {
+                UserDefaults.standard.set(
+                    Double(width),
+                    forKey: Self.inspectorWidthKey
+                )
+            }
+        }
     }
 
     func update(
@@ -196,13 +232,49 @@ final class WorkspaceMainSplitViewController: NSSplitViewController {
         if sidebarSplitItem?.isCollapsed == showsSidebar {
             sidebarSplitItem?.isCollapsed = !showsSidebar
         }
-        if inspectorSplitItem?.isCollapsed == showsInspector {
-            inspectorSplitItem?.isCollapsed = !showsInspector
+        if requestedInspectorVisibility != showsInspector {
+            requestedInspectorVisibility = showsInspector
+            isUpdatingInspectorVisibility = true
+            if inspectorSplitItem?.isCollapsed == showsInspector {
+                inspectorSplitItem?.isCollapsed = !showsInspector
+            }
+            shouldRestoreInspectorWidth = showsInspector
+            enforceThicknessConstraintsIfNeeded(
+                preferredSidebarWidth: previousSidebarWidth
+            )
+            restoreInspectorWidthIfNeeded()
+            isUpdatingInspectorVisibility = false
+            return
         }
 
         enforceThicknessConstraintsIfNeeded(
             preferredSidebarWidth: previousSidebarWidth
         )
+    }
+
+    private func restoreInspectorWidthIfNeeded() {
+        guard shouldRestoreInspectorWidth,
+              let inspectorSplitItem,
+              !inspectorSplitItem.isCollapsed,
+              splitView.bounds.width > 0
+        else { return }
+        shouldRestoreInspectorWidth = false
+        let savedWidth = CGFloat(
+            UserDefaults.standard.double(forKey: Self.inspectorWidthKey)
+        )
+        guard savedWidth >= inspectorMinimumWidth else { return }
+        let availableWidth = splitView.bounds.width
+            - sidebarMinimumWidth - detailMinimumWidth
+            - 2 * splitView.dividerThickness
+        guard availableWidth >= inspectorMinimumWidth else { return }
+        let width = min(savedWidth, availableWidth)
+        let previousUpdatingState = isUpdatingInspectorVisibility
+        isUpdatingInspectorVisibility = true
+        splitView.setPosition(
+            splitView.bounds.width - width - splitView.dividerThickness,
+            ofDividerAt: 1
+        )
+        isUpdatingInspectorVisibility = previousUpdatingState
     }
 
     private func updateThicknessConstraints() {

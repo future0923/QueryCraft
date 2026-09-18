@@ -92,6 +92,9 @@ final class RedisCollectionGridCoordinator: NSObject {
         headerView.resetColumnWidths = { [weak self] in
             self?.applyAutomaticColumnWidths()
         }
+        headerView.columnSelectionHandler = { [weak tableView] column, extending in
+            tableView?.selectGridColumn(column, extending: extending)
+        }
         headerView.frame.size.height = WorkspaceGridMetrics.headerHeight
         tableView.headerView = headerView
         let font = WorkspaceGridMetrics.cellFont

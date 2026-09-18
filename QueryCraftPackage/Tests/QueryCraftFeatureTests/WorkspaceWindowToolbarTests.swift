@@ -43,6 +43,35 @@ struct WorkspaceWindowToolbarTests {
     }
 
     @Test
+    func inspectorStartsClosedAndOnlyToolbarChangesItsVisibility() {
+        let toolbarModel = makeToolbarModel()
+        #expect(!toolbarModel.showsInspector)
+
+        let selection = WorkspaceDatabaseObjectSelection(
+            databaseName: "app",
+            objectName: "users",
+            kind: .table
+        )
+        toolbarModel.presentation.context.tabsModel.open(selection)
+        toolbarModel.presentation.context.inspectorRegistry.update(
+            .queryResult(.empty),
+            for: .databaseObject(selection)
+        )
+        #expect(!toolbarModel.showsInspector)
+
+        toolbarModel.toggleInspector()
+        #expect(toolbarModel.showsInspector)
+        toolbarModel.presentation.context.inspectorRegistry.update(
+            .queryResult(.empty),
+            for: .databaseObject(selection)
+        )
+        #expect(toolbarModel.showsInspector)
+
+        toolbarModel.toggleInspector()
+        #expect(!toolbarModel.showsInspector)
+    }
+
+    @Test
     func elasticsearchDoesNotOfferDatabaseSelection() async {
         let toolbarModel = makeToolbarModel(databaseProduct: .elasticsearch)
 

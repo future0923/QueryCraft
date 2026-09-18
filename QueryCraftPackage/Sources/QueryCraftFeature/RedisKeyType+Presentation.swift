@@ -1,6 +1,20 @@
 import AppKit
 
 extension RedisKeyType {
+    var displayName: String {
+        switch self {
+        case .string: "String"
+        case .list: "List"
+        case .set: "Set"
+        case .sortedSet: "Sorted Set"
+        case .hash: "Hash"
+        case .stream: "Stream"
+        case .module: "Module"
+        case .none: "None"
+        case .unknown: "Unknown"
+        }
+    }
+
     var sidebarBadgeText: String? {
         switch self {
         case .string: "str"

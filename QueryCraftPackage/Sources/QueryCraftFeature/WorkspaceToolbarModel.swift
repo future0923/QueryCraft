@@ -46,7 +46,8 @@ final class WorkspaceToolbarModel {
         switch item {
         case .databaseObject, .redisKey:
             return true
-        case .query, .newTable, .redisCommand, .elasticsearchRequest:
+        case .query, .newTable, .redisNewKey, .redisCommand,
+            .elasticsearchRequest:
             return false
         }
     }

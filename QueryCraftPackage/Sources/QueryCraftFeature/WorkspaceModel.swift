@@ -3022,6 +3022,29 @@ final class WorkspaceModel {
         return result
     }
 
+    func createRedisKey(
+        _ plan: RedisKeyCreationPlan
+    ) async throws -> RedisKeyReference {
+        let reference = plan.reference
+        guard !safetyLock.isEnabled else { throw RedisKeyEditError.safetyLockEnabled }
+        guard connectionState == .connected else { throw RedisWorkspaceError.unavailable }
+        let exists = try await executeRedisCommand(
+            RedisCommandInvocation(
+                source: "EXISTS \(reference.name)",
+                arguments: ["EXISTS", reference.name]
+            ),
+            databaseIndex: reference.databaseIndex
+        )
+        if case .integer(let count) = exists.reply, count > 0 {
+            throw RedisKeyEditError.keyAlreadyExists(reference.name)
+        }
+        try await commitRedisKeyChanges(plan.commands, for: reference)
+        redisKeys.append(reference)
+        redisKeyLoadDiscoveredCount = redisKeys.count
+        await rebuildRedisKeyTree()
+        return reference
+    }
+
     @ObservationIgnored var elasticsearchHasPendingChanges: @MainActor () -> Bool = { false }
     @ObservationIgnored var openElasticsearchRequestSource: @MainActor (String) -> Void = { _ in }
     private(set) var elasticsearchMutationRevision = 0

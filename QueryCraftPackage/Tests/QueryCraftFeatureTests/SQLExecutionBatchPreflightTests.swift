@@ -235,6 +235,92 @@ struct SQLExecutionBatchPreflightTests {
     }
 
     @Test
+    func permitsASelectionThatIsAReadStatementPrefix() async throws {
+        let text = """
+        SELECT * FROM easy_pay_order WHERE org_trace IN (
+            SELECT org_trace
+            FROM easy_pay_transfer
+            WHERE org_trace IN ("FYSZZ-0001", "FYSZZ-0002")
+                AND transfer_type = "StlmToCash"
+        );
+        """
+        let source = SQLSourceSnapshot(
+            revision: SQLSourceRevision(1),
+            text: text
+        )
+        let snapshot = try await SQLStructuralParser().parse(source)
+        let selectedRange = (text as NSString).range(
+            of: "SELECT * FROM easy_pay_order"
+        )
+        let target = try SQLExecutionTargetResolver.resolve(
+            .selectionOrCurrentStatement,
+            source: source,
+            selectedRange: selectedRange,
+            parseSnapshot: snapshot
+        )
+
+        let plan = try SQLExecutionBatchPreflight.makePlan(
+            target: target,
+            parseSnapshot: snapshot
+        )
+
+        #expect(plan.statements.map(\.sql) == ["SELECT * FROM easy_pay_order"])
+        #expect(plan.statements.map(\.kind) == [.read])
+        #expect(!plan.requiresWriteAccess)
+        #expect(!plan.containsUnclassifiedStatement)
+    }
+
+    @Test
+    func preservesAPrefixSelectionAcrossStatementsAsUnclassified() async throws {
+        let text = "SELECT 1;\nSELECT 2;"
+        let source = SQLSourceSnapshot(
+            revision: SQLSourceRevision(1),
+            text: text
+        )
+        let snapshot = try await SQLStructuralParser().parse(source)
+        let selectedRange = (text as NSString).range(of: "SELECT 1;\nSEL")
+        let target = try SQLExecutionTargetResolver.resolve(
+            .selectionOrCurrentStatement,
+            source: source,
+            selectedRange: selectedRange,
+            parseSnapshot: snapshot
+        )
+
+        let plan = try SQLExecutionBatchPreflight.makePlan(
+            target: target,
+            parseSnapshot: snapshot
+        )
+
+        #expect(plan.statements.map(\.kind) == [.unknown])
+        #expect(plan.requiresWriteAccess)
+    }
+
+    @Test
+    func preservesAWriteStatementPrefixSelectionAsUnclassified() async throws {
+        let text = "INSERT INTO users (id) VALUES (1);"
+        let source = SQLSourceSnapshot(
+            revision: SQLSourceRevision(1),
+            text: text
+        )
+        let snapshot = try await SQLStructuralParser().parse(source)
+        let selectedRange = (text as NSString).range(of: "INSERT INTO users")
+        let target = try SQLExecutionTargetResolver.resolve(
+            .selectionOrCurrentStatement,
+            source: source,
+            selectedRange: selectedRange,
+            parseSnapshot: snapshot
+        )
+
+        let plan = try SQLExecutionBatchPreflight.makePlan(
+            target: target,
+            parseSnapshot: snapshot
+        )
+
+        #expect(plan.statements.map(\.kind) == [.unknown])
+        #expect(plan.requiresWriteAccess)
+    }
+
+    @Test
     func preservesAPartialSelectionAsOneUnclassifiedRequest() async throws {
         let text = "SELECT 1;\nSELECT 2;"
         let source = SQLSourceSnapshot(

@@ -3,6 +3,17 @@ import SwiftUI
 struct WorkspaceRedisSidebarFooter: View {
     @Bindable var model: WorkspaceModel
     let loadAll: () -> Void
+    let createKey: @MainActor (RedisKeyType) -> Void
+
+    init(
+        model: WorkspaceModel,
+        loadAll: @escaping () -> Void,
+        createKey: @escaping @MainActor (RedisKeyType) -> Void = { _ in }
+    ) {
+        self.model = model
+        self.loadAll = loadAll
+        self.createKey = createKey
+    }
 
     var body: some View {
         HStack(spacing: 7) {
@@ -13,6 +24,11 @@ struct WorkspaceRedisSidebarFooter: View {
                 .help(statusText)
 
             Spacer(minLength: 2)
+
+            RedisKeyCreateMenu(
+                isEnabled: model.connectionState == .connected,
+                createKey: createKey
+            )
 
             if model.isLoadingRedisKeys {
                 WorkspaceInlineIconButton(

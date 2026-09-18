@@ -20,6 +20,7 @@ struct WorkspaceSidebar: View {
         WorkspaceDatabaseObjectSelection
     ) -> Void
     let createTable: @MainActor (String) -> Void
+    let createRedisKey: @MainActor (RedisKeyType) -> Void
     let showDatabasePicker: @MainActor () -> Void
 
     @State private var tableEditor: WorkspaceDatabaseTableEditor?
@@ -49,7 +50,8 @@ struct WorkspaceSidebar: View {
                     WorkspaceRedisSidebar(
                         model: model,
                         openKey: openRedisKey,
-                        renameKey: renameRedisKey
+                        renameKey: renameRedisKey,
+                        createKey: createRedisKey
                     )
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

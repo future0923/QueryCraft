@@ -64,8 +64,8 @@ enum RedisKeyEditError: LocalizedError, Equatable {
             )
         case .keyAlreadyExists(let name):
             AppCopy.current.text(
-                "Key“\(name)”已存在，未执行重命名。",
-                "The key “\(name)” already exists, so it was not renamed."
+                "Key“\(name)”已存在，未执行操作。",
+                "The key “\(name)” already exists, so no change was made."
             )
         case .safetyLockEnabled:
             AppCopy.current.text(

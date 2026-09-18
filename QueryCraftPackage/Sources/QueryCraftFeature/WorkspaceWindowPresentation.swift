@@ -9,7 +9,7 @@ final class WorkspaceWindowPresentation {
     private(set) var databaseContexts: [WorkspaceDatabaseContextDescriptor]
     private(set) var selectedDatabaseContextID: UUID
     private(set) var showsSidebar = true
-    private(set) var showsInspector = true
+    private(set) var showsInspector = false
     private(set) var sidebarToggleRequestID = 0
     private(set) var connectionPickerRequestID = 0
     private(set) var databasePickerRequestID = 0

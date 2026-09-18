@@ -31,6 +31,7 @@ public struct WorkspaceView: View {
         WorkspaceDatabaseObjectSelection
     ) -> Void
     private let createTable: @MainActor (String) -> Void
+    private let createRedisKey: @MainActor (RedisKeyType) -> Void
     private let selectContent: @MainActor (WorkspaceContentTabID) -> Void
     private let performContentTabAction: @MainActor (
         WorkspaceContentTabAction
@@ -60,6 +61,7 @@ public struct WorkspaceView: View {
             WorkspaceMainSplitView(
                 showsSidebar: showsSidebar,
                 showsInspector: toolbarModel.showsInspector,
+                onInspectorVisibilityChange: presentation.setInspectorVisible,
                 sidebarMinimumWidth: combinedSidebarMinimumWidth,
                 sidebarMaximumWidth: 600,
                 detailMinimumWidth: Self.detailMinimumWidth,
@@ -97,6 +99,7 @@ public struct WorkspaceView: View {
                         tableDidRename: tableDidRename,
                         tableDidDelete: tableDidDelete,
                         createTable: createTable,
+                        createRedisKey: createRedisKey,
                         showDatabasePicker: { showsDatabasePicker = true }
                     )
                     .frame(
@@ -310,6 +313,7 @@ public struct WorkspaceView: View {
             WorkspaceDatabaseObjectSelection
         ) -> Void = { _ in },
         createTable: @escaping @MainActor (String) -> Void = { _ in },
+        createRedisKey: @escaping @MainActor (RedisKeyType) -> Void = { _ in },
         selectContent: @escaping @MainActor (
             WorkspaceContentTabID
         ) -> Void,
@@ -341,6 +345,7 @@ public struct WorkspaceView: View {
         self.tableDidRename = tableDidRename
         self.tableDidDelete = tableDidDelete
         self.createTable = createTable
+        self.createRedisKey = createRedisKey
         self.selectContent = selectContent
         self.performContentTabAction = performContentTabAction
         self.closeSelectedContent = closeSelectedContent

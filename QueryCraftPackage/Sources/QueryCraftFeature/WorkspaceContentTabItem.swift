@@ -5,6 +5,7 @@ enum WorkspaceContentTabItem: Identifiable {
     case databaseObject(WorkspaceDatabaseObjectSelection)
     case newTable(WorkspaceNewTableDraft)
     case redisKey(RedisKeyReference)
+    case redisNewKey(WorkspaceRedisNewKeyDraft)
     case redisCommand(WorkspaceRedisCommandDocumentModel)
     case elasticsearchRequest(WorkspaceElasticsearchRequestDocumentModel)
 
@@ -18,6 +19,8 @@ enum WorkspaceContentTabItem: Identifiable {
             .newTable(draft.id)
         case let .redisKey(reference):
             .redisKey(reference)
+        case let .redisNewKey(draft):
+            .redisNewKey(draft.id)
         case let .redisCommand(document):
             .redisCommand(document.id)
         case let .elasticsearchRequest(document):
@@ -36,6 +39,8 @@ enum WorkspaceContentTabItem: Identifiable {
             draft.title
         case let .redisKey(reference):
             reference.name
+        case let .redisNewKey(draft):
+            draft.title
         case let .redisCommand(document):
             document.title
         case let .elasticsearchRequest(document):
@@ -54,6 +59,8 @@ enum WorkspaceContentTabItem: Identifiable {
             draft.databaseName
         case let .redisKey(reference):
             "DB \(reference.databaseIndex)"
+        case let .redisNewKey(draft):
+            "DB \(draft.databaseIndex)"
         case .redisCommand, .elasticsearchRequest:
             nil
         }

@@ -93,6 +93,14 @@ final class WorkspaceRetainedContentHostController: NSViewController {
                             redisKeyActionRegistry: redisKeyActionRegistry
                         )
                     )
+                case let .redisNewKey(draft):
+                    hostingController = NSHostingController(
+                        rootView: WorkspaceRedisNewKeyDetailView(
+                            draft: draft,
+                            model: model,
+                            pendingChangesRegistry: pendingChangesRegistry
+                        )
+                    )
                 case let .redisCommand(document):
                     hostingController = NSHostingController(
                         rootView: WorkspaceRedisCommandDocumentView(

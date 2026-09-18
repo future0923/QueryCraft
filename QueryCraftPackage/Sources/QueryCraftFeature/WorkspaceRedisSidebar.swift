@@ -5,6 +5,7 @@ struct WorkspaceRedisSidebar: View {
     @Bindable var model: WorkspaceModel
     let openKey: @MainActor (RedisKeyReference) -> Void
     let renameKey: @MainActor (RedisKeyReference) -> Void
+    let createKey: @MainActor (RedisKeyType) -> Void
 
     @State private var isShowingLoadAllConfirmation = false
     @State private var keyPendingDelete: RedisKeyReference?
@@ -196,7 +197,8 @@ struct WorkspaceRedisSidebar: View {
     private var footer: some View {
         WorkspaceRedisSidebarFooter(
             model: model,
-            loadAll: requestLoadAll
+            loadAll: requestLoadAll,
+            createKey: createKey
         )
     }
 

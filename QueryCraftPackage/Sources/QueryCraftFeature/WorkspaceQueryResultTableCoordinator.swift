@@ -93,6 +93,9 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         headerView.resetColumnWidths = { [weak self] in
             self?.resetColumnWidths()
         }
+        headerView.columnSelectionHandler = { [weak tableView] column, extending in
+            tableView?.selectGridColumn(column, extending: extending)
+        }
         headerView.frame.size.height = WorkspaceGridMetrics.headerHeight
         tableView.headerView = headerView
         tableView.rowHeight = Self.rowHeight(for: cellFont)

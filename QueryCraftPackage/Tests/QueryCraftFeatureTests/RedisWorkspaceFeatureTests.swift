@@ -2442,6 +2442,27 @@ struct RedisWorkspaceFeatureTests {
 
     @MainActor
     @Test
+    func redisNewKeyDraftTabIsReplacedByCreatedKey() throws {
+        let tabs = WorkspaceContentTabsModel()
+        let draft = WorkspaceRedisNewKeyDraft(databaseIndex: 0, type: .hash)
+        let reference = RedisKeyReference(
+            databaseIndex: 0,
+            name: "user:1",
+            type: .hash
+        )
+
+        tabs.append(draft)
+        #expect(tabs.contentItems.map(\.id) == [.redisNewKey(draft.id)])
+        #expect(tabs.selectedContentID == .redisNewKey(draft.id))
+
+        tabs.replaceRedisNewKey(draft.id, with: reference)
+
+        #expect(tabs.contentItems.map(\.id) == [.redisKey(reference)])
+        #expect(tabs.selectedContentID == .redisKey(reference))
+    }
+
+    @MainActor
+    @Test
     func listDeletionTargetsTheOriginalIndexWhenValuesRepeat() throws {
         let details = redisDetails(
             type: .list,
@@ -2476,6 +2497,342 @@ struct RedisWorkspaceFeatureTests {
                 originalValue: RedisBinaryValue(utf8: "same")
             )
         ))
+    }
+
+    @Test
+    func redisKeyCreationPlanBuildsStringCommandsWithExpiration() throws {
+        let plan = try RedisKeyCreationPlan.make(
+            databaseIndex: 3,
+            name: "  cache:user  ",
+            type: .string,
+            stringValue: "Ada",
+            expirationMode: .expires,
+            ttlMillisecondsText: "60000"
+        )
+
+        #expect(plan.reference == RedisKeyReference(
+            databaseIndex: 3,
+            name: "cache:user",
+            type: .string
+        ))
+        #expect(plan.commands.map(\.arguments) == [
+            ["SET", "cache:user", "Ada"],
+            ["PEXPIRE", "cache:user", "60000"],
+        ])
+        #expect(plan.commands.first?.source == "SET cache:user Ada")
+        #expect(plan.commands.last?.source == "PEXPIRE cache:user 60000")
+    }
+
+    @Test
+    func redisKeyCreationPlanSkipsBlankAndDeletedCollectionRows() throws {
+        let hashPlan = try RedisKeyCreationPlan.make(
+            databaseIndex: 0,
+            name: "user:1",
+            type: .hash,
+            rows: [
+                RedisKeyEditableRow(
+                    isNew: true,
+                    firstValue: "name",
+                    secondValue: "Ada"
+                ),
+                RedisKeyEditableRow(isNew: true, firstValue: "", secondValue: ""),
+                RedisKeyEditableRow(
+                    isNew: true,
+                    firstValue: "github",
+                    secondValue: "ada",
+                    isDeleted: true
+                ),
+            ]
+        )
+        #expect(hashPlan.commands.map(\.arguments) == [
+            ["HSET", "user:1", "name", "Ada"],
+        ])
+
+        let listPlan = try RedisKeyCreationPlan.make(
+            databaseIndex: 0,
+            name: "queue",
+            type: .list,
+            rows: [
+                RedisKeyEditableRow(
+                    isNew: true,
+                    firstValue: "新",
+                    secondValue: "first",
+                    insertionEdge: .tail
+                ),
+                RedisKeyEditableRow(
+                    isNew: true,
+                    firstValue: "新",
+                    secondValue: "   ",
+                    insertionEdge: .tail
+                ),
+                RedisKeyEditableRow(
+                    isNew: true,
+                    firstValue: "新",
+                    secondValue: "dropped",
+                    insertionEdge: .tail,
+                    isDeleted: true
+                ),
+                RedisKeyEditableRow(
+                    isNew: true,
+                    firstValue: "新",
+                    secondValue: "second",
+                    insertionEdge: .tail
+                ),
+            ]
+        )
+        #expect(listPlan.commands.map(\.arguments) == [
+            ["RPUSH", "queue", "first", "second"],
+        ])
+    }
+
+    @Test
+    func redisKeyCreationPlanBuildsSetAndSortedSetCommands() throws {
+        let setPlan = try RedisKeyCreationPlan.make(
+            databaseIndex: 0,
+            name: "members",
+            type: .set,
+            rows: [
+                RedisKeyEditableRow(isNew: true, firstValue: "alpha"),
+                RedisKeyEditableRow(isNew: true, firstValue: "beta"),
+            ]
+        )
+        #expect(setPlan.commands.map(\.arguments) == [
+            ["SADD", "members", "alpha", "beta"],
+        ])
+
+        let sortedSetPlan = try RedisKeyCreationPlan.make(
+            databaseIndex: 0,
+            name: "ranking",
+            type: .sortedSet,
+            rows: [
+                RedisKeyEditableRow(
+                    isNew: true,
+                    firstValue: "ada",
+                    secondValue: "1.5"
+                ),
+                RedisKeyEditableRow(
+                    isNew: true,
+                    firstValue: "linus",
+                    secondValue: "-2"
+                ),
+            ]
+        )
+        #expect(sortedSetPlan.commands.map(\.arguments) == [
+            ["ZADD", "ranking", "1.5", "ada", "-2", "linus"],
+        ])
+    }
+
+    @Test
+    func redisKeyCreationPlanRejectsInvalidInput() {
+        #expect(throws: RedisKeyEditError.invalidKeyName) {
+            _ = try RedisKeyCreationPlan.make(
+                databaseIndex: 0,
+                name: "   ",
+                type: .string
+            )
+        }
+        #expect(throws: RedisKeyEditError.invalidTTL) {
+            _ = try RedisKeyCreationPlan.make(
+                databaseIndex: 0,
+                name: "cache:user",
+                type: .string,
+                expirationMode: .expires,
+                ttlMillisecondsText: "0"
+            )
+        }
+        #expect(throws: RedisKeyEditError.invalidTTL) {
+            _ = try RedisKeyCreationPlan.make(
+                databaseIndex: 0,
+                name: "cache:user",
+                type: .string,
+                expirationMode: .expires,
+                ttlMillisecondsText: "soon"
+            )
+        }
+        #expect(throws: RedisKeyEditError.incompleteRow) {
+            _ = try RedisKeyCreationPlan.make(
+                databaseIndex: 0,
+                name: "members",
+                type: .set
+            )
+        }
+        #expect(throws: RedisKeyEditError.incompleteRow) {
+            _ = try RedisKeyCreationPlan.make(
+                databaseIndex: 0,
+                name: "user:1",
+                type: .hash,
+                rows: [
+                    RedisKeyEditableRow(
+                        isNew: true,
+                        firstValue: "",
+                        secondValue: "Ada"
+                    ),
+                ]
+            )
+        }
+        #expect(throws: RedisKeyEditError.duplicateIdentity("alpha")) {
+            _ = try RedisKeyCreationPlan.make(
+                databaseIndex: 0,
+                name: "members",
+                type: .set,
+                rows: [
+                    RedisKeyEditableRow(isNew: true, firstValue: "alpha"),
+                    RedisKeyEditableRow(isNew: true, firstValue: "alpha"),
+                ]
+            )
+        }
+        #expect(throws: RedisKeyEditError.invalidScore("high")) {
+            _ = try RedisKeyCreationPlan.make(
+                databaseIndex: 0,
+                name: "ranking",
+                type: .sortedSet,
+                rows: [
+                    RedisKeyEditableRow(
+                        isNew: true,
+                        firstValue: "ada",
+                        secondValue: "high"
+                    ),
+                ]
+            )
+        }
+        for type in [RedisKeyType.stream, .module, .none, .unknown] {
+            #expect(throws: RedisKeyEditError.unsupportedType(type)) {
+                _ = try RedisKeyCreationPlan.make(
+                    databaseIndex: 0,
+                    name: "unsupported",
+                    type: type
+                )
+            }
+        }
+    }
+
+    @Test
+    func redisKeyCreationPlanIgnoresStaleTTLWhenPersistent() throws {
+        let plan = try RedisKeyCreationPlan.make(
+            databaseIndex: 0,
+            name: "cache:user",
+            type: .string,
+            expirationMode: .persistent,
+            ttlMillisecondsText: "not-a-number"
+        )
+
+        #expect(plan.commands.map(\.arguments) == [["SET", "cache:user", ""]])
+    }
+
+    @MainActor
+    @Test
+    func redisNewKeyDraftConfiguresEditorForSelectedType() throws {
+        let draft = WorkspaceRedisNewKeyDraft(databaseIndex: 4, type: .string)
+
+        #expect(draft.title == AppCopy.current.text("新增 Key", "New Key"))
+        #expect(!draft.hasContent)
+        #expect(draft.editor.isNewKeyDraft)
+        #expect(draft.editor.supportsValueEditing)
+        #expect(!draft.editor.supportsRowEditing)
+        #expect(draft.editor.details?.reference.type == .string)
+
+        draft.name = "  user:1  "
+        #expect(draft.title == "user:1")
+        #expect(draft.hasContent)
+        #expect(draft.validationError == nil)
+        #expect(try draft.makeCreationPlan().commands.map(\.arguments) == [
+            ["SET", "user:1", ""],
+        ])
+
+        let hashDraft = WorkspaceRedisNewKeyDraft(
+            databaseIndex: 4,
+            type: .hash
+        )
+        hashDraft.name = "user:1"
+        #expect(hashDraft.editor.supportsRowEditing)
+        #expect(hashDraft.validationError == .incompleteRow)
+
+        hashDraft.editor.addRow()
+        let hashRowID = try #require(hashDraft.editor.rows.first?.id)
+        hashDraft.editor.updateRow(
+            id: hashRowID,
+            cell: .firstValue,
+            value: "name"
+        )
+        hashDraft.editor.updateRow(
+            id: hashRowID,
+            cell: .secondValue,
+            value: "Ada"
+        )
+        #expect(hashDraft.validationError == nil)
+        #expect(hashDraft.creationPlan?.commands.map(\.arguments) == [
+            ["HSET", "user:1", "name", "Ada"],
+        ])
+    }
+
+    @MainActor
+    @Test
+    func redisNewKeyDraftKeepsItsTypeAndPristineExpirationAfterReset() throws {
+        let draft = WorkspaceRedisNewKeyDraft(databaseIndex: 0, type: .list)
+        draft.name = "queue"
+        draft.editor.expirationMode = .expires
+        draft.editor.ttlMillisecondsText = "5000"
+        #expect(draft.editor.supportsRowEditing)
+        #expect(draft.validationError == .incompleteRow)
+
+        draft.editor.addRow()
+        let listRowID = try #require(draft.editor.rows.first?.id)
+        draft.editor.updateRow(
+            id: listRowID,
+            cell: .secondValue,
+            value: "first"
+        )
+        #expect(draft.creationPlan?.commands.map(\.arguments) == [
+            ["RPUSH", "queue", "first"],
+            ["PEXPIRE", "queue", "5000"],
+        ])
+
+        draft.reset()
+
+        #expect(draft.name.isEmpty)
+        #expect(draft.keyType == .list)
+        #expect(draft.editor.rows.isEmpty)
+        #expect(draft.editor.expirationMode == .persistent)
+        #expect(draft.editor.ttlMillisecondsText.isEmpty)
+        #expect(draft.editor.isNewKeyDraft)
+        #expect(!draft.hasContent)
+    }
+
+    @MainActor
+    @Test
+    func redisKeyCreateMenuOffersEveryCreatableType() {
+        #expect(WorkspaceRedisNewKeyDraft.creatableTypes == [
+            .string, .hash, .list, .set, .sortedSet,
+        ])
+        #expect(RedisKeyType.string.displayName == "String")
+        #expect(RedisKeyType.hash.displayName == "Hash")
+        #expect(RedisKeyType.list.displayName == "List")
+        #expect(RedisKeyType.set.displayName == "Set")
+        #expect(RedisKeyType.sortedSet.displayName == "Sorted Set")
+    }
+
+    @MainActor
+    @Test
+    func redisNewKeyDraftReportsCreatedReference() {
+        var createdDraftID: UUID?
+        var createdReference: RedisKeyReference?
+        let draft = WorkspaceRedisNewKeyDraft(
+            databaseIndex: 2,
+            type: .string
+        ) { id, reference in
+            createdDraftID = id
+            createdReference = reference
+        }
+        let reference = RedisKeyReference(
+            databaseIndex: 2,
+            name: "user:1",
+            type: .string
+        )
+
+        draft.complete(with: reference)
+
+        #expect(createdDraftID == draft.id)
+        #expect(createdReference == reference)
     }
 
     @MainActor
@@ -2626,5 +2983,128 @@ private actor RedisKeyScanProbe {
 
     func record(_ progress: RedisKeyScanProgress) {
         progressCounts.append(progress.discoveredKeyCount)
+    }
+}
+
+@Suite(.serialized) @MainActor
+struct WorkspaceRedisNewKeyViewTests {
+    @Test
+    func hashDraftMountsCollectionGridAndPublishesPendingChanges() async throws {
+        let model = WorkspaceModel(
+            profileID: UUID(),
+            repository: InMemoryConnectionProfileRepository(profiles: []),
+            credentialStore: InMemoryCredentialStore(),
+            sessionFactory: InMemoryWorkspaceSessionFactory(databases: ["Redis"])
+        )
+        let registry = WorkspacePendingChangesRegistry()
+        let draft = WorkspaceRedisNewKeyDraft(databaseIndex: 0, type: .hash)
+        draft.name = "user:1"
+        draft.editor.addRow()
+        let rowID = try #require(draft.editor.rows.first?.id)
+        draft.editor.updateRow(id: rowID, cell: .firstValue, value: "name")
+        draft.editor.updateRow(id: rowID, cell: .secondValue, value: "Ada")
+
+        let hostingView = NSHostingView(
+            rootView: WorkspaceRedisNewKeyDetailView(
+                draft: draft,
+                model: model,
+                pendingChangesRegistry: registry
+            )
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 720, height: 420)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hostingView
+        window.makeKeyAndOrderFront(nil)
+        hostingView.layoutSubtreeIfNeeded()
+        await withCheckedContinuation { continuation in
+            RunLoop.main.perform { continuation.resume() }
+        }
+        hostingView.layoutSubtreeIfNeeded()
+
+        #expect(firstSubview(of: WorkspaceDirectDrawTableView.self, in: hostingView) != nil)
+        #expect(draft.editor.supportsRowEditing)
+
+        let actions = try #require(
+            registry.actions(for: .redisNewKey(draft.id))
+        )
+        #expect(actions.hasChanges)
+        #expect(actions.canCommit)
+        #expect(actions.previewContent == .redis(
+            draft.creationPlan?.commands ?? []
+        ))
+        #expect(actions.previewContent.isRedis)
+        window.close()
+    }
+
+    @Test
+    func footerMountsCreateKeyDropdownButton() async {
+        let model = WorkspaceModel(
+            profileID: UUID(),
+            repository: InMemoryConnectionProfileRepository(profiles: []),
+            credentialStore: InMemoryCredentialStore(),
+            sessionFactory: InMemoryWorkspaceSessionFactory(databases: ["Redis"])
+        )
+        var selectedTypes: [RedisKeyType] = []
+        let hostingView = NSHostingView(
+            rootView: WorkspaceRedisSidebarFooter(
+                model: model,
+                loadAll: {},
+                createKey: { selectedTypes.append($0) }
+            )
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 280, height: 36)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hostingView
+        window.makeKeyAndOrderFront(nil)
+        hostingView.layoutSubtreeIfNeeded()
+        await withCheckedContinuation { continuation in
+            RunLoop.main.perform { continuation.resume() }
+        }
+        hostingView.layoutSubtreeIfNeeded()
+
+        let buttons = descendants(of: NSButton.self, in: hostingView)
+        #expect(buttons.contains {
+            $0.accessibilityLabel()
+                == AppCopy.current.text("新增 Key", "New Key")
+        })
+        #expect(selectedTypes.isEmpty)
+        window.close()
+    }
+
+    @MainActor
+    private func descendants<ViewType: NSView>(
+        of type: ViewType.Type,
+        in rootView: NSView
+    ) -> [ViewType] {
+        let match = (rootView as? ViewType).map { [$0] } ?? []
+        return match + rootView.subviews.flatMap {
+            descendants(of: type, in: $0)
+        }
+    }
+
+    @MainActor
+    private func firstSubview<ViewType: NSView>(
+        of type: ViewType.Type,
+        in rootView: NSView
+    ) -> ViewType? {
+        if let match = rootView as? ViewType { return match }
+        for subview in rootView.subviews {
+            if let match = firstSubview(of: type, in: subview) {
+                return match
+            }
+        }
+        return nil
     }
 }

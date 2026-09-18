@@ -431,6 +431,29 @@ final class WorkspaceWindowGroup {
         model.sidebarSelection = nil
     }
 
+    func createRedisNewKeyDraft(type: RedisKeyType) {
+        restoredSelectedObject = nil
+        let draft = WorkspaceRedisNewKeyDraft(
+            databaseIndex: model.currentRedisDatabaseIndex,
+            type: type,
+            didCreate: { [weak self] draftID, reference in
+                self?.redisNewKeyDidCreate(draftID, reference: reference)
+            }
+        )
+        tabsModel.append(draft)
+        model.redisSidebarSelection = nil
+        model.sidebarSelection = nil
+    }
+
+    func redisNewKeyDidCreate(
+        _ draftID: UUID,
+        reference: RedisKeyReference
+    ) {
+        tabsModel.replaceRedisNewKey(draftID, with: reference)
+        model.redisSidebarSelection = reference
+        scheduleRestorationPersistence()
+    }
+
     func redisKeyDidRename(
         from oldReference: RedisKeyReference,
         to newReference: RedisKeyReference
@@ -620,6 +643,11 @@ final class WorkspaceWindowGroup {
             restoredSelectedObject = nil
             tabsModel.select(contentID)
             model.redisSidebarSelection = reference
+            model.sidebarSelection = nil
+        case .redisNewKey:
+            restoredSelectedObject = nil
+            tabsModel.select(contentID)
+            model.redisSidebarSelection = nil
             model.sidebarSelection = nil
         case .redisCommand:
             restoredSelectedObject = nil
@@ -1044,7 +1072,7 @@ final class WorkspaceWindowGroup {
             switch item {
             case .query, .databaseObject, .redisKey, .elasticsearchRequest:
                 item.id
-            case .newTable, .redisCommand:
+            case .newTable, .redisNewKey, .redisCommand:
                 nil
             }
         }
@@ -1093,7 +1121,7 @@ final class WorkspaceWindowGroup {
         case let .redisKey(reference):
             model.redisSidebarSelection = reference
             model.sidebarSelection = nil
-        case .redisCommand:
+        case .redisNewKey, .redisCommand:
             model.redisSidebarSelection = nil
             model.sidebarSelection = nil
         case .elasticsearchRequest:

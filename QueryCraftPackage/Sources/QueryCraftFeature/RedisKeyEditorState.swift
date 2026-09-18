@@ -42,6 +42,7 @@ final class RedisKeyEditorState {
     private(set) var supportsHashFieldExpiration = false
     private(set) var reachedCollectionLimit = false
     private(set) var usesPagedCollection = false
+    private(set) var isNewKeyDraft = false
 
     @ObservationIgnored private var isApplyingStringPresentation = false
     @ObservationIgnored private var pagedBaselineRows: [RedisKeyEditableRow] = []
@@ -61,7 +62,7 @@ final class RedisKeyEditorState {
         case .hash, .set, .sortedSet:
             true
         case .list:
-            usesPagedCollection
+            usesPagedCollection || isNewKeyDraft
         case .stream, .module, .unknown, .none:
             false
         }
@@ -81,6 +82,7 @@ final class RedisKeyEditorState {
 
     var supportsRowEditing: Bool {
         guard let type = details?.reference.type else { return false }
+        if isNewKeyDraft { return type != .string }
         return type == .hash || type == .set || type == .sortedSet
             || (type == .list && usesPagedCollection)
     }
@@ -104,6 +106,7 @@ final class RedisKeyEditorState {
     }
 
     func load(_ details: RedisKeyDetails) {
+        isNewKeyDraft = false
         self.details = details
         stringValue = details.value.rows.first?.first ?? ""
         stringData = RedisBinaryValue(utf8: stringValue)
@@ -137,6 +140,27 @@ final class RedisKeyEditorState {
         pagedBaselineReachedLimit = false
         expirationMode = details.ttlMilliseconds == nil ? .persistent : .expires
         ttlMillisecondsText = details.ttlMilliseconds.map(String.init) ?? ""
+    }
+
+    func configureAsNewKey(databaseIndex: Int, type: RedisKeyType) {
+        load(
+            RedisKeyDetails(
+                reference: RedisKeyReference(
+                    databaseIndex: databaseIndex,
+                    name: "",
+                    type: type
+                ),
+                ttlMilliseconds: nil,
+                memoryUsageBytes: nil,
+                encoding: nil,
+                value: RedisKeyValueSnapshot(
+                    columns: [],
+                    rows: [],
+                    isTruncated: false
+                )
+            )
+        )
+        isNewKeyDraft = true
     }
 
     func discard() {

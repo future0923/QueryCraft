@@ -1021,6 +1021,52 @@ final class WorkspaceDirectDrawTableView: NSTableView {
         )
     }
 
+    /// Selects every loaded cell in the given data column.
+    /// Pass `extending` as true (shift-click) to grow the selection
+    /// across a range of full columns.
+    func selectGridColumn(
+        _ column: Int,
+        extending: Bool = false
+    ) {
+        guard
+            isDataColumn(column),
+            numberOfRows > 0
+        else {
+            return
+        }
+        window?.makeFirstResponder(self)
+        let anchorColumn = extending
+            ? gridSelection.anchor?.column ?? column
+            : column
+        guard
+            let firstDataColumn = dataTableColumnIndexes.first,
+            let lastDataColumn = dataTableColumnIndexes.last
+        else {
+            return
+        }
+        let lowerColumn = max(
+            firstDataColumn,
+            min(min(anchorColumn, column), lastDataColumn)
+        )
+        let upperColumn = min(
+            lastDataColumn,
+            max(max(anchorColumn, column), firstDataColumn)
+        )
+        deselectAll(nil)
+        updateGridSelection(
+            WorkspaceGridSelection(
+                anchor: WorkspaceGridCoordinate(
+                    row: 0,
+                    column: lowerColumn
+                ),
+                active: WorkspaceGridCoordinate(
+                    row: numberOfRows - 1,
+                    column: upperColumn
+                )
+            )
+        )
+    }
+
     private func requestCellEdit(row: Int, column: Int) {
         guard
             row >= 0,
@@ -1421,6 +1467,10 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
     private var dragStartLocationInWindow: NSPoint?
     private var dragColumnIdentifier: NSUserInterfaceItemIdentifier?
     var resetColumnWidths: (() -> Void)?
+    /// Called when a data column header receives a plain click
+    /// (not a resize, reorder, or drag). Receives the table column
+    /// index and whether shift was held.
+    var columnSelectionHandler: ((Int, Bool) -> Void)?
 
     private lazy var resetColumnWidthsButton: NSButton = {
         let description = AppCopy.current.text(
@@ -1495,10 +1545,20 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
 
         let point = convert(event.locationInWindow, from: nil)
         let columnIndex = column(at: point)
-        if !isInResizeZone(point),
-           tableView.tableColumns.indices.contains(columnIndex),
-           tableView.tableColumns[columnIndex].identifier
-            != tableView.rowNumberIdentifier {
+        let clickedIdentifier = tableView.tableColumns.indices
+            .contains(columnIndex)
+            ? tableView.tableColumns[columnIndex].identifier
+            : nil
+        let canSelectColumn = !isInResizeZone(point)
+            && clickedIdentifier != nil
+            && clickedIdentifier != tableView.rowNumberIdentifier
+        let frameBeforeClick = clickedIdentifier.flatMap {
+            identifier -> NSRect? in
+            let index = tableView.column(withIdentifier: identifier)
+            return index >= 0 ? headerRect(ofColumn: index) : nil
+        }
+        if canSelectColumn,
+           tableView.tableColumns.indices.contains(columnIndex) {
             dragStartLocationInWindow = event.locationInWindow
             dragColumnIdentifier =
                 tableView.tableColumns[columnIndex].identifier
@@ -1507,8 +1567,32 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
 
         super.mouseDown(with: event)
         tableView.endColumnDragVisual()
+        let startLocation = dragStartLocationInWindow
         dragStartLocationInWindow = nil
         dragColumnIdentifier = nil
+
+        guard
+            canSelectColumn,
+            let identifier = clickedIdentifier,
+            let frameBeforeClick,
+            let startLocation
+        else {
+            return
+        }
+        let dragDistance = hypot(
+            event.locationInWindow.x - startLocation.x,
+            event.locationInWindow.y - startLocation.y
+        )
+        let indexAfterClick = tableView.column(withIdentifier: identifier)
+        let didReorderOrResize = indexAfterClick < 0
+            || headerRect(ofColumn: indexAfterClick) != frameBeforeClick
+        guard dragDistance < Self.dragThreshold, !didReorderOrResize else {
+            return
+        }
+        columnSelectionHandler?(
+            indexAfterClick,
+            event.modifierFlags.contains(.shift)
+        )
     }
 
     override func draw(_ dirtyRect: NSRect) {

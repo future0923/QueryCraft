@@ -3,6 +3,7 @@ import SwiftUI
 struct RedisEditableStringValueView: View {
     @Bindable var editor: RedisKeyEditorState
     let isEnabled: Bool
+    var allowsHex = true
 
     @State private var allowsJSON = false
     @State private var formatter = RedisValueFormatter()
@@ -13,6 +14,7 @@ struct RedisEditableStringValueView: View {
                 selectedFormat: $editor.stringEditingFormat,
                 allowsJSON: allowsJSON,
                 allowsText: true,
+                allowsHex: allowsHex,
                 expirationEditor: editor,
                 isEnabled: isEnabled
             )

@@ -71,6 +71,8 @@ final class WorkspaceContentTabsModel {
                 item = nil
             case let .redisKey(reference):
                 item = .redisKey(reference)
+            case .redisNewKey:
+                item = nil
             case .redisCommand:
                 item = nil
             case let .elasticsearchRequest(documentID):
@@ -201,6 +203,35 @@ final class WorkspaceContentTabsModel {
             contentItems.remove(at: oldIndex)
         } else {
             contentItems[oldIndex] = .databaseObject(selection)
+        }
+        selectedContentID = newContentID
+    }
+
+    func append(_ draft: WorkspaceRedisNewKeyDraft) {
+        let contentItem = WorkspaceContentTabItem.redisNewKey(draft)
+        contentItems = contentItems + [contentItem]
+        selectedContentID = contentItem.id
+    }
+
+    func replaceRedisNewKey(
+        _ draftID: UUID,
+        with reference: RedisKeyReference
+    ) {
+        let oldContentID = WorkspaceContentTabID.redisNewKey(draftID)
+        let newContentID = WorkspaceContentTabID.redisKey(reference)
+        guard let oldIndex = contentItems.firstIndex(where: {
+            $0.id == oldContentID
+        }) else {
+            open(reference)
+            return
+        }
+
+        if let existingIndex = contentItems.firstIndex(where: {
+            $0.id == newContentID
+        }), existingIndex != oldIndex {
+            contentItems.remove(at: oldIndex)
+        } else {
+            contentItems[oldIndex] = .redisKey(reference)
         }
         selectedContentID = newContentID
     }

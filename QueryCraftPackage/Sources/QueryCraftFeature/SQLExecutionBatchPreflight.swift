@@ -42,6 +42,9 @@ enum SQLExecutionBatchPreflight {
         if selectionMatchesReadQueryBlock(
             target: target,
             snapshot: snapshot
+        ) || selectionMatchesReadStatementPrefix(
+            target: target,
+            snapshot: snapshot
         ) {
             return [
                 SQLExecutionStatement(
@@ -85,6 +88,40 @@ enum SQLExecutionBatchPreflight {
             }
         }
         return false
+    }
+
+    private static func selectionMatchesReadStatementPrefix(
+        target: SQLExecutionTarget,
+        snapshot: SQLParseSnapshot
+    ) -> Bool {
+        let targetRange = target.range.nsRange
+        guard !snapshot.unreliableStatementRanges.contains(where: {
+            NSIntersectionRange($0.nsRange, targetRange).length > 0
+        }) else {
+            return false
+        }
+
+        let intersectingStatements = snapshot.statements.filter {
+            NSIntersectionRange($0.range.nsRange, targetRange).length > 0
+        }
+        guard intersectingStatements.count == 1,
+              let statement = intersectingStatements.first,
+              statement.kind == .read
+        else {
+            return false
+        }
+
+        let selectedPayload = trimmedPayloadRange(
+            target.range,
+            source: target.source.text
+        )
+        let statementPayload = executablePayloadRange(
+            for: statement,
+            source: target.source.text
+        )
+        return selectedPayload.length > 0
+            && selectedPayload.location == statementPayload.location
+            && selectedPayload.upperBound < statementPayload.upperBound
     }
 
     private static func reliableStatements(

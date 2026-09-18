@@ -216,6 +216,9 @@ final class WorkspaceWindowController: NSWindowController,
             createTable: { [weak self] databaseName in
                 self?.workspaceGroup?.createTableDraft(in: databaseName)
             },
+            createRedisKey: { [weak self] type in
+                self?.workspaceGroup?.createRedisNewKeyDraft(type: type)
+            },
             selectContent: { [weak self] contentID in
                 self?.workspaceGroup?.selectContent(contentID)
             },
@@ -308,7 +311,8 @@ final class WorkspaceWindowController: NSWindowController,
         case let .databaseObject(selection):
             workspaceGroup?.closeDatabaseObjectTab(selection)
             return true
-        case .newTable, .redisKey, .redisCommand, .elasticsearchRequest:
+        case .newTable, .redisKey, .redisNewKey, .redisCommand,
+            .elasticsearchRequest:
             tabsModel.removeContent(contentID)
             workspaceGroup?.activateSelectedContentAfterClosingTab()
             return true
