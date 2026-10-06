@@ -94,6 +94,7 @@ jobs:
           - architecture: arm64
             runner: macos-15
     env:
+      QUERYCRAFT_SIGNING_DIRECTORY: ${{ runner.temp }}/querycraft-signing
       QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
       QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
       QUERYCRAFT_BUILD_CLIENT: true
@@ -105,6 +106,12 @@ jobs:
       - name: Select Xcode 26.2
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
+      - name: Import persistent application signing identity
+        env:
+          QUERYCRAFT_SIGNING_P12_BASE64: ${{ secrets.QUERYCRAFT_SIGNING_P12_BASE64 }}
+          QUERYCRAFT_SIGNING_P12_PASSWORD: ${{ secrets.QUERYCRAFT_SIGNING_P12_PASSWORD }}
+        run: python3 scripts/code-signing.py import-ci
+
       - name: Install XcodeBuildMCP
         run: npm install --global xcodebuildmcp@2.6.2
 
@@ -114,6 +121,10 @@ jobs:
           QUERYCRAFT_RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
           DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
         run: scripts/ci/build-release-artifacts.sh "${{ matrix.architecture }}" "artifacts/${{ matrix.architecture }}"
+
+      - name: Remove temporary signing keychain
+        if: always()
+        run: python3 scripts/code-signing.py cleanup-ci
 
       - uses: actions/upload-artifact@v7
         with:
@@ -128,6 +139,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     env:
+      QUERYCRAFT_SIGNING_DIRECTORY: ${{ runner.temp }}/querycraft-signing
       SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
       QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
       QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
@@ -139,6 +151,12 @@ jobs:
 
       - name: Select Xcode 26.2
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
+      - name: Import persistent application signing identity
+        env:
+          QUERYCRAFT_SIGNING_P12_BASE64: ${{ secrets.QUERYCRAFT_SIGNING_P12_BASE64 }}
+          QUERYCRAFT_SIGNING_P12_PASSWORD: ${{ secrets.QUERYCRAFT_SIGNING_P12_PASSWORD }}
+        run: python3 scripts/code-signing.py import-ci
 
       - name: Install XcodeBuildMCP
         run: npm install --global xcodebuildmcp@2.6.2
@@ -156,6 +174,10 @@ jobs:
           QUERYCRAFT_RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
           DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
         run: scripts/ci/build-release-artifacts.sh arm64 artifacts/update
+
+      - name: Remove temporary signing keychain
+        if: always()
+        run: python3 scripts/code-signing.py cleanup-ci
 
       - uses: actions/upload-artifact@v7
         with:

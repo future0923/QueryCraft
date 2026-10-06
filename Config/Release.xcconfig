@@ -4,10 +4,11 @@
 
 #include "Shared.xcconfig"
 
-// Free direct distribution uses Sparkle's Ed25519 archive signature for the
+// Free direct distribution uses a persistent self-signed application identity
+// and Sparkle's Ed25519 archive signature for the
 // update trust chain. The sandbox-only launcher requires a provisioned Apple
 // signature, which is unavailable to an unnotarized Personal Team release.
-CODE_SIGN_ENTITLEMENTS =
+CODE_SIGN_ENTITLEMENTS = Config/Release.entitlements
 CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 ENABLE_APP_SANDBOX = NO
 QUERYCRAFT_SPARKLE_INSTALLER_LAUNCHER_ENABLED = NO

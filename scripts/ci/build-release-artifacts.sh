@@ -21,6 +21,7 @@ Optional environment:
 
 SPARKLE_PRIVATE_KEY is also required when
 QUERYCRAFT_BUILD_UNIVERSAL_UPDATE=true.
+Client builds require the persistent identity installed by scripts/code-signing.py.
 EOF
 }
 
@@ -106,6 +107,12 @@ if [[ ! "$release_version" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ || ! "$release_build"
     exit 65
 fi
 
+# Fail before compilation if the persistent identity is missing. Driver-only
+# jobs keep their existing ad-hoc channel and do not need this private key.
+if [[ "$build_client" == "true" || "$build_universal_update" == "true" ]]; then
+    python3 "$project_root/scripts/code-signing.py" check
+fi
+
 temporary_root="$(mktemp -d "${RUNNER_TEMP:-/tmp}/querycraft-release.XXXXXX")"
 derived_data_root="${DERIVED_DATA_ROOT:-$temporary_root/DerivedData}"
 architecture_derived_data="$derived_data_root/$architecture"
@@ -155,18 +162,17 @@ build_scheme() {
     "$xcodebuildmcp_bin" "${arguments[@]}"
 }
 
-verify_ad_hoc_app() {
+verify_release_app() {
     local app_path="$1"
-    local signing_info
-    codesign --verify --deep --strict --verbose=2 "$app_path"
-    signing_info="$(codesign -d --verbose=4 "$app_path" 2>&1)"
-    if ! grep -q '^Signature=adhoc$' <<<"$signing_info"; then
-        echo "Release application must use an ad-hoc signature." >&2
+    local entitlements
+    python3 "$project_root/scripts/code-signing.py" verify "$app_path"
+    entitlements="$(codesign -d --entitlements :- "$app_path" 2>/dev/null)"
+    if grep -q '<key>com.apple.security.app-sandbox</key>' <<<"$entitlements"; then
+        echo "The free distribution application must not enable App Sandbox." >&2
         exit 65
     fi
-    if grep -q '^TeamIdentifier=' <<<"$signing_info" && \
-       ! grep -q '^TeamIdentifier=not set$' <<<"$signing_info"; then
-        echo "Ad-hoc release application unexpectedly has a signing team." >&2
+    if ! grep -q '<key>com.apple.security.network.client</key>' <<<"$entitlements"; then
+        echo "Release application is missing the network client entitlement." >&2
         exit 65
     fi
 }
@@ -200,8 +206,7 @@ prepare_release_app() {
         fi
     done
 
-    codesign --force --sign - --timestamp=none "$feature_framework"
-    codesign --force --sign - --timestamp=none "$app_path"
+    python3 "$project_root/scripts/code-signing.py" sign "$app_path"
 }
 
 create_dmg() {
@@ -301,7 +306,7 @@ fi
 
 if [[ "$build_client" == "true" ]]; then
     prepare_release_app "$app_path"
-    verify_ad_hoc_app "$app_path"
+    verify_release_app "$app_path"
     dmg_path="$output_directory/QueryCraft-$release_version-$architecture.dmg"
     create_dmg "$app_path" "$dmg_path"
 fi
@@ -320,7 +325,7 @@ if [[ "$build_universal_update" == "true" ]]; then
         exit 65
     fi
     prepare_release_app "$universal_app"
-    verify_ad_hoc_app "$universal_app"
+    verify_release_app "$universal_app"
 
     update_zip="$output_directory/QueryCraft-$release_version.zip"
     ditto -c -k --sequesterRsrc --keepParent "$universal_app" "$update_zip"

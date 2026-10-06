@@ -93,10 +93,7 @@ if [[ "$allow_unnotarized" == "true" ]]; then
             echo "The unnotarized update has the wrong bundle identifier." >&2
             exit 65
         }
-    grep -q '^Signature=adhoc$' <<<"$signing_info" || {
-            echo "The unnotarized update must use an ad-hoc signature." >&2
-            exit 65
-        }
+    python3 "$repository_root/scripts/code-signing.py" verify "$app_path"
     if codesign -d --entitlements :- "$app_path" 2>&1 \
         | grep -q 'com.apple.security.app-sandbox'; then
             echo "The unnotarized Release must not enable App Sandbox." >&2
