@@ -490,11 +490,7 @@ struct WorkspaceCodeEditQueryEditorTests {
         await (try #require(suggestionModel.itemsRequestTask)).value
         viewController.styleView(using: editorController)
         viewController.renderInitialCandidates(using: editorController)
-        viewController.tableView.selectRowIndexes(
-            IndexSet(integer: 10),
-            byExtendingSelection: false
-        )
-        viewController.tableView.scrollRowToVisible(10)
+        viewController.moveSelection(by: 10)
         let scrollOrigin = viewController.scrollView.contentView.bounds.origin
         let widthConstraint = try #require(viewController.viewWidthConstraint)
         let heightConstraint = try #require(viewController.viewHeightConstraint)
@@ -523,6 +519,64 @@ struct WorkspaceCodeEditQueryEditorTests {
         #expect(viewController.viewHeightConstraint === heightConstraint)
         #expect(suggestionController.window?.frame == initialFrame)
         suggestionController.close()
+    }
+
+    @Test(arguments: [false, true], ["se", "sel", "s", "sa"])
+    func completionRefreshPreservesOnlyManualSelectionForUnchangedInput(
+        manuallySelected: Bool,
+        updatedText: String
+    ) async throws {
+        let mountedEditor = mountEditor(
+            text: "se",
+            selectedRange: NSRange(location: 2, length: 0)
+        )
+        let textView = try #require(findCodeEditTextView(in: mountedEditor.hostingView))
+        let editorController = try #require(textViewController(for: textView))
+        editorController.completionDelegate = nil
+        let delegate = SequencedSuggestionDelegate(
+            windowPosition: CursorPosition(range: textView.selectedRange()),
+            responses: [["SELECT", "SECOND"], ["SET", "SELECT", "SECOND"], ["SHOW"]]
+        )
+        let suggestionModel = SuggestionViewModel()
+        defer { suggestionModel.willClose() }
+        let viewController = SuggestionViewController()
+        viewController.model = suggestionModel
+        _ = viewController.view
+
+        suggestionModel.showCompletions(
+            textView: editorController,
+            delegate: delegate,
+            cursorPosition: CursorPosition(range: textView.selectedRange())
+        ) { _, _ in }
+        await (try #require(suggestionModel.itemsRequestTask)).value
+        viewController.renderInitialCandidates(using: editorController)
+        try #require(viewController.tableView.selectedRow == 0)
+        if manuallySelected {
+            viewController.moveSelection(by: 1)
+        }
+
+        if updatedText != "se" {
+            textView.replaceCharacters(in: NSRange(location: 0, length: 2), with: updatedText)
+            textView.selectionManager.setSelectedRange(NSRange(
+                location: (updatedText as NSString).length,
+                length: 0
+            ))
+        }
+        for refreshIndex in 0..<2 {
+            suggestionModel.refreshCompletions(
+                textView: editorController,
+                delegate: delegate,
+                cursorPosition: CursorPosition(range: textView.selectedRange()),
+                itemsUnavailable: { Issue.record("Completion refresh unexpectedly returned no items") },
+                itemsLoaded: { _, _ in viewController.renderVisibleCandidateRefresh() }
+            )
+            await (try #require(suggestionModel.itemsRequestTask)).value
+
+            let shouldKeepManualSelection = manuallySelected && updatedText == "se" && refreshIndex == 0
+            #expect(viewController.tableView.selectedRow == (shouldKeepManualSelection ? 2 : 0))
+            #expect(suggestionModel.items[viewController.tableView.selectedRow].label
+                == (shouldKeepManualSelection ? "SECOND" : refreshIndex == 0 ? "SET" : "SHOW"))
+        }
     }
 
     @Test
@@ -1604,7 +1658,7 @@ private final class SequencedSuggestionDelegate: CodeSuggestionDelegate {
     ) async -> (windowPosition: CursorPosition, items: [CodeSuggestionEntry])? {
         guard !responses.isEmpty else { return nil }
         let labels = responses.removeFirst()
-        return (windowPosition, labels.map(TestSuggestionEntry.init))
+        return (cursorPosition, labels.map(TestSuggestionEntry.init))
     }
 
     func completionOnCursorMove(

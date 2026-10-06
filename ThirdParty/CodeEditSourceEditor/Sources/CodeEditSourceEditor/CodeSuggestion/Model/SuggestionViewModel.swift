@@ -13,6 +13,9 @@ final class SuggestionViewModel {
     private(set) var items: [CodeSuggestionEntry] = []
     var itemsRequestTask: Task<Void, Never>?
     private var itemsRequestID: UUID?
+    private(set) var inputRevision: UInt64 = 0
+    private var requestedSource: String?
+    private var requestedCursorRange: NSRange?
     weak var activeTextView: TextViewController?
 
     weak var delegate: CodeSuggestionDelegate?
@@ -65,6 +68,7 @@ final class SuggestionViewModel {
 
         activeTextView = textView
         self.delegate = delegate
+        updateInputRevision(textView: textView, cursorRange: cursorPosition.range)
         let requestID = UUID()
         itemsRequestID = requestID
         itemsRequestTask = Task {
@@ -119,6 +123,15 @@ final class SuggestionViewModel {
         itemsRequestID = nil
     }
 
+    private func updateInputRevision(textView: TextViewController, cursorRange: NSRange) {
+        let source = textView.textView.string
+        if requestedSource != source || requestedCursorRange != cursorRange {
+            inputRevision &+= 1
+            requestedSource = source
+            requestedCursorRange = cursorRange
+        }
+    }
+
     @discardableResult
     func cursorsUpdated(
         textView: TextViewController,
@@ -126,6 +139,7 @@ final class SuggestionViewModel {
         position: CursorPosition,
         close: () -> Void
     ) -> Bool {
+        updateInputRevision(textView: textView, cursorRange: position.range)
         if itemsRequestTask != nil {
             close()
             return false
@@ -171,6 +185,9 @@ final class SuggestionViewModel {
         itemsRequestTask?.cancel()
         itemsRequestTask = nil
         itemsRequestID = nil
+        inputRevision &+= 1
+        requestedSource = nil
+        requestedCursorRange = nil
         delegate?.completionWindowDidClose()
         items.removeAll()
         activeTextView = nil

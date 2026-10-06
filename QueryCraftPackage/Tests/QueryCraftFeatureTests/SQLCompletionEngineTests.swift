@@ -3,6 +3,61 @@ import Testing
 @testable import QueryCraftFeature
 
 struct SQLCompletionEngineTests {
+    @Test(arguments: [
+        "SELECT * FROM users WHERE id = '119184569302490908897';\n\n2026-08-24 08:53:23;\n\nse",
+        "2026-08-24 08:53:23;se",
+        "2026-08-24 08:53:23;\n-- 新语句 ; 😀\n/* note ; */ se",
+        "SELECT 1;\nse",
+    ])
+    func prioritizesStatementKeywordsAfterSemicolonDespiteInvalidEarlierText(
+        _ source: String
+    ) async throws {
+        let result = try await completions(for: source, defaultDatabase: "app")
+
+        #expect(result.items.first?.label == "SELECT")
+        #expect(result.items.contains { $0.label == "SET" })
+        #expect(result.referencedSchemaObjects.isEmpty)
+        #expect(result.items.first?.replacementRange == SQLSourceRange(
+            location: (source as NSString).length - 2,
+            length: 2
+        ))
+    }
+
+    @Test
+    func recoversStatementStartAfterInvalidTextDuringIncrementalTyping() async throws {
+        let initialSource = "SELECT * FROM users;\n2026-08-24 08:53:23;\ns"
+        let parser = try SQLStructuralParser()
+        _ = try await parser.parse(SQLSourceSnapshot(revision: SQLSourceRevision(1), text: initialSource))
+        let source = SQLSourceSnapshot(revision: SQLSourceRevision(2), text: initialSource + "e")
+        let snapshot = try await parser.parse(source, applying: SQLSourceEdit(
+            baseRevision: SQLSourceRevision(1),
+            replacedRange: SQLSourceRange(location: (initialSource as NSString).length, length: 0),
+            replacement: "e"
+        ))
+        let result = try #require(try SQLCompletionEngine.completions(for: .init(
+            source: source,
+            cursorLocation: (source.text as NSString).length,
+            parseSnapshot: snapshot,
+            schemaCatalog: Self.catalog,
+            defaultDatabase: "app"
+        )))
+
+        #expect(result.items.first?.label == "SELECT")
+        #expect(result.referencedSchemaObjects.isEmpty)
+    }
+
+    @Test(arguments: [
+        "SELECT * FROM users WHERE name = ';' AND na",
+        "SELECT * FROM users WHERE /* ; */ na",
+        "SELECT * FROM users WHERE -- ;\nna",
+    ])
+    func keepsCurrentStatementContextAcrossQuotedAndCommentSemicolons(_ source: String) async throws {
+        let result = try await completions(for: source, defaultDatabase: "app")
+
+        #expect(result.items.first?.label == "name")
+        #expect(result.referencedSchemaObjects.contains { $0.objectName == "users" })
+    }
+
     @Test
     func completesStaticKeywordsFromAnIncompleteStatement() async throws {
         let result = try await completions(for: "sel")

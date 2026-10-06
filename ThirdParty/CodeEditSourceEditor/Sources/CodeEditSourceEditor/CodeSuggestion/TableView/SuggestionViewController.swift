@@ -23,6 +23,7 @@ class SuggestionViewController: NSViewController {
     private var cachedRowHeight: CGFloat?
     private var renderedItemIdentities: [String] = []
     private var isRestoringSelection = false
+    private var manualSelectionInputRevision: UInt64?
 
     weak var model: SuggestionViewModel?
 
@@ -337,6 +338,7 @@ class SuggestionViewController: NSViewController {
         guard let model else { return }
 
         let oldSelectedIdentity: String? = if !isNewSession,
+           manualSelectionInputRevision == model.inputRevision,
            tableView.selectedRow >= 0,
            tableView.selectedRow < renderedItemIdentities.count
         {
@@ -345,6 +347,8 @@ class SuggestionViewController: NSViewController {
             nil
         }
         let oldScrollOrigin = scrollView.contentView.bounds.origin
+        isRestoringSelection = true
+        defer { isRestoringSelection = false }
 
         noItemsLabel.isHidden = !model.items.isEmpty
         scrollView.isHidden = model.items.isEmpty
@@ -352,9 +356,10 @@ class SuggestionViewController: NSViewController {
         renderedItemIdentities = model.items.map(\.completionIdentity)
         tableView.reloadData()
 
-        guard !model.items.isEmpty else { return }
-        isRestoringSelection = true
-        defer { isRestoringSelection = false }
+        guard !model.items.isEmpty else {
+            manualSelectionInputRevision = nil
+            return
+        }
 
         if let oldSelectedIdentity,
            let selectedRow = renderedItemIdentities.firstIndex(of: oldSelectedIdentity)
@@ -367,11 +372,14 @@ class SuggestionViewController: NSViewController {
             scrollView.contentView.scroll(to: oldScrollOrigin)
             scrollView.reflectScrolledClipView(scrollView.contentView)
         } else {
+            manualSelectionInputRevision = nil
             resetScrollPosition()
         }
     }
 
     @objc private func tableViewClicked(_ sender: Any?) {
+        guard tableView.clickedRow >= 0 else { return }
+        manualSelectionInputRevision = model?.inputRevision
         if NSApp.currentEvent?.clickCount == 2 {
             applySelectedItem()
         }
@@ -392,6 +400,7 @@ class SuggestionViewController: NSViewController {
     func moveSelection(by offset: Int) {
         let rowCount = tableView.numberOfRows
         guard rowCount > 0 else { return }
+        manualSelectionInputRevision = model?.inputRevision
 
         let currentRow = tableView.selectedRow
         let nextRow: Int
@@ -470,7 +479,9 @@ extension SuggestionViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     public func tableViewSelectionDidChange(_ notification: Notification) {
-        guard tableView.selectedRow >= 0 else { return }
+        guard tableView.selectedRow >= 0,
+              tableView.selectedRow < model?.items.count ?? 0
+        else { return }
         if let model {
             // Update our preview view
             let selectedItem = model.items[tableView.selectedRow]

@@ -109,7 +109,13 @@ enum SQLCompletionEngine {
             qualifier: qualifier,
             replacementRange: replacementRange,
             tokens: tokens,
-            confidence: confidence
+            confidence: confidence,
+            isAtStatementStart: isAtStatementStart(
+                replacementRange: replacementRange,
+                scope: scope,
+                syntaxTree: syntaxNode,
+                source: source
+            )
         )
         let context: CompletionContext = switch specialComment {
         case .optimizerHint:
@@ -359,7 +365,11 @@ enum SQLCompletionEngine {
         _ node: SQLSyntaxNodeSnapshot,
         to range: SQLSourceRange
     ) -> SQLSyntaxNodeSnapshot? {
-        guard rangesIntersectOrTouch(node.range, range) else {
+        // A terminator touching the next scope belongs to the preceding statement.
+        guard node.range.length == 0
+            ? range.contains(node.range)
+            : NSIntersectionRange(node.range.nsRange, range.nsRange).length > 0
+        else {
             return nil
         }
         if range.contains(node.range) || node.isLeaf {
@@ -533,16 +543,58 @@ enum SQLCompletionEngine {
         return source.substring(with: directRange.nsRange)
     }
 
+    private static func isAtStatementStart(
+        replacementRange: SQLSourceRange,
+        scope: SQLSourceRange?,
+        syntaxTree: SQLSyntaxNodeSnapshot,
+        source: NSString
+    ) -> Bool {
+        var start = scope?.location ?? 0
+        let end = replacementRange.location
+        guard start <= end else { return false }
+        if source.substring(with: NSRange(location: start, length: end - start))
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return true
+        }
+
+        // ERROR nodes can omit the unfinished identifier entirely. Check the
+        // source, excluding ordinary comments, instead of trusting missing tokens.
+        let comments = (syntaxTree.descendants(named: "comment")
+            + syntaxTree.descendants(named: "marginalia"))
+            .filter { $0.range.location >= start && $0.range.upperBound <= end }
+            .sorted { $0.range.location < $1.range.location }
+        for comment in comments {
+            guard source.substring(with: NSRange(
+                location: start,
+                length: comment.range.location - start
+            )).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return false
+            }
+            start = comment.range.upperBound
+        }
+        return source.substring(with: NSRange(location: start, length: end - start))
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private static func completionContext(
         qualifier: String?,
         replacementRange: SQLSourceRange,
         tokens: [SyntaxToken],
-        confidence: ContextConfidence
+        confidence: ContextConfidence,
+        isAtStatementStart: Bool
     ) -> CompletionContext {
         if qualifier != nil {
             return CompletionContext(
                 kind: .qualified,
                 confidence: confidence == .unknown ? .recovered : confidence
+            )
+        }
+
+        if isAtStatementStart {
+            return CompletionContext(
+                kind: .statementStart,
+                confidence: locallyRecovered(confidence)
             )
         }
 

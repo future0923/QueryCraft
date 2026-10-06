@@ -30,6 +30,9 @@ Local compatibility fixes:
   assigning its available width, and reuse constraints. A completion session
   may expand for new candidates without shrinking as the user types/deletes.
   Native content-size constraints keep the anchored popup consistent.
+- Select the best completion after input changes. Preserve a manually selected
+  candidate only for background refreshes of the same input; automatic default
+  selections must follow the latest ranking.
 - Update editor layout/configuration and folding geometry in place, including
   compact JSON inspectors and semantic colors, without replacing the host.
 
