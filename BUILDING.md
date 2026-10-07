@@ -17,10 +17,57 @@ The command-line build uses XcodeBuildMCP:
 
 ## Persistent signing for saved passwords
 
-Distributed applications now use a fixed self-signed code-signing certificate.
-Ad-hoc signatures change identity when the executable changes, causing Keychain
-to request access again after an update. The public certificate fingerprint is
-pinned in `Config/CodeSigningIdentity.txt`; no private key is checked in.
+Distributed applications use a fixed self-signed code-signing certificate. The
+public certificate fingerprint is pinned in `Config/CodeSigningIdentity.txt`;
+no private key is checked in. This stabilizes the designated requirement, but
+macOS still uses changing CDHash partitions for self-signed Keychain callers.
+A fixed certificate alone does not prevent authorization prompts after updates.
+
+Packaged apps therefore access saved connection passwords through the signed
+`QueryCraft Credentials.app` helper. It is installed once under
+`~/Library/Application Support/QueryCraftCredentials/v1/` and retained when the
+main application updates. The helper only accepts a live parent process with
+the pinned certificate and a QueryCraft/QueryCraft.Dev identifier. Requests and
+responses use private pipes, never password-bearing arguments, files, or logs.
+The host verifies the helper signature before each request and fails closed if
+the installed helper has been modified. Passwords remain in the login Keychain.
+
+Existing saved connections may each need an initial **Always Allow** authorization
+for the helper. Main-app updates then reuse the same helper code hash. Changes to
+the helper's protocol or security code require an explicit new installation
+version, which may require fresh authorization. Do not overwrite the installed
+v1 helper during routine development or packaging. Raw, unpackaged Xcode builds
+retain direct Keychain access; use the Dev installer below for stable access.
+
+After building Debug, install the isolated Dev app with:
+
+```sh
+python3 scripts/install-dev-app.py
+xcodebuildmcp macos launch --app-path /Applications/QueryCraftDev.app
+```
+
+The installer strips build-directory runpaths before signing, embeds the helper,
+verifies the signatures, and backs up the previous Dev app before replacing it.
+The Release signing script also embeds the helper before signing the host.
+
+To inspect obsolete authorizations without reading any passwords:
+
+```sh
+python3 scripts/clean-keychain-authorizations.py
+```
+
+For cleanup, run `scripts/Clean-QueryCraft-Keychain.command` in a local terminal.
+It backs up scoped authorization metadata and invokes macOS `security` with an
+exact service and account for each item. The Keychain password is requested
+locally by `security` without the insecure `-k` command-line option. Current app
+and helper hashes and non-hash permissions are retained; older-only credentials
+are skipped rather than locked out. This cleanup is optional and is not the fix
+for repeated prompts. It does not delete passwords or connection definitions.
+
+Run `python3 scripts/test-credential-helper.py` to verify two differently signed
+host versions can read/update one temporary test credential through an unchanged
+helper, with all Keychain UI disabled. It also verifies caller rejection and
+helper tamper detection, then deletes the test credential.
 
 The maintainer's signing material is stored in
 `~/Library/Application Support/QueryCraftSigning` (directory mode 700, secret
@@ -59,8 +106,8 @@ removes it after packaging, including partial imports when a job fails. Client
 builds check the identity before compiling. They fail if it is missing or incorrect;
 it never generates a new one or silently falls back to ad-hoc application signing.
 Self-signing does not provide Apple notarization or eliminate Gatekeeper's
-first-install warnings. Previously saved ad-hoc Keychain entries may need one
-more **Always Allow** authorization when first used by the new identity.
+first-install warnings. Existing Keychain entries may need **Always Allow** when
+first accessed by the new helper identity.
 
 ## Database drivers
 

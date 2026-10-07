@@ -6,6 +6,7 @@ import the existing encrypted PKCS#12 instead, and check the committed fingerpri
 """
 import argparse
 import base64
+import importlib.util
 import os
 from pathlib import Path
 import plistlib
@@ -14,6 +15,7 @@ import secrets
 import shlex
 import subprocess
 import tempfile
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
 PIN = ROOT / "Config/CodeSigningIdentity.txt"
@@ -169,6 +171,12 @@ def sign(app):
     entitlements = run("codesign", "-d", "--entitlements", ":-", app)
     if entitlements and plistlib.loads(entitlements).get("com.apple.security.app-sandbox"):
         raise RuntimeError("The free self-signed distribution channel requires the non-sandboxed configuration.")
+    spec = importlib.util.spec_from_file_location("credential_helper", ROOT / "scripts/credential-helper.py")
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    # This helper has a separate, stable installation version. Main app updates
+    # never overwrite an already installed helper of that version.
+    helper.embed(app, SimpleNamespace(run=run, KEYCHAIN=KEYCHAIN), identity)
     # Keep Sparkle's upstream signatures. Only re-sign our framework and host app.
     framework = app / "Contents/Frameworks/QueryCraftFeature.framework"
     run("codesign", "--force", "--sign", identity, "--keychain", KEYCHAIN,
