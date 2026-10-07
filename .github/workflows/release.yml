@@ -17,6 +17,19 @@ on:
         required: true
         default: false
         type: boolean
+      rebuild_driver:
+        description: Rebuild one driver while reusing artifacts from source_run_id
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - mysql
+          - postgresql
+          - doris
+          - redis
+          - elasticsearch
+          - kafka
   push:
     tags:
       - "v*"
@@ -38,6 +51,8 @@ jobs:
       source_run_id: ${{ steps.release.outputs.source_run_id }}
       publish_drivers: ${{ steps.release.outputs.publish_drivers }}
       build_client: ${{ steps.release.outputs.build_client }}
+      rebuild_driver: ${{ steps.release.outputs.rebuild_driver }}
+      driver_matrix: ${{ steps.release.outputs.driver_matrix }}
     steps:
       - uses: actions/checkout@v7
 
@@ -46,11 +61,25 @@ jobs:
           REQUESTED_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
           REQUESTED_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           REQUESTED_PUBLISH_DRIVERS: ${{ github.event_name == 'push' || inputs.publish_drivers }}
+          REQUESTED_REBUILD_DRIVER: ${{ inputs.rebuild_driver }}
         run: |
           set -euo pipefail
           version="$(awk -F ' = ' '/^MARKETING_VERSION = / { print $2; exit }' Config/Shared.xcconfig)"
           build="$(awk -F ' = ' '/^CURRENT_PROJECT_VERSION = / { print $2; exit }' Config/Shared.xcconfig)"
           source_run_id="${REQUESTED_SOURCE_RUN_ID:-}"
+          rebuild_driver="${REQUESTED_REBUILD_DRIVER:-none}"
+          driver_matrix='["mysql","postgresql","doris","redis","elasticsearch","kafka"]'
+          case "$rebuild_driver" in
+            none) ;;
+            mysql|postgresql|doris|redis|elasticsearch|kafka)
+              if [[ -z "$source_run_id" || "$REQUESTED_PUBLISH_DRIVERS" != "true" ]]; then
+                echo "Rebuilding one driver requires a source run and driver publishing." >&2
+                exit 1
+              fi
+              driver_matrix="$(jq -cn --arg driver "$rebuild_driver" '[$driver]')"
+              ;;
+            *) echo "Invalid driver rebuild target." >&2; exit 1 ;;
+          esac
           build_client=true
           test -n "$version"
           test -n "$build"
@@ -79,6 +108,8 @@ jobs:
           echo "source_run_id=$source_run_id" >> "$GITHUB_OUTPUT"
           echo "publish_drivers=$REQUESTED_PUBLISH_DRIVERS" >> "$GITHUB_OUTPUT"
           echo "build_client=$build_client" >> "$GITHUB_OUTPUT"
+          echo "rebuild_driver=$rebuild_driver" >> "$GITHUB_OUTPUT"
+          echo "driver_matrix=$driver_matrix" >> "$GITHUB_OUTPUT"
 
   build_client:
     needs: metadata
@@ -192,20 +223,14 @@ jobs:
 
   build_drivers:
     needs: metadata
-    if: needs.metadata.outputs.source_run_id == '' && needs.metadata.outputs.publish_drivers == 'true'
+    if: needs.metadata.outputs.publish_drivers == 'true' && (needs.metadata.outputs.source_run_id == '' || needs.metadata.outputs.rebuild_driver != 'none')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: 10
       matrix:
-        database:
-          - mysql
-          - postgresql
-          - doris
-          - redis
-          - elasticsearch
-          - kafka
+        database: ${{ fromJSON(needs.metadata.outputs.driver_matrix) }}
         architecture:
           - x86_64
           - arm64
@@ -229,6 +254,14 @@ jobs:
 
       - name: Install XcodeBuildMCP
         run: npm install --global xcodebuildmcp@2.6.2
+
+      - name: Install Kafka native dependencies
+        if: matrix.database == 'kafka'
+        run: |
+          brew install librdkafka pkgconf
+          echo "LIBRDKAFKA_PREFIX=$(brew --prefix librdkafka)" >> "$GITHUB_ENV"
+          echo "LIBZSTD_PREFIX=$(brew --prefix zstd)" >> "$GITHUB_ENV"
+          pkg-config --exists rdkafka
 
       - name: Build and package ${{ matrix.database }} driver
         env:
@@ -259,7 +292,13 @@ jobs:
           needs.metadata.outputs.publish_drivers == 'true'
         ) &&
         (
-          needs.metadata.outputs.source_run_id != '' ||
+          (
+            needs.metadata.outputs.source_run_id != '' &&
+            (
+              needs.metadata.outputs.rebuild_driver == 'none' ||
+              needs.build_drivers.result == 'success'
+            )
+          ) ||
           (
             (
               needs.metadata.outputs.build_client != 'true' ||
@@ -310,6 +349,14 @@ jobs:
           merge-multiple: true
           github-token: ${{ github.token }}
           run-id: ${{ needs.metadata.outputs.source_run_id }}
+
+      - name: Download rebuilt driver artifacts
+        uses: actions/download-artifact@v8
+        if: needs.metadata.outputs.source_run_id != '' && needs.metadata.outputs.rebuild_driver != 'none'
+        with:
+          pattern: querycraft-release-driver-${{ needs.metadata.outputs.rebuild_driver }}-*
+          path: dist
+          merge-multiple: true
 
       - name: Publish selected resources
         run: scripts/deploy-release-artifacts.sh "${{ needs.metadata.outputs.version }}" dist
