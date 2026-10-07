@@ -17,9 +17,6 @@ struct WorkspaceQueryDocumentView: View {
     let updateResultInspectorContext:
         @MainActor (WorkspaceQueryResultInspectorContext) -> Void
     @State private var showsCancellationFailure = false
-    @State private var showsDangerousExecutionConfirmation = false
-    @State private var pendingDangerousExecution:
-        PendingDangerousQueryExecution?
     @State private var preferences = ApplicationPreferences.shared
 
     private var languageService: WorkspaceSQLLanguageService {
@@ -32,10 +29,6 @@ struct WorkspaceQueryDocumentView: View {
 
     private var completionService: WorkspaceSQLCompletionService {
         editorContext.completionService
-    }
-
-    private var settingsCopy: SettingsCopy {
-        SettingsCopy(language: .activeInterfaceLanguage)
     }
 
     var body: some View {
@@ -130,23 +123,6 @@ struct WorkspaceQueryDocumentView: View {
             showsCancellationFailure = message != nil
         }
         .alert(
-            settingsCopy.dangerousSQLAlertTitle,
-            isPresented: $showsDangerousExecutionConfirmation,
-            presenting: pendingDangerousExecution
-        ) { execution in
-            Button(settingsCopy.cancel, role: .cancel) {
-                pendingDangerousExecution = nil
-            }
-            .keyboardShortcut(.cancelAction)
-            Button(settingsCopy.executeDangerousSQL, role: .destructive) {
-                pendingDangerousExecution = nil
-                startExecution(execution)
-            }
-            .keyboardShortcut(.defaultAction)
-        } message: { _ in
-            Text(settingsCopy.dangerousSQLAlertMessage)
-        }
-        .alert(
             AppCopy.current.text("无法停止查询", "Unable to Stop Query"),
             isPresented: $showsCancellationFailure
         ) {
@@ -219,32 +195,15 @@ struct WorkspaceQueryDocumentView: View {
             document.reportExecutionTargetFailure(error)
             return
         }
-        let execution = PendingDangerousQueryExecution(
-            plan: plan,
-            policy: policy,
-            options: QueryExecutionOptions(
-                statementTimeout: preferences.queryTimeout.duration,
-                maximumResultRows: document.resultRowLimit.maximumRows
-            )
+        let options = QueryExecutionOptions(
+            statementTimeout: preferences.queryTimeout.duration,
+            maximumResultRows: document.resultRowLimit.maximumRows
         )
-        if preferences.confirmsDangerousSQL,
-           plan.requiresDangerousSQLConfirmation
-        {
-            pendingDangerousExecution = execution
-            showsDangerousExecutionConfirmation = true
-            return
-        }
-        startExecution(execution)
-    }
-
-    private func startExecution(
-        _ execution: PendingDangerousQueryExecution
-    ) {
         Task {
             await document.execute(
-                execution.plan,
-                policy: execution.policy,
-                options: execution.options
+                plan,
+                policy: policy,
+                options: options
             )
         }
     }

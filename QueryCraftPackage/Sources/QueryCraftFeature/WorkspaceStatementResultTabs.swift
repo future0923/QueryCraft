@@ -5,6 +5,7 @@ struct WorkspaceStatementResultTabs: View {
 
     let results: [WorkspaceStatementResult]
     @Binding var selection: Int
+    @Binding var section: WorkspaceSQLResultSection
     @State private var viewportWidth: CGFloat = 0
     @State private var contentWidth: CGFloat = 0
 
@@ -21,7 +22,7 @@ struct WorkspaceStatementResultTabs: View {
                 )
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
-                .disabled(selection == 0)
+                .disabled(section != .statement || selection == results.first?.id)
                 .help(
                     AppCopy.current.text(
                         "上一条语句结果",
@@ -33,6 +34,16 @@ struct WorkspaceStatementResultTabs: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 0) {
+                        reportTab(
+                            AppCopy.current.text("消息", "Messages"),
+                            section: .messages
+                        )
+                        .id("messages")
+                        reportTab(
+                            AppCopy.current.text("摘要", "Summary"),
+                            section: .summary
+                        )
+                        .id("summary")
                         ForEach(results) { result in
                             tab(for: result)
                                 .id(result.statement.index)
@@ -51,7 +62,16 @@ struct WorkspaceStatementResultTabs: View {
                     viewportWidth = width
                 }
                 .onChange(of: selection) { _, selection in
-                    proxy.scrollTo(selection, anchor: .center)
+                    if section == .statement {
+                        proxy.scrollTo(selection, anchor: .center)
+                    }
+                }
+                .onChange(of: section) { _, section in
+                    switch section {
+                    case .messages: proxy.scrollTo("messages", anchor: .leading)
+                    case .summary: proxy.scrollTo("summary", anchor: .leading)
+                    case .statement: proxy.scrollTo(selection, anchor: .center)
+                    }
                 }
             }
 
@@ -63,7 +83,7 @@ struct WorkspaceStatementResultTabs: View {
                 )
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
-                .disabled(selection >= results.count - 1)
+                .disabled(section != .statement || selection == results.last?.id)
                 .help(
                     AppCopy.current.text("下一条语句结果", "Next Statement Result")
                 )
@@ -76,8 +96,9 @@ struct WorkspaceStatementResultTabs: View {
     }
 
     private func tab(for result: WorkspaceStatementResult) -> some View {
-        let isSelected = selection == result.statement.index
+        let isSelected = section == .statement && selection == result.statement.index
         return Button {
+            section = .statement
             selection = result.statement.index
         } label: {
             HStack(spacing: 6) {
@@ -86,8 +107,8 @@ struct WorkspaceStatementResultTabs: View {
                     .frame(width: 14)
                 Text(
                     AppCopy.current.text(
-                        "语句 \(result.statement.index + 1)",
-                        "Statement \(result.statement.index + 1)"
+                        "结果 \((results.firstIndex { $0.id == result.id } ?? 0) + 1)",
+                        "Result \((results.firstIndex { $0.id == result.id } ?? 0) + 1)"
                     )
                 )
                     .lineLimit(1)
@@ -113,11 +134,39 @@ struct WorkspaceStatementResultTabs: View {
     }
 
     private func selectPrevious() {
-        selection = max(0, selection - 1)
+        guard let index = results.firstIndex(where: { $0.id == selection }), index > 0
+        else { return }
+        section = .statement
+        selection = results[index - 1].id
     }
 
     private func selectNext() {
-        selection = min(results.count - 1, selection + 1)
+        guard let index = results.firstIndex(where: { $0.id == selection }),
+            index + 1 < results.count else { return }
+        section = .statement
+        selection = results[index + 1].id
+    }
+
+    private func reportTab(
+        _ title: String,
+        section target: WorkspaceSQLResultSection
+    ) -> some View {
+        Button {
+            section = target
+        } label: {
+            Text(title)
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .frame(height: Self.height)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(section == target ? Color.accentColor : .clear)
+                        .frame(height: 2)
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(section == target ? .isSelected : [])
     }
 }
 

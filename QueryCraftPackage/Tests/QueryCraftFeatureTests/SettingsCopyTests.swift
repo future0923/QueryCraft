@@ -43,7 +43,7 @@ struct SettingsCopyTests {
         #expect(
             copy.title(for: QueryResultRowLimit.rows500_000) == "500,000 行"
         )
-        #expect(copy.confirmDangerousSQLDescription.contains("TRUNCATE"))
+        #expect(copy.confirmDangerousSQLDescription.contains("Elasticsearch"))
         #expect(copy.softwareUpdateSection == "软件更新")
         #expect(copy.checkForUpdates == "检查更新...")
         #expect(copy.freeTrial == "30 天免费试用")
@@ -94,7 +94,7 @@ struct SettingsCopyTests {
         #expect(copy.title(for: QueryTimeoutOption.unlimited) == "Unlimited")
         #expect(copy.title(for: QueryResultRowLimit.unlimited) == "No limit")
         #expect(copy.title(for: QueryResultRowLimit.rows5_000) == "5,000 rows")
-        #expect(copy.dangerousSQLAlertTitle == "Run dangerous SQL?")
+        #expect(copy.confirmDangerousSQL == "Confirm dangerous Elasticsearch requests")
         #expect(copy.softwareUpdateSection == "Software Update")
         #expect(copy.checkForUpdates == "Check for Updates...")
         #expect(copy.freeTrial == "30-Day Free Trial")

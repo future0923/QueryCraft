@@ -312,7 +312,7 @@ final class WorkspaceQueryDocumentModel: Identifiable {
             let page = WorkspaceQueryResultPage(
                 columns: result.columns,
                 store: resultStore,
-                rowCount: resultStore.rowCount
+                rowCount: result.rowCount
             )
             self.executionID = nil
             activeConnectionID = nil
@@ -777,7 +777,6 @@ final class WorkspaceQueryDocumentModel: Identifiable {
     ) async throws {
         let store = try await WorkspaceQueryResultStore.makeTemporary()
         activeStatementIndex = statement.index
-        selectedStatementResultIndex = statement.index
         statementStartedAt = .now
         executionState = .running(nil)
         updateStatementResult(at: statement.index, state: .running(nil))
@@ -833,7 +832,7 @@ final class WorkspaceQueryDocumentModel: Identifiable {
         let page = WorkspaceQueryResultPage(
             columns: result.columns,
             store: store,
-            rowCount: store.rowCount
+            rowCount: result.rowCount
         )
         executionState = .running(page)
         updateStatementResult(at: statement.index, state: .completed(page))

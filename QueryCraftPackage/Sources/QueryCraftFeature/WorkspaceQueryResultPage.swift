@@ -4,16 +4,17 @@ struct WorkspaceQueryResultPage: Equatable, Sendable {
     let revision = UUID()
     let columns: [WorkspaceDatabaseDataColumn]
     let store: WorkspaceQueryResultStore
-    var rowCount: Int { store.rowCount }
+    private let commandRowCount: Int
+    var rowCount: Int { columns.isEmpty ? commandRowCount : store.rowCount }
 
     init(
         columns: [WorkspaceDatabaseDataColumn],
         store: WorkspaceQueryResultStore,
         rowCount: Int
     ) {
-        // The store is the source of truth so committed row deletions are
-        // visible through the existing page instance.
-        _ = rowCount
+        // Row results follow the store so committed deletions remain visible.
+        // Commands have no stored rows; retain the driver's affected-row count.
+        commandRowCount = rowCount
         self.columns = columns
         self.store = store
     }

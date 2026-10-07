@@ -34,14 +34,19 @@ struct WorkspaceQueryResultView: View {
     @State private var editErrorMessage = ""
     @State private var showsEditError = false
     @State private var showsDisableSafetyLock = false
+    @State private var resultSection: WorkspaceSQLResultSection = .messages
 
     var body: some View {
         VStack(spacing: 0) {
-            if statementResults.count > 1 {
+            if !statementResults.isEmpty {
                 HStack {
                     WorkspaceStatementResultTabs(
-                        results: statementResults,
-                        selection: $selectedStatementResultIndex
+                        results: statementResults.filter(\.hasRowResult),
+                        selection: $selectedStatementResultIndex,
+                        section: Binding(
+                            get: { displayedSection },
+                            set: { resultSection = $0 }
+                        )
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -53,16 +58,20 @@ struct WorkspaceQueryResultView: View {
 
             WorkspaceGridSearchBar(controller: searchController)
                 .frame(
-                    height: searchController.isPresented
+                    height: searchController.isPresented && displayedSection == .statement
                         ? nil
                         : 0
                 )
-                .opacity(searchController.isPresented ? 1 : 0)
+                .opacity(searchController.isPresented && displayedSection == .statement ? 1 : 0)
                 .clipped()
-                .accessibilityHidden(!searchController.isPresented)
+                .accessibilityHidden(!searchController.isPresented || displayedSection != .statement)
 
             Group {
-                if let page = displayedState.page, !page.columns.isEmpty {
+                if !statementResults.isEmpty && displayedSection == .messages {
+                    WorkspaceSQLExecutionMessagesView(results: statementResults)
+                } else if !statementResults.isEmpty && displayedSection == .summary {
+                    WorkspaceSQLExecutionSummaryView(results: statementResults)
+                } else if let page = displayedState.page, !page.columns.isEmpty {
                     resultTable(for: page)
                 } else {
                     emptyState
@@ -70,16 +79,36 @@ struct WorkspaceQueryResultView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            WorkspaceDatabaseDataProgressBar(isActive: displayedState.isRunning)
+            WorkspaceDatabaseDataProgressBar(isActive: state.isRunning)
+
+            if displayedSection == .statement, let result = displayedResult {
+                HStack(spacing: 8) {
+                    Text("SQL")
+                        .foregroundStyle(.secondary)
+                    WorkspaceExecutedSQLControl(sql: result.statement.sql)
+                        .font(.system(.callout, design: .monospaced))
+                        .accessibilityIdentifier("executedQuerySQL")
+                    Spacer(minLength: 0)
+                }
+                .font(.callout)
+                .padding(.horizontal, 12)
+                .frame(height: 28)
+
+                Divider()
+            }
 
             ZStack {
                 HStack(spacing: 6) {
-                    statusLabel
-                    if displayedState != .idle {
+                    if displayedSection == .statement || statementResults.count <= 1 {
+                        statusLabel
+                    } else {
+                        Text(batchStatusMessage)
+                    }
+                    if state != .idle {
                         Text("·")
                             .accessibilityHidden(true)
                         Text(
-                            "\(displayedElapsedSeconds, format: .number.precision(.fractionLength(2))) s"
+                            "\(displayedSection == .statement ? displayedElapsedSeconds : elapsedSeconds, format: .number.precision(.fractionLength(3))) s"
                         )
                     }
                 }
@@ -88,7 +117,9 @@ struct WorkspaceQueryResultView: View {
 
                 HStack {
                     HStack(spacing: 8) {
-                        if displayedState.page?.rowCount ?? 0 > 0 {
+                        if displayedSection == .statement,
+                            displayedResult?.hasRowResult == true,
+                            displayedState.page?.rowCount ?? 0 > 0 {
                             WorkspaceGridSearchControl(
                                 controller: searchController
                             )
@@ -139,6 +170,11 @@ struct WorkspaceQueryResultView: View {
             \.workspaceGridSearchActions,
             searchCommandActions
         )
+        .onChange(of: state.isRunning, initial: true) { _, isRunning in
+            if isRunning {
+                resultSection = .messages
+            }
+        }
         .onChange(of: displayedState.page?.store.id, initial: true) {
             _, resultID in
             if resultID == nil {
@@ -146,7 +182,12 @@ struct WorkspaceQueryResultView: View {
                 searchController.dismiss()
             }
             updateInspectorContext(
-                WorkspaceQueryResultInspectorContext(page: displayedState.page)
+                WorkspaceQueryResultInspectorContext(page: displayedTablePage)
+            )
+        }
+        .onChange(of: displayedSection) { _, _ in
+            updateInspectorContext(
+                WorkspaceQueryResultInspectorContext(page: displayedTablePage)
             )
         }
         .onChange(of: pendingCellUpdates, initial: true) { _, _ in
@@ -292,7 +333,7 @@ struct WorkspaceQueryResultView: View {
             )
             .monospacedDigit()
         case let .completed(page):
-            Text(AppCopy.current.rowCount(page.rowCount))
+            Text(displayedResult?.rowCountMessage ?? AppCopy.current.rowCount(page.rowCount))
                 .monospacedDigit()
         case let .failed(message, page):
             Label(
@@ -327,15 +368,55 @@ struct WorkspaceQueryResultView: View {
         displayedResult?.elapsedSeconds ?? elapsedSeconds
     }
 
+    private var displayedSection: WorkspaceSQLResultSection {
+        if resultSection == .statement, displayedResult?.hasRowResult != true {
+            return .messages
+        }
+        return resultSection
+    }
+
+    private var displayedTablePage: WorkspaceQueryResultPage? {
+        displayedSection == .statement ? displayedState.page : nil
+    }
+
+    private var batchStatusMessage: String {
+        if state.isRunning {
+            return AppCopy.current.text("正在执行…", "Executing...")
+        }
+        let completed = statementResults.filter {
+            if case .completed = $0.state { true } else { false }
+        }.count
+        let failed = statementResults.filter {
+            if case .failed = $0.state { true } else { false }
+        }.count
+        let skipped = statementResults.filter {
+            if case .skipped = $0.state { true } else { false }
+        }.count
+        if failed == 0, case let .failed(message, _) = state {
+            return message
+        }
+        let stopped = statementResults.filter {
+            if case .stopped = $0.state { true } else { false }
+        }.count
+        return AppCopy.current.text(
+            "成功 \(completed) · 失败 \(failed) · 跳过 \(skipped) · 停止 \(stopped)",
+            "Succeeded \(completed) · Failed \(failed) · Skipped \(skipped) · Stopped \(stopped)"
+        )
+    }
+
     private var exportCommandActions: WorkspaceDataExportCommandActions? {
-        guard displayedState.page?.rowCount ?? 0 > 0 else { return nil }
+        guard displayedSection == .statement,
+            displayedResult?.hasRowResult == true,
+            displayedState.page?.rowCount ?? 0 > 0 else { return nil }
         return WorkspaceDataExportCommandActions(
             export: { exportController.presentOptions() }
         )
     }
 
     private var searchCommandActions: WorkspaceGridSearchCommandActions? {
-        guard displayedState.page?.rowCount ?? 0 > 0 else { return nil }
+        guard displayedSection == .statement,
+            displayedResult?.hasRowResult == true,
+            displayedState.page?.rowCount ?? 0 > 0 else { return nil }
         return WorkspaceGridSearchCommandActions(
             search: searchController.present
         )

@@ -421,28 +421,18 @@ struct SettingsCopy {
 
     var querySafetySection: String { text("安全", "Safety") }
     var confirmDangerousSQL: String {
-        text("执行危险请求前确认", "Confirm dangerous requests")
+        text("执行 Elasticsearch 危险请求前确认", "Confirm dangerous Elasticsearch requests")
     }
     var confirmDangerousSQLDescription: String {
         text(
-            "执行 TRUNCATE 等危险 SQL，以及 Elasticsearch 批量写入、索引删除或管理请求前要求确认。",
-            "Requires confirmation for dangerous SQL such as TRUNCATE and for Elasticsearch bulk writes, index deletions, or administrative requests."
+            "执行 Elasticsearch 批量写入、索引删除或管理请求前要求确认。",
+            "Requires confirmation for Elasticsearch bulk writes, index deletions, or administrative requests."
         )
     }
     var restoreQueryDefaults: String {
         text("恢复查询默认值", "Restore Query Defaults")
     }
 
-    var dangerousSQLAlertTitle: String {
-        text("确认执行危险 SQL？", "Run dangerous SQL?")
-    }
-    var dangerousSQLAlertMessage: String {
-        text(
-            "此查询包含 UPDATE、DELETE、DROP 或 TRUNCATE，执行后可能修改或删除数据。",
-            "This query contains UPDATE, DELETE, DROP, or TRUNCATE and may modify or delete data."
-        )
-    }
-    var executeDangerousSQL: String { text("执行", "Run") }
     var cancel: String { text("取消", "Cancel") }
 
     var tableDataSection: String { text("表数据", "Table Data") }

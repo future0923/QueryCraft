@@ -366,6 +366,85 @@ struct WorkspaceQueryDocumentTests {
         await document.close()
     }
 
+    @Test(arguments: [0, 35])
+    func commandResultsPreserveAffectedRowsWithoutCreatingTableRows(
+        affectedRows: Int
+    ) async throws {
+        let session = FailingBatchQuerySession(
+            failingStatementIndex: .max,
+            commandAffectedRows: affectedRows
+        )
+        let document = WorkspaceQueryDocumentModel(
+            title: "Query 1",
+            configuration: makeConfiguration(database: nil),
+            sessionFactory: SingleQuerySessionFactory(session: session)
+        )
+        let sql = "UPDATE users SET active = 0 WHERE id = -1;"
+        await document.execute(
+            try await executionPlan(for: sql), policy: .writesAllowed
+        )
+
+        let result = try #require(document.statementResults.first)
+        let page = try #require(result.state.page)
+        #expect(result.statement.sql == sql)
+        #expect(result.statusMessage == "OK")
+        #expect(result.hasRowResult == false)
+        #expect(result.rowCountMessage == AppCopy.current.text(
+            "影响 \(affectedRows) 行", "Affected \(affectedRows) rows"
+        ))
+        #expect(page.rowCount == affectedRows)
+        #expect(page.store.rowCount == 0)
+        #expect(page.row(at: 0) == nil)
+        #expect(result.elapsedSeconds >= 0)
+        await document.close()
+    }
+
+    @Test
+    func mixedBatchKeepsReturnedAndAffectedRowCountsSeparate() async throws {
+        let session = FailingBatchQuerySession(
+            failingStatementIndex: .max, commandAffectedRows: 35
+        )
+        let document = WorkspaceQueryDocumentModel(
+            title: "Query 1",
+            configuration: makeConfiguration(database: nil),
+            sessionFactory: SingleQuerySessionFactory(session: session)
+        )
+        await document.execute(
+            try await executionPlan(
+                for: "SELECT 1;\nUPDATE users SET active = 0;\nSELECT 2;"
+            ),
+            policy: .writesAllowed
+        )
+
+        #expect(document.statementResults.count == 3)
+        #expect(document.statementResults.map(\.hasRowResult) == [true, false, true])
+        #expect(document.statementResults.map { $0.state.page?.rowCount } == [1, 35, 1])
+        #expect(document.statementResults.map { $0.state.page?.store.rowCount } == [1, 0, 1])
+        #expect(document.statementResults.allSatisfy { $0.statusMessage == "OK" })
+        await document.close()
+    }
+
+    @Test
+    func emptySelectRetainsItsTableColumnsAndReportsZeroReturnedRows() async throws {
+        let session = FailingBatchQuerySession(
+            failingStatementIndex: .max, resultBatches: []
+        )
+        let document = WorkspaceQueryDocumentModel(
+            title: "Query 1",
+            configuration: makeConfiguration(database: nil),
+            sessionFactory: SingleQuerySessionFactory(session: session)
+        )
+        await document.execute(try await executionPlan(for: "SELECT 1 WHERE false;"))
+
+        let result = try #require(document.statementResults.first)
+        #expect(result.hasRowResult)
+        #expect(result.state.page?.rowCount == 0)
+        #expect(result.rowCountMessage == AppCopy.current.text(
+            "返回 0 行", "Returned 0 rows"
+        ))
+        await document.close()
+    }
+
     @Test
     func safetyLockDefaultsOnAndResetsWithANewWorkspaceLifetime() {
         let safetyLock = WorkspaceSafetyLock()
@@ -1118,6 +1197,7 @@ private struct SingleQuerySessionFactory: WorkspaceSessionFactory {
 private actor FailingBatchQuerySession: WorkspaceSession {
     private let failingStatementIndex: Int
     private let resultBatches: [[WorkspaceDatabaseDataRow]]?
+    private let commandAffectedRows: Int?
     private var isConnected = false
     private var statements: [String] = []
     private var reads: [String] = []
@@ -1127,10 +1207,12 @@ private actor FailingBatchQuerySession: WorkspaceSession {
 
     init(
         failingStatementIndex: Int,
-        resultBatches: [[WorkspaceDatabaseDataRow]]? = nil
+        resultBatches: [[WorkspaceDatabaseDataRow]]? = nil,
+        commandAffectedRows: Int? = nil
     ) {
         self.failingStatementIndex = failingStatementIndex
         self.resultBatches = resultBatches
+        self.commandAffectedRows = commandAffectedRows
     }
 
     func connect() async throws {
@@ -1261,6 +1343,11 @@ private actor FailingBatchQuerySession: WorkspaceSession {
         statements.append(sql)
         if statementIndex == failingStatementIndex {
             throw WorkspaceSessionError.queryUnavailable
+        }
+        if let commandAffectedRows, sql.uppercased().hasPrefix("UPDATE") {
+            return WorkspaceQueryExecutionResult(
+                columns: [], rowCount: commandAffectedRows
+            )
         }
         let columns = [WorkspaceDatabaseDataColumn(id: 0, name: "value")]
         if let resultBatches {
