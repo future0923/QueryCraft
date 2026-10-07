@@ -12,6 +12,7 @@ struct WorkspaceDatabaseDataPage: Equatable, Sendable {
     let hasNextPage: Bool
     let sort: WorkspaceDatabaseDataSort
     let filter: WorkspaceDatabaseDataFilter
+    var live: WorkspaceKafkaLivePageInfo?
 
     init(
         columns: [WorkspaceDatabaseDataColumn],
@@ -78,6 +79,7 @@ struct WorkspaceDatabaseDataPage: Equatable, Sendable {
     ) -> Bool {
         guard
             lhs.columns == rhs.columns,
+            lhs.live == rhs.live,
             lhs.rowCount == rhs.rowCount,
             lhs.offset == rhs.offset,
             lhs.limit == rhs.limit,

@@ -159,6 +159,12 @@ public final class ApplicationPreferences {
         }
     }
 
+    var formatsTimestamps: Bool {
+        didSet {
+            defaults.set(formatsTimestamps, forKey: Key.formatsTimestamps)
+        }
+    }
+
     var tableNullDisplayStyle: TableNullDisplayStyle {
         didSet {
             defaults.set(
@@ -319,6 +325,7 @@ public final class ApplicationPreferences {
             userDefaults.object(
                 forKey: Key.usesAlternatingTableRows
             ) as? Bool ?? true
+        formatsTimestamps = userDefaults.object(forKey: Key.formatsTimestamps) as? Bool ?? true
         tableNullDisplayStyle = Self.value(
             TableNullDisplayStyle.self,
             forKey: Key.tableNullDisplayStyle,
@@ -428,6 +435,7 @@ public final class ApplicationPreferences {
     func resetData() {
         tableDataPageSize = 200
         usesAlternatingTableRows = true
+        formatsTimestamps = true
         tableNullDisplayStyle = .uppercase
         tableEmptyStringDisplayStyle = .uppercase
         copyIncludesColumnNames = false
@@ -494,6 +502,7 @@ public final class ApplicationPreferences {
             "preferences.data.usesAlternatingRows"
         static let tableNullDisplayStyle =
             "preferences.data.nullDisplayStyle"
+        static let formatsTimestamps = "preferences.data.formatsTimestamps"
         static let tableEmptyStringDisplayStyle =
             "preferences.data.emptyStringDisplayStyle"
         static let copyIncludesColumnNames =

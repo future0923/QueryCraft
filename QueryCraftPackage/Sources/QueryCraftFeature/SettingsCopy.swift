@@ -456,6 +456,15 @@ struct SettingsCopy {
             "使用深浅交替的背景，便于横向查看宽表。", "Use alternating backgrounds to make wide rows easier to follow."
         )
     }
+    var formatsTimestamps: String {
+        text("时间戳显示为日期时间", "Display timestamps as date and time")
+    }
+    var formatsTimestampsDescription: String {
+        text(
+            "在 SQL、Kafka、Elasticsearch 等表格中按本地时区显示年月日时分秒。关闭后显示原始值；编辑、复制和导出始终保留原始值。",
+            "Show dates and times in your local time zone in SQL, Kafka, Elasticsearch, and other grids. Turn off to show raw values. Editing, copying, and exporting always preserve raw values."
+        )
+    }
     var displayNullAs: String { text("NULL 显示方式", "Display NULL as") }
     var displayNullAsDescription: String {
         text(

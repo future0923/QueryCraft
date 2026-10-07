@@ -36,6 +36,7 @@ struct ApplicationPreferencesTests {
         #expect(preferences.confirmsDangerousSQL)
         #expect(preferences.tableDataPageSize == 200)
         #expect(preferences.usesAlternatingTableRows)
+        #expect(preferences.formatsTimestamps)
         #expect(preferences.tableNullDisplayStyle == .uppercase)
         #expect(preferences.tableEmptyStringDisplayStyle == .uppercase)
         #expect(!preferences.copyIncludesColumnNames)
@@ -68,6 +69,7 @@ struct ApplicationPreferencesTests {
         preferences.confirmsDangerousSQL = false
         preferences.tableDataPageSize = 500
         preferences.usesAlternatingTableRows = false
+        preferences.formatsTimestamps = false
         preferences.tableNullDisplayStyle = .empty
         preferences.tableEmptyStringDisplayStyle = .lowercase
         preferences.copyIncludesColumnNames = true
@@ -93,6 +95,7 @@ struct ApplicationPreferencesTests {
         #expect(!restored.confirmsDangerousSQL)
         #expect(restored.tableDataPageSize == 500)
         #expect(!restored.usesAlternatingTableRows)
+        #expect(!restored.formatsTimestamps)
         #expect(restored.tableNullDisplayStyle == .empty)
         #expect(restored.tableEmptyStringDisplayStyle == .lowercase)
         #expect(restored.copyIncludesColumnNames)
@@ -259,9 +262,12 @@ struct ApplicationPreferencesTests {
         let preferences = ApplicationPreferences(userDefaults: defaults)
         preferences.automaticallyResolvesVisibleRedisKeyTypes = false
         preferences.redisVisibleKeyTypeBatchSize = 500
+        preferences.formatsTimestamps = false
 
         preferences.resetData()
 
+        #expect(preferences.formatsTimestamps)
+        #expect(ApplicationPreferences(userDefaults: defaults).formatsTimestamps)
         #expect(preferences.automaticallyResolvesVisibleRedisKeyTypes)
         #expect(preferences.redisVisibleKeyTypeBatchSize == 50)
 

@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct WorkspaceContentTabStrip: View {
     @Bindable var tabsModel: WorkspaceContentTabsModel
+    let items: [WorkspaceContentTabItem]
     let selectContent: @MainActor (WorkspaceContentTabID) -> Void
     let performAction: @MainActor (WorkspaceContentTabAction) -> Void
 
@@ -21,7 +22,7 @@ struct WorkspaceContentTabStrip: View {
         .onChange(of: controlActiveState) { _, state in
             if state == .inactive { hoveredID = nil }
         }
-        .onChange(of: tabsModel.contentItems.map(\.id)) { _, ids in
+        .onChange(of: items.map(\.id)) { _, ids in
             if let hoveredID, !ids.contains(hoveredID) { self.hoveredID = nil }
             if let draggingID, !ids.contains(draggingID) { self.draggingID = nil }
         }
@@ -46,14 +47,14 @@ struct WorkspaceContentTabStrip: View {
                     if #available(macOS 26.0, *) {
                         HStack(spacing: 0) {
                             ForEach(
-                                Array(tabsModel.contentItems.enumerated()),
+                                Array(items.enumerated()),
                                 id: \.element.id
                             ) { index, item in
                                 tab(item, at: index)
                                     .frame(
                                         width: WorkspaceContentTabStripLayout.tabWidth(
                                             forTrack: proxy.size.width,
-                                            count: tabsModel.contentItems.count
+                                            count: items.count
                                         )
                                     )
                                     .id(item.id)
@@ -64,7 +65,7 @@ struct WorkspaceContentTabStrip: View {
                             availableWidth: proxy.size.width
                         ) {
                             ForEach(
-                                Array(tabsModel.contentItems.enumerated()),
+                                Array(items.enumerated()),
                                 id: \.element.id
                             ) { index, item in
                                 tab(item, at: index)
@@ -107,13 +108,13 @@ struct WorkspaceContentTabStrip: View {
             isWindowActive: controlActiveState != .inactive,
             showsLeadingSeparator: WorkspaceContentTabStripLayout.showsSeparator(
                 before: index,
-                ids: tabsModel.contentItems.map(\.id),
+                ids: items.map(\.id),
                 selectedID: tabsModel.selectedContentID,
                 hoveredID: hoveredID,
                 isReordering: draggingID != nil
             ),
             position: index + 1,
-            count: tabsModel.contentItems.count,
+            count: items.count,
             select: { selectContent(item.id) },
             close: { performAction(.close(item.id)) },
             closeOthers: { performAction(.closeOthers(item.id)) },

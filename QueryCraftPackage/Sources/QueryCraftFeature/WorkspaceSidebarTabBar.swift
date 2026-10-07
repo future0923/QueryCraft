@@ -2,12 +2,13 @@ import SwiftUI
 
 struct WorkspaceSidebarTabBar: View {
     @Binding var selection: WorkspaceSidebarMode
+    var showsQueries = true
 
     var body: some View {
         Group {
             if #available(macOS 26.0, *) {
                 HStack(spacing: 0) {
-                    ForEach(WorkspaceSidebarMode.allCases) { mode in
+                    ForEach(visibleModes) { mode in
                         Button {
                             selection = mode
                         } label: {
@@ -44,11 +45,20 @@ struct WorkspaceSidebarTabBar: View {
                 }
                 .frame(height: 32)
             } else {
-                WorkspaceLegacySidebarTabPicker(selection: $selection)
+                WorkspaceLegacySidebarTabPicker(
+                    selection: $selection,
+                    showsQueries: showsQueries
+                )
             }
         }
         .accessibilityLabel(
             AppCopy.current.text("侧边栏内容", "Sidebar Content")
         )
+    }
+
+    private var visibleModes: [WorkspaceSidebarMode] {
+        showsQueries
+            ? WorkspaceSidebarMode.allCases
+            : [.items]
     }
 }

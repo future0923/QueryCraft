@@ -163,6 +163,11 @@ actor SQLiteApplicationDatabase {
                     )
             }
         }
+        migrator.registerMigration("addKafkaSASLMechanism") { database in
+            try database.alter(table: ConnectionProfile.databaseTableName) { table in
+                table.add(column: "kafkaSASLMechanism", .text)
+            }
+        }
         try migrator.migrate(databaseQueue)
 
         cachedDatabaseQueue = databaseQueue
@@ -376,8 +381,7 @@ actor SQLiteApplicationDatabase {
     }
 
     private static var defaultDatabaseURL: URL {
-        URL.applicationSupportDirectory
-            .appending(path: "QueryCraft", directoryHint: .isDirectory)
+        QueryCraftStorageLocation.applicationSupportDirectory
             .appending(path: "QueryCraft.sqlite")
     }
 }

@@ -15,6 +15,7 @@ struct WorkspaceDatabaseObjectDetailBottomBar: View {
     let searchController: WorkspaceGridSearchController
     let isDataFilterPresented: Bool
     let hasActiveDataFilter: Bool
+    let isDataFilterVisible: Bool
     let isDataFilterDisabled: Bool
     let toggleDataFilter: () -> Void
     let isAddRowVisible: Bool
@@ -26,6 +27,9 @@ struct WorkspaceDatabaseObjectDetailBottomBar: View {
     let isAddIndexEnabled: Bool
     let addIndex: () -> Void
     var mappingActions: WorkspaceElasticsearchMappingActionsView? = nil
+    var showsSchemaAddControls = true
+    var showKafkaConsumerGroups: (() -> Void)? = nil
+    var sendKafkaMessage: (() -> Void)? = nil
 
     @State private var showsRangeEditor = false
     @State private var draftLimit = WorkspaceDatabaseDataPage.defaultLimit
@@ -50,7 +54,9 @@ struct WorkspaceDatabaseObjectDetailBottomBar: View {
                 )
                 .fixedSize()
 
-                contextualAddControl
+                if selectedTab == .data || showsSchemaAddControls {
+                    contextualAddControl
+                }
 
                 Spacer()
 
@@ -58,14 +64,32 @@ struct WorkspaceDatabaseObjectDetailBottomBar: View {
                     mappingActions
                 }
 
+                if selectedTab == .data, let sendKafkaMessage {
+                    Button(AppCopy.current.text("发送消息", "Send Message"), systemImage: "paperplane", action: sendKafkaMessage)
+                        .buttonStyle(.bordered).controlSize(.regular)
+                        .accessibilityIdentifier("kafkaProduceButton")
+                }
+                if let showKafkaConsumerGroups {
+                    Button(
+                        AppCopy.current.text("消费组", "Consumer Groups"),
+                        systemImage: "person.3",
+                        action: showKafkaConsumerGroups
+                    )
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .accessibilityIdentifier("kafkaConsumerGroupsButton")
+                }
+
                 if selectedTab == .data {
                     HStack(spacing: 8) {
-                        WorkspaceDatabaseDataFilterControl(
-                            isPresented: isDataFilterPresented,
-                            hasActiveFilter: hasActiveDataFilter,
-                            isDisabled: isDataFilterDisabled,
-                            toggle: toggleDataFilter
-                        )
+                        if isDataFilterVisible {
+                            WorkspaceDatabaseDataFilterControl(
+                                isPresented: isDataFilterPresented,
+                                hasActiveFilter: hasActiveDataFilter,
+                                isDisabled: isDataFilterDisabled,
+                                toggle: toggleDataFilter
+                            )
+                        }
 
                         if let page, page.rowCount > 0 {
                             HStack(spacing: 8) {
@@ -99,6 +123,7 @@ struct WorkspaceDatabaseObjectDetailBottomBar: View {
                                 .labelStyle(.iconOnly)
                                 .help(AppCopy.current.text("页面范围", "Page Range"))
                                 .accessibilityIdentifier("databaseDataRangeButton")
+                                .disabled(page.live != nil)
                                 .popover(
                                     isPresented: $showsRangeEditor,
                                     arrowEdge: .bottom

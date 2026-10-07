@@ -6,6 +6,7 @@ extension DatabaseType {
         case .doris: "Doris"
         case .redis: "Redis"
         case .elasticsearch: "Elasticsearch"
+        case .kafka: "Kafka"
         }
     }
 
@@ -16,6 +17,7 @@ extension DatabaseType {
         case .doris: 9_030
         case .redis: 6_379
         case .elasticsearch: 9_200
+        case .kafka: 9_092
         }
     }
 
@@ -26,6 +28,7 @@ extension DatabaseType {
         case .doris: "root"
         case .redis: ""
         case .elasticsearch: "elastic"
+        case .kafka: ""
         }
     }
 
@@ -40,6 +43,7 @@ extension DatabaseType {
         case .doris: .apacheDoris
         case .redis: .redis
         case .elasticsearch: .elasticsearch
+        case .kafka: .kafka
         }
     }
 
@@ -70,6 +74,11 @@ extension DatabaseType {
                 "分布式搜索与分析引擎",
                 "Distributed search and analytics engine"
             )
+        case .kafka:
+            AppCopy.current.text(
+                "分布式事件流平台",
+                "Distributed event streaming platform"
+            )
         }
     }
 }
@@ -83,6 +92,7 @@ extension DatabaseProduct {
         case .selectDB: "SelectDB"
         case .redis: "Redis"
         case .elasticsearch: "Elasticsearch"
+        case .kafka: "Kafka"
         }
     }
 
@@ -101,6 +111,7 @@ extension DatabaseProduct {
         case .selectDB: .selectDB
         case .redis: .redis
         case .elasticsearch: .elasticsearch
+        case .kafka: .kafka
         }
     }
 
@@ -135,6 +146,11 @@ extension DatabaseProduct {
             AppCopy.current.text(
                 "分布式搜索与分析引擎",
                 "Distributed search and analytics engine"
+            )
+        case .kafka:
+            AppCopy.current.text(
+                "分布式事件流平台",
+                "Distributed event streaming platform"
             )
         }
     }

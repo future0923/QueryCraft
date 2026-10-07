@@ -9,7 +9,9 @@ struct WorkspaceReadOnlyTextView: View {
     let accessibilityLabel: String
     var showsBorder = true
     var presentation: Presentation = .plain
+    var usesEditorFont = false
 
+    @State private var preferences = ApplicationPreferences.shared
     @State private var formattedText: String?
     @State private var formattedSource: String?
     @State private var worker = WorkspaceJSONPresentationWorker()
@@ -32,7 +34,8 @@ struct WorkspaceReadOnlyTextView: View {
                     text: text,
                     usesMonospacedFont: usesMonospacedFont,
                     accessibilityLabel: accessibilityLabel,
-                    showsBorder: showsBorder
+                    showsBorder: showsBorder,
+                    font: usesEditorFont ? preferences.editorFont() : nil
                 )
             }
         }
@@ -60,6 +63,7 @@ private struct WorkspacePlainReadOnlyTextView: NSViewRepresentable {
     let usesMonospacedFont: Bool
     let accessibilityLabel: String
     var showsBorder = true
+    var font: NSFont?
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -99,13 +103,13 @@ private struct WorkspacePlainReadOnlyTextView: NSViewRepresentable {
         if textView.string != text {
             textView.string = text
         }
-        textView.font =
+        textView.font = font ?? (
             usesMonospacedFont
             ? .monospacedSystemFont(
                 ofSize: NSFont.systemFontSize(for: .small),
                 weight: .regular
             )
-            : .systemFont(ofSize: NSFont.systemFontSize(for: .small))
+            : .systemFont(ofSize: NSFont.systemFontSize(for: .small)))
         textView.setAccessibilityLabel(accessibilityLabel)
     }
 }

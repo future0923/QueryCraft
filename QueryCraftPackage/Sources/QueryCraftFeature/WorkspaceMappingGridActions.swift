@@ -7,6 +7,11 @@ struct WorkspaceMappingGridActions {
     var cellOptions: @MainActor (Int, Int) -> [NSMenuItem] = { _, _ in [] }
     var cellControls: @MainActor (Int) -> [Int: WorkspaceGridInlineControl] = { _ in [:] }
     var toggleIndexed: @MainActor (Int) -> Void = { _ in }
+    var compactColumns: Set<Int> = [2, 3, 4]
+    var rowToolTip: String = AppCopy.current.text(
+        "已索引：半选表示服务器默认，勾选表示开启，空框表示关闭；— 表示不适用。新增字段点击可切换，右侧检查器也可选择服务器默认。可搜索、可聚合由服务器提供，只读。",
+        "Indexed: mixed means Server Default, checked means enabled, unchecked means disabled; — means not applicable. Click to cycle for new fields, or choose Server Default in the inspector. Searchable and Aggregatable are read-only server capabilities."
+    )
 
     @MainActor static func controls(row: WorkspaceMappingEditorRow, values: WorkspaceDatabaseDataRow?,
                                     canEdit: (Int) -> Bool) -> [Int: WorkspaceGridInlineControl] {

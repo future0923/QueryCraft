@@ -11,6 +11,7 @@ struct ConnectionProfile: Codable, Equatable, Identifiable, Sendable {
     let port: Int
     let username: String
     let authenticationMethod: DatabaseConnectionAuthenticationMethod
+    let kafkaSASLMechanism: KafkaSASLMechanism?
     let defaultDatabase: String?
     let tlsMode: ConnectionTLSMode
     let storesCredential: Bool
@@ -27,6 +28,7 @@ struct ConnectionProfile: Codable, Equatable, Identifiable, Sendable {
         port: Int,
         username: String,
         authenticationMethod: DatabaseConnectionAuthenticationMethod = .usernamePassword,
+        kafkaSASLMechanism: KafkaSASLMechanism? = nil,
         defaultDatabase: String?,
         tlsMode: ConnectionTLSMode,
         storesCredential: Bool,
@@ -44,6 +46,7 @@ struct ConnectionProfile: Codable, Equatable, Identifiable, Sendable {
         self.port = port
         self.username = username
         self.authenticationMethod = authenticationMethod
+        self.kafkaSASLMechanism = kafkaSASLMechanism
         self.defaultDatabase = defaultDatabase
         self.tlsMode = tlsMode
         self.storesCredential = storesCredential

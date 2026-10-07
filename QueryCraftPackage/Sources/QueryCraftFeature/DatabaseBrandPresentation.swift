@@ -47,4 +47,11 @@ struct DatabaseBrandPresentation: Equatable, Sendable {
         darkModeBrightness: 0.06,
         contrast: 1.04
     )
+
+    static let kafka = DatabaseBrandPresentation(
+        assetName: "DatabaseBrandKafka",
+        opticalScale: 0.92,
+        darkModeBrightness: 0.04,
+        contrast: 1.04
+    )
 }

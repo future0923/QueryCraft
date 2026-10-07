@@ -65,7 +65,7 @@ more **Always Allow** authorization when first used by the new identity.
 ## Database drivers
 
 Released builds download architecture-specific database drivers from the
-public QueryCraft catalog. To build all five drivers for the current Mac and
+public QueryCraft catalog. To build all six drivers for the current Mac and
 serve them locally:
 
 ```sh
@@ -80,9 +80,45 @@ QUERYCRAFT_DRIVER_CATALOG_BASE_URL=http://127.0.0.1:8788/ \
   .build/DerivedData/Build/Products/Debug/QueryCraft.app/Contents/MacOS/QueryCraft
 ```
 
-The helper builds and packages MySQL, PostgreSQL, Doris, Redis, and
-Elasticsearch drivers. Set `DRIVER_ARCH`, `DERIVED_DATA`, `OUTPUT_ROOT`, or
+## Release and development isolation
+
+The released app uses the bundle identifier `io.github.future0923.QueryCraft`
+and the historical `~/Library/Application Support/QueryCraft` directory. The
+local development app must use the separate bundle identifier
+`io.github.future0923.QueryCraft.Dev`; the app stores its database, driver
+bundles, and local license state under
+`~/Library/Application Support/QueryCraftDev`.
+
+Keep both identifiers and storage roots separate when packaging or launching
+the two apps at the same time. Reusing the release storage directory can make
+the development build load the release driver's state, share SQLite files, or
+leave a connection test looking permanently busy in the other instance.
+
+The helper builds and packages MySQL, PostgreSQL, Doris, Redis, Elasticsearch,
+and Kafka drivers. Set `DRIVER_ARCH`, `DERIVED_DATA`, `OUTPUT_ROOT`, or
 `XCODEBUILDMCP_BIN` to override its bounded defaults.
+
+Kafka packaging must include every non-system `librdkafka` dependency, including
+Homebrew's `libzstd.1.dylib`. A driver that passes code-signing checks can still
+be rejected by `Bundle.load()` when one of these dylibs is missing; validate the
+bundle load before installing it into an app's driver directory.
+
+Kafka tests compile source objects but do not necessarily rebuild the dynamic
+`QueryCraftKafkaDriver.framework`. Before packaging Kafka, explicitly build the
+`QueryCraftKafkaDriver` scheme using the same configuration and DerivedData path
+as the app. The packaging script rejects frameworks missing the current Kafka
+capabilities. Also verify the packaged session, not just its principal class:
+
+```sh
+bash scripts/verify-kafka-driver.sh \
+  .build/driver-catalog/Kafka-$(uname -m).querycraftdriver
+```
+
+When staging `/Applications/QueryCraftDev.app`, remove absolute build-directory
+runpaths from its executable and embedded frameworks before signing. Verify with
+`lsof -p <dev-app-pid>` that the process loads its bundled `QueryCraftFeature`
+framework, not a mutable copy in DerivedData. Install only into the Dev app and
+its `QueryCraftDev/DriverAPI-4/Drivers` directory.
 
 The prebuilt MariaDB Connector/C, PostgreSQL libpq, and OpenSSL static libraries
 are reproducible from checksummed upstream sources. See
@@ -109,3 +145,24 @@ Run tests through XcodeBuildMCP and select only the suites relevant to a
 change. Several AppKit editor and window suites own process-global state and
 must be run in isolation; their constraints are documented alongside the test
 sources.
+
+Kafka regression tests can use an ephemeral localhost broker implemented by
+librdkafka's mock cluster API (requires `librdkafka`, `pkg-config`, and XcodeBuildMCP):
+
+```sh
+bash scripts/test-kafka-local.sh
+```
+
+The runner creates two temporary topics, seeds both partitions with messages,
+adds broker latency, and tears down the server after testing. It does not connect
+to saved connections. This covers native cold reads, empty topics, partition and
+offset selection, latest offsets, and the timestamp lookup API. The mock broker
+does not implement realistic timestamp indexing, so exact timestamp matching
+still requires verification against a real Kafka broker. Authentication and TLS
+also require a separate integration environment.
+
+The mock broker does not implement IncrementalAlterConfigs. Configuration tests
+cover native unsupported-API errors, session conflict checks, safety-lock checks,
+incremental request validation, and readback handling using fixtures. Successful
+broker-side configuration changes require an isolated Kafka 2.3+ integration
+environment; do not use saved user connections for write tests.

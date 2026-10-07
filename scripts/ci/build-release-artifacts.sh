@@ -9,8 +9,8 @@ Optional environment:
   QUERYCRAFT_BUILD_CLIENT           Build application release artifacts (default: true)
   QUERYCRAFT_BUILD_UNIVERSAL_UPDATE Build the universal Sparkle ZIP (default: false)
   QUERYCRAFT_BUILD_DRIVERS          Build external driver artifacts (default: true)
-  QUERYCRAFT_DRIVER_TARGET          all, mysql, postgresql, doris, redis, or
-                                    elasticsearch (default: all)
+  QUERYCRAFT_DRIVER_TARGET          all, mysql, postgresql, doris, redis,
+                                    elasticsearch, or kafka (default: all)
   QUERYCRAFT_UPDATE_BASE_URL        Default: https://querycraft.debug-tools.cc
   QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL
                                     Default: <update-base-url>/drivers
@@ -79,7 +79,8 @@ if [[ "$driver_target" != "all" && \
       "$driver_target" != "postgresql" && \
       "$driver_target" != "doris" && \
       "$driver_target" != "redis" && \
-      "$driver_target" != "elasticsearch" ]]; then
+      "$driver_target" != "elasticsearch" && \
+      "$driver_target" != "kafka" ]]; then
     echo "Unsupported QUERYCRAFT_DRIVER_TARGET: $driver_target" >&2
     exit 65
 fi
@@ -230,7 +231,7 @@ create_dmg() {
 selected_driver_targets=()
 if [[ "$build_drivers" == "true" ]]; then
     if [[ "$driver_target" == "all" ]]; then
-        selected_driver_targets=(mysql postgresql doris redis elasticsearch)
+        selected_driver_targets=(mysql postgresql doris redis elasticsearch kafka)
     else
         selected_driver_targets=("$driver_target")
     fi
@@ -249,6 +250,7 @@ if [[ "$build_drivers" == "true" ]]; then
             doris) driver_scheme=QueryCraftDorisDriver ;;
             redis) driver_scheme=QueryCraftRedisDriver ;;
             elasticsearch) driver_scheme=QueryCraftElasticsearchDriver ;;
+            kafka) driver_scheme=QueryCraftKafkaDriver ;;
         esac
         echo "Building $selected_driver driver for $architecture."
         build_scheme "$driver_scheme" "$architecture_derived_data" "$architecture"
@@ -281,6 +283,7 @@ if [[ "$build_drivers" == "true" ]]; then
             doris) package_script=package-doris-driver.sh ;;
             redis) package_script=package-redis-driver.sh ;;
             elasticsearch) package_script=package-elasticsearch-driver.sh ;;
+            kafka) package_script=package-kafka-driver.sh ;;
         esac
         CONFIGURATION=Release \
         DRIVER_ARCH="$architecture" \

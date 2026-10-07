@@ -47,6 +47,7 @@ struct WorkspaceDatabaseObjectDetailTabHost: NSViewRepresentable {
     let deleteRows: (@MainActor (IndexSet) -> Void)?
     let pasteRows: WorkspaceGridPasteRowsAction?
     let selectRowsForActions: @MainActor (IndexSet) -> Void
+    var kafkaCopyAction: WorkspaceKafkaMessageCopyAction? = nil
     let canEditSchema: Bool
     let schemaEditingDescriptor: WorkspaceDatabaseSchemaEditingDescriptor
     let schemaEditor: WorkspaceDatabaseSchemaEditorState
@@ -135,6 +136,7 @@ struct WorkspaceDatabaseObjectDetailTabHost: NSViewRepresentable {
             deleteRows: deleteRows,
             pasteRows: pasteRows,
             selectRowsForActions: selectRowsForActions,
+            kafkaCopyAction: kafkaCopyAction,
             canEditSchema: canEditSchema,
             schemaEditingDescriptor: schemaEditingDescriptor,
             schemaEditor: schemaEditor,

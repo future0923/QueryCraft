@@ -6,6 +6,7 @@ public enum DatabaseType: String, CaseIterable, Codable, Identifiable, Sendable 
     case doris
     case redis
     case elasticsearch
+    case kafka
 
     public var id: String { rawValue }
 }

@@ -42,6 +42,7 @@ struct WorkspaceDatabaseDataView: Equatable, View {
     let deleteRows: (@MainActor (IndexSet) -> Void)?
     let pasteRows: WorkspaceGridPasteRowsAction?
     let selectRowsForActions: @MainActor (IndexSet) -> Void
+    var kafkaCopyAction: WorkspaceKafkaMessageCopyAction? = nil
     @State private var preferences = ApplicationPreferences.shared
 
     nonisolated static func == (
@@ -56,6 +57,7 @@ struct WorkspaceDatabaseDataView: Equatable, View {
             && lhs.pendingDeleteRowIndexes == rhs.pendingDeleteRowIndexes
             && lhs.selectedDataRowIndexes == rhs.selectedDataRowIndexes
             && lhs.rowActionKind == rhs.rowActionKind
+            && lhs.kafkaCopyAction?.topic == rhs.kafkaCopyAction?.topic
             && statesRenderEqually(lhs.state, rhs.state)
     }
 
@@ -177,6 +179,7 @@ struct WorkspaceDatabaseDataView: Equatable, View {
                 preferences.tableEmptyStringDisplayStyle.displayText,
             copyIncludesColumnNames:
                 preferences.copyIncludesColumnNames,
+            formatsTimestamps: preferences.formatsTimestamps,
             cellFont: preferences.dataGridFont(),
             exportController: exportController,
             searchController: searchController,
@@ -199,7 +202,8 @@ struct WorkspaceDatabaseDataView: Equatable, View {
             duplicateRow: duplicateRow,
             deleteRows: deleteRows,
             pasteRows: pasteRows,
-            selectRowsForActions: selectRowsForActions
+            selectRowsForActions: selectRowsForActions,
+            kafkaCopyAction: kafkaCopyAction
         )
     }
 

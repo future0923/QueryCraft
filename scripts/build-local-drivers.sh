@@ -26,7 +26,8 @@ for scheme in \
     QueryCraftPostgreSQLDriver \
     QueryCraftDorisDriver \
     QueryCraftRedisDriver \
-    QueryCraftElasticsearchDriver
+    QueryCraftElasticsearchDriver \
+    QueryCraftKafkaDriver
 do
     "$xcodebuildmcp_bin" macos build \
         --workspace-path "$workspace" \
@@ -46,7 +47,8 @@ for package_script in \
     package-postgresql-driver.sh \
     package-doris-driver.sh \
     package-redis-driver.sh \
-    package-elasticsearch-driver.sh
+    package-elasticsearch-driver.sh \
+    package-kafka-driver.sh
 do
     CONFIGURATION="$configuration" \
     DRIVER_ARCH="$driver_arch" \
@@ -59,8 +61,8 @@ done
 
 archive_count="$(find "$output_root" -maxdepth 1 -type f -name "*-driver-*-$driver_arch-*.zip" | wc -l | tr -d ' ')"
 manifest_count="$(find "$output_root" -maxdepth 1 -type f -name "*-$driver_arch.json" | wc -l | tr -d ' ')"
-if [[ "$archive_count" != "5" || "$manifest_count" != "5" ]]; then
-    echo "Expected five driver archives and manifests for $driver_arch." >&2
+if [[ "$archive_count" != "6" || "$manifest_count" != "6" ]]; then
+    echo "Expected six driver archives and manifests for $driver_arch." >&2
     exit 65
 fi
 

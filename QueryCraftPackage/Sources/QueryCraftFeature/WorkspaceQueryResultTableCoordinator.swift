@@ -13,6 +13,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
     private var nullDisplayText: String
     private var emptyStringDisplayText: String
     private var copyIncludesColumnNames: Bool
+    private var formatsTimestamps: Bool
     private var cellFont: NSFont
     private let exportController: WorkspaceDataExportController
     private let searchController: WorkspaceGridSearchController
@@ -42,6 +43,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         nullDisplayText: String = "NULL",
         emptyStringDisplayText: String = "",
         copyIncludesColumnNames: Bool = false,
+        formatsTimestamps: Bool = true,
         cellFont: NSFont = WorkspaceGridMetrics.cellFont,
         exportController: WorkspaceDataExportController =
             WorkspaceDataExportController(),
@@ -67,6 +69,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         self.nullDisplayText = nullDisplayText
         self.emptyStringDisplayText = emptyStringDisplayText
         self.copyIncludesColumnNames = copyIncludesColumnNames
+        self.formatsTimestamps = formatsTimestamps
         self.cellFont = cellFont
         self.exportController = exportController
         self.searchController = searchController
@@ -109,6 +112,11 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         tableView.allowsMultipleSelection = true
         tableView.style = .fullWidth
         tableView.workspaceDataSource = self
+        tableView.formatsTimestamps = formatsTimestamps
+        tableView.timestampDisplayChanged = { [weak self, weak tableView] columnID in
+            guard let self, let tableView else { return }
+            self.applyAutomaticColumnWidths(in: tableView, onlyColumnID: columnID)
+        }
         tableView.rowNumberIdentifier = Self.rowNumberIdentifier
         tableView.nullDisplayText = nullDisplayText
         tableView.emptyStringDisplayText = emptyStringDisplayText
@@ -148,6 +156,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         nullDisplayText: String = "NULL",
         emptyStringDisplayText: String = "",
         copyIncludesColumnNames: Bool = false,
+        formatsTimestamps: Bool = true,
         cellFont: NSFont = WorkspaceGridMetrics.cellFont,
         pendingUpdates: [WorkspaceDatabaseInspectorPendingUpdate] = [],
         cellEditRequest: ((WorkspaceDatabaseDataCellEditTarget) ->
@@ -175,9 +184,11 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         let displayTextChanged =
             nullDisplayText != self.nullDisplayText
             || emptyStringDisplayText != self.emptyStringDisplayText
+            || formatsTimestamps != self.formatsTimestamps
         self.nullDisplayText = nullDisplayText
         self.emptyStringDisplayText = emptyStringDisplayText
         self.copyIncludesColumnNames = copyIncludesColumnNames
+        self.formatsTimestamps = formatsTimestamps
         self.cellFont = cellFont
         if let updateInspectorContext {
             self.updateInspectorContext = updateInspectorContext
@@ -186,6 +197,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
             if let directDrawTableView =
                 tableView as? WorkspaceDirectDrawTableView {
                 directDrawTableView.nullDisplayText = nullDisplayText
+                directDrawTableView.formatsTimestamps = formatsTimestamps
                 directDrawTableView.emptyStringDisplayText =
                     emptyStringDisplayText
                 directDrawTableView.copyIncludesColumnNames =
@@ -227,6 +239,9 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         if columnsChanged {
             rebuildColumns(in: tableView)
         } else if startsNewResult {
+            (tableView as? WorkspaceDirectDrawTableView)?.configureTimestampDisplay(
+                columns: page.columns, scope: page.store.id.uuidString
+            )
             applyAutomaticColumnWidths(in: tableView)
         }
         if appendsCurrentResult {
@@ -243,6 +258,9 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
     }
 
     private func rebuildColumns(in tableView: NSTableView) {
+        (tableView as? WorkspaceDirectDrawTableView)?.configureTimestampDisplay(
+            columns: page.columns, scope: page.store.id.uuidString
+        )
         (tableView as? WorkspaceDirectDrawTableView)?.clearGridSelection()
         tableView.tableColumns.forEach(tableView.removeTableColumn)
         columnIndexes.removeAll(keepingCapacity: true)
@@ -281,7 +299,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         applyAutomaticColumnWidths(in: tableView)
     }
 
-    private func applyAutomaticColumnWidths(in tableView: NSTableView) {
+    private func applyAutomaticColumnWidths(in tableView: NSTableView, onlyColumnID: Int? = nil) {
         let widths = WorkspaceGridColumnSizing.automaticWidths(
             columns: page.columns,
             rowCount: page.rowCount,
@@ -289,12 +307,15 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
             rowAt: page.cachedRow(at:),
             nullDisplayText: nullDisplayText,
             emptyStringDisplayText: emptyStringDisplayText,
-            cellFont: cellFont
+            cellFont: cellFont,
+            timestampDisplayModes: (tableView as? WorkspaceDirectDrawTableView)?.timestampDisplayModes ?? [:],
+            formatsTimestamps: formatsTimestamps
         )
         isApplyingAutomaticColumnWidths = true
         for tableColumn in tableView.tableColumns {
             guard
                 let columnIndex = columnIndexes[tableColumn.identifier],
+                onlyColumnID == nil || columnIndex == onlyColumnID,
                 let width = widths[columnIndex]
             else {
                 continue

@@ -227,11 +227,13 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
                 var textRect = cellRect
                 textRect.size.width = max(0, textRect.width - WorkspaceGridInlineControls.disclosureWidth)
                 draw(dataRow.value(at: dataColumnIndex), in: textRect,
+                     dataColumnIndex: dataColumnIndex,
                      isGridSelected: showsGridSelection, insertDraftMode: nil)
                 inlineControls.drawDisclosure(in: cellRect, isSelected: (isSelected && isEmphasized)
                                               || (showsGridSelection && dataTableView.window?.isKeyWindow == true))
             case nil:
                 draw(dataRow.value(at: dataColumnIndex), in: cellRect,
+                     dataColumnIndex: dataColumnIndex,
                      isGridSelected: showsGridSelection, insertDraftMode: insertDraftModes?[dataColumnIndex])
             }
             if directDrawTableView?.gridSelection.active
@@ -267,6 +269,7 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
     private func draw(
         _ cell: WorkspaceDatabaseDataCell,
         in cellRect: NSRect,
+        dataColumnIndex: Int,
         isGridSelected: Bool,
         insertDraftMode: WorkspaceDatabaseDataRowInsertMode?
     ) {
@@ -279,9 +282,9 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
             case .null:
                 "NULL"
             case .value:
-                displayText(for: cell)
+                displayText(for: cell, dataColumnIndex: dataColumnIndex)
             }
-        } ?? displayText(for: cell)
+        } ?? displayText(for: cell, dataColumnIndex: dataColumnIndex)
         let usesSelectionAppearance = insertDraftModes != nil
             ? usesActiveDraftAppearance
             : isSelected || isGridSelected
@@ -317,25 +320,25 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
         switch cell {
         case .null:
             draw(
-                displayText(for: cell),
+                text,
                 in: cellRect,
                 attributes: nullAttributes
             )
         case let .text(value) where value.isEmpty:
             draw(
-                displayText(for: cell),
+                text,
                 in: cellRect,
                 attributes: nullAttributes
             )
         case .text:
             draw(
-                displayText(for: cell),
+                text,
                 in: cellRect,
                 attributes: normalAttributes
             )
         case .binary:
             draw(
-                displayText(for: cell),
+                text,
                 in: cellRect,
                 attributes: binaryAttributes
             )
@@ -538,6 +541,7 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
 
     private func accessibilityText(
         for cell: WorkspaceDatabaseDataCell,
+        dataColumnIndex: Int,
         insertDraftMode: WorkspaceDatabaseDataRowInsertMode?,
         nullDisplayText: String,
         emptyStringDisplayText: String
@@ -554,9 +558,9 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
         case .text("") where emptyStringDisplayText.isEmpty:
             AppCopy.current.text("空字符串", "Empty string")
         default:
-            cell.gridPreviewText(
-                nullDisplayText: nullDisplayText,
-                emptyStringDisplayText: emptyStringDisplayText,
+            displayText(
+                for: cell,
+                dataColumnIndex: dataColumnIndex,
                 maximumCharacterCount: Self.maximumAccessibilityCellCharacters
             )
         }
@@ -579,6 +583,7 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
             guard remaining > 0 else { break }
             let text = accessibilityText(
                 for: cell,
+                dataColumnIndex: index,
                 insertDraftMode: insertDraftModes?[index],
                 nullDisplayText: nullDisplayText,
                 emptyStringDisplayText: emptyStringDisplayText
@@ -590,12 +595,18 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
     }
 
     private func displayText(
-        for cell: WorkspaceDatabaseDataCell
+        for cell: WorkspaceDatabaseDataCell,
+        dataColumnIndex: Int,
+        maximumCharacterCount: Int = WorkspaceDatabaseDataRowView.maximumDrawnTextCharacters
     ) -> String {
-        cell.gridPreviewText(
+        if let tableView = dataTableView as? WorkspaceDirectDrawTableView {
+            return tableView.cellPreview(cell, dataColumnIndex: dataColumnIndex,
+                                         maximumCharacterCount: maximumCharacterCount)
+        }
+        return cell.gridPreviewText(
             nullDisplayText: nullDisplayText,
             emptyStringDisplayText: emptyStringDisplayText,
-            maximumCharacterCount: Self.maximumDrawnTextCharacters
+            maximumCharacterCount: maximumCharacterCount
         )
     }
 

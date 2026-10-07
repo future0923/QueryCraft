@@ -34,6 +34,14 @@ struct DataSettingsPane: View {
                     )
                 }
 
+                Toggle(isOn: $preferences.formatsTimestamps) {
+                    SettingsControlLabel(
+                        title: copy.formatsTimestamps,
+                        description: copy.formatsTimestampsDescription
+                    )
+                }
+                .accessibilityIdentifier("settings.data.formatsTimestamps")
+
                 Picker(
                     selection: $preferences.tableNullDisplayStyle
                 ) {

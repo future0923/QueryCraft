@@ -412,7 +412,7 @@ struct DatabaseDriverRegistryTests {
     @Test func catalogListsEveryDownloadableDriverFamily() {
         #expect(
             DatabaseDriverCatalog.entries.map(\.databaseType)
-                == [.mysql, .postgresql, .doris, .redis, .elasticsearch]
+                == [.mysql, .postgresql, .doris, .redis, .elasticsearch, .kafka]
         )
         #expect(
             DatabaseDriverCatalog.entries.allSatisfy { entry in
@@ -422,6 +422,10 @@ struct DatabaseDriverRegistryTests {
         #expect(
             DatabaseDriverCatalog.entry(for: .elasticsearch)?.category
                 == .document
+        )
+        #expect(
+            DatabaseDriverCatalog.entry(for: .kafka)?.category
+                == .messaging
         )
     }
 

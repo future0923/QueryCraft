@@ -141,8 +141,7 @@ actor FileLicenseCredentialStore: LicenseCredentialStore {
     }
 
     private static var defaultFileURL: URL {
-        URL.applicationSupportDirectory
-            .appending(path: "QueryCraft", directoryHint: .isDirectory)
+        QueryCraftStorageLocation.applicationSupportDirectory
             .appending(path: "Licensing", directoryHint: .isDirectory)
             .appending(path: "credential-v1.json")
     }

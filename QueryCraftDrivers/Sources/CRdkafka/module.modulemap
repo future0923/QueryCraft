@@ -1,0 +1,4 @@
+module CRdkafka [system] {
+  header "CRdkafka.h"
+  export *
+}

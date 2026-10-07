@@ -10,6 +10,7 @@ struct WorkspaceDatabaseItems: View {
     let renameTable: @MainActor (WorkspaceDatabaseObjectSelection) -> Void
     let deleteTable: @MainActor (WorkspaceDatabaseObjectSelection) -> Void
     var deleteIndex: @MainActor (WorkspaceDatabaseObjectSelection) -> Void = { _ in }
+    var deleteTopic: @MainActor (WorkspaceDatabaseObjectSelection) -> Void = { _ in }
 
     var body: some View {
         switch database.objectsState {
@@ -32,11 +33,13 @@ struct WorkspaceDatabaseItems: View {
             HStack {
                 ProgressView()
                     .controlSize(.small)
-                Text(
-                    AppCopy.current.text(
-                        "正在加载表和视图…",
-                        "Loading tables and views..."
-                    )
+                    Text(
+                    model.databaseType == .kafka
+                        ? AppCopy.current.text("正在加载 Topic…", "Loading topics...")
+                        : AppCopy.current.text(
+                            "正在加载表和视图…",
+                            "Loading tables and views..."
+                        )
                 )
                 .foregroundStyle(.secondary)
             }
@@ -48,8 +51,12 @@ struct WorkspaceDatabaseItems: View {
                 ContentUnavailableView(
                     model.databaseType == .elasticsearch
                         ? AppCopy.current.text("没有索引、Alias 或 Data Stream", "No Indices, Aliases or Data Streams")
-                        : AppCopy.current.text("没有表或视图", "No Tables or Views"),
-                    systemImage: "tablecells"
+                        : model.databaseType == .kafka
+                            ? AppCopy.current.text("没有 Topic", "No Topics")
+                            : AppCopy.current.text("没有表或视图", "No Tables or Views"),
+                    systemImage: model.databaseType == .kafka
+                        ? "point.3.connected.trianglepath.dotted"
+                        : "tablecells"
                 )
             } else if visibleObjects.isEmpty {
                 ContentUnavailableView.search(text: model.searchText)
@@ -89,7 +96,9 @@ struct WorkspaceDatabaseItems: View {
                     )
                 } else {
                     objectRows(kind: .table, objects: visibleObjects)
-                    objectRows(kind: .view, objects: visibleObjects)
+                    if model.databaseType != .kafka {
+                        objectRows(kind: .view, objects: visibleObjects)
+                    }
                 }
             }
 
@@ -195,9 +204,19 @@ struct WorkspaceDatabaseItems: View {
                 summary: object.summary,
                 openTab: { tab in openObjectTab(selection, tab) },
                 renameTable: { renameTable(selection) },
-                deleteTable: { deleteTable(selection) }
+                deleteTable: { deleteTable(selection) },
+                deleteTopic: topicDeletionAction(for: selection),
+                iconSystemImage: model.databaseType == .kafka
+                    ? "point.3.connected.trianglepath.dotted"
+                    : nil,
+                allowsTableMutations: model.databaseType != .kafka
             )
         }
+    }
+
+    private func topicDeletionAction(for selection: WorkspaceDatabaseObjectSelection) -> (@MainActor () -> Void)? {
+        guard model.databaseType == .kafka else { return nil }
+        return { deleteTopic(selection) }
     }
 
     private func objectsInSelectedSchema(

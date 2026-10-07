@@ -31,6 +31,8 @@ struct WorkspaceSidebar: View {
     @State private var tableDeletionTask: Task<Void, Never>?
     @State private var showsIndexCreation = false
     @State private var showsIndexTemplateManager = false
+    @State private var showsKafkaTopicCreation = false
+    @State private var kafkaTopicPendingDelete: WorkspaceDatabaseObjectSelection?
     @State private var indexPendingDelete: WorkspaceDatabaseObjectSelection?
     @State private var indexPendingUnlock: WorkspaceDatabaseObjectSelection?
     @State private var showsIndexUnlock = false
@@ -57,7 +59,10 @@ struct WorkspaceSidebar: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 0) {
-                    WorkspaceSidebarTabBar(selection: $model.sidebarMode)
+                    WorkspaceSidebarTabBar(
+                        selection: $model.sidebarMode,
+                        showsQueries: model.databaseType != .kafka
+                    )
 
                     HStack(spacing: 4) {
                         WorkspaceGridSearchField(
@@ -101,7 +106,11 @@ struct WorkspaceSidebar: View {
                     case .items:
                         itemsList
                     case .queries:
-                        queriesList
+                        if model.databaseType == .kafka {
+                            itemsList
+                        } else {
+                            queriesList
+                        }
                     }
                 }
             }
@@ -111,6 +120,10 @@ struct WorkspaceSidebar: View {
                 ?? AppCopy.current.text("数据库", "Database")
         )
         .accessibilityIdentifier("objectBrowser")
+        .sheet(item: $kafkaTopicPendingDelete) { selection in
+            WorkspaceKafkaTopicDeletionSheet(selection: selection, model: model,
+                didDelete: tableDidDelete, dismiss: { kafkaTopicPendingDelete = nil })
+        }
         .sheet(item: $indexPendingDelete) { selection in
             WorkspaceElasticsearchIndexDeletionSheet(selection: selection, model: model,
                 didDelete: tableDidDelete, dismiss: { indexPendingDelete = nil })
@@ -159,6 +172,25 @@ struct WorkspaceSidebar: View {
             WorkspaceElasticsearchIndexTemplateManagerSheet(
                 model: model,
                 dismiss: { showsIndexTemplateManager = false }
+            )
+        }
+        .sheet(isPresented: $showsKafkaTopicCreation) {
+            WorkspaceKafkaTopicCreationSheet(
+                model: model,
+                didCreate: { name in
+                    showsKafkaTopicCreation = false
+                    model.searchText = ""
+                    model.sidebarMode = .items
+                    guard let databaseName = model.databaseContextName else { return }
+                    openDatabaseObject(
+                        WorkspaceDatabaseObjectSelection(
+                            databaseName: databaseName,
+                            objectName: name,
+                            kind: .table
+                        )
+                    )
+                },
+                dismiss: { showsKafkaTopicCreation = false }
             )
         }
         .sheet(item: $tableEditor) { editor in
@@ -266,7 +298,11 @@ struct WorkspaceSidebar: View {
                                 deleteTable: {
                                     tablePendingDelete = $0
                                 },
-                                deleteIndex: requestDeleteIndex
+                                deleteIndex: requestDeleteIndex,
+                                deleteTopic: { selection in
+                                    guard model.connectionState == .connected else { return }
+                                    kafkaTopicPendingDelete = selection
+                                }
                             )
                         }
 
@@ -313,6 +349,29 @@ struct WorkspaceSidebar: View {
                         )
                         .accessibilityIdentifier("manageElasticsearchIndexTemplates")
                         .disabled(model.connectionState != .connected)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                } else if model.databaseType == .kafka,
+                          let topicCount
+                {
+                    HStack(spacing: 8) {
+                        WorkspaceInlineIconButton(
+                            systemImageName: "plus",
+                            title: AppCopy.current.text("新建 Topic", "New Topic"),
+                            action: { showsKafkaTopicCreation = true }
+                        )
+                        .accessibilityIdentifier("createKafkaTopic")
+                        .disabled(model.connectionState != .connected)
+                        Spacer(minLength: 0)
+                        Text(
+                            AppCopy.current.text(
+                                "共 \(topicCount) 个 Topic",
+                                "\(topicCount) topics"
+                            )
+                        )
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     }
                     .padding(.horizontal, 10)
                     .frame(height: 28)
@@ -385,16 +444,29 @@ struct WorkspaceSidebar: View {
     }
 
     private var searchPlaceholder: String {
+        if model.databaseType == .kafka {
+            return AppCopy.current.text("搜索 Topic", "Search topics")
+        }
         switch model.sidebarMode {
         case .items:
-            AppCopy.current.text("搜索项目", "Search items")
+            return AppCopy.current.text("搜索项目", "Search items")
         case .queries:
-            AppCopy.current.text("搜索查询", "Search queries")
+            return AppCopy.current.text("搜索查询", "Search queries")
         }
     }
 
     private var tableCount: Int? {
         guard let database = model.currentDatabase,
+              case let .loaded(objects) = database.objectsState
+        else {
+            return nil
+        }
+        return objects.count { $0.kind == .table }
+    }
+
+    private var topicCount: Int? {
+        guard model.databaseType == .kafka,
+              let database = model.currentDatabase,
               case let .loaded(objects) = database.objectsState
         else {
             return nil

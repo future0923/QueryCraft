@@ -2,6 +2,7 @@ import Foundation
 
 enum WorkspaceInspectorContext: Equatable {
     case database(WorkspaceDatabaseInspectorContext)
+    case kafkaMessage(WorkspaceKafkaMessageInspectorContext)
     case queryResult(WorkspaceQueryResultInspectorContext)
     case redisKey(WorkspaceRedisKeyInspectorContext)
     case elasticsearchDocument(WorkspaceElasticsearchDocumentInspectorContext)
@@ -17,6 +18,8 @@ enum WorkspaceInspectorContext: Equatable {
             context.identity
         case .database(let context):
             "database:\(context.selection.id)"
+        case .kafkaMessage(let context):
+            context.searchIdentity
         case .queryResult(let context):
             "query:\(context.resultID?.uuidString ?? "empty")"
         case .redisKey(let context):

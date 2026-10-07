@@ -240,6 +240,25 @@ struct WorkspaceGridClipboardEncoderTests {
 
 @MainActor
 struct WorkspaceDirectDrawTableViewCopyTests {
+    @Test func fullContentIncludesShortPlainTextAndPreservesRawValues() {
+        let texts = ["ordinary text", #""{\"taskId\":123}""#,
+                     String(repeating: "long text\n", count: 2_000) + "end"]
+        let source = TestGridDataSource(
+            columns: [(TestGridDataSource.idIdentifier, 0)],
+            rows: texts.enumerated().map {
+                WorkspaceDatabaseDataRow(id: $0.offset, values: [.text($0.element)])
+            } + [WorkspaceDatabaseDataRow(id: texts.count, values: [.null])]
+        )
+        let table = makeTable(source: source, columnNames: ["value"])
+        for (row, text) in texts.enumerated() {
+            #expect(table.fullCellText(row: row, column: 1) == text)
+        }
+        #expect(table.fullCellText(row: texts.count, column: 1) == nil)
+        #expect(table.fullCellText(row: -1, column: 1) == nil)
+        #expect(table.fullCellText(row: 0, column: 0) == nil)
+        withExtendedLifetime(source) {}
+    }
+
     @Test func copiesGridSelectionInVisibleColumnOrder() throws {
         let (tableView, source) = makeTable()
         tableView.moveColumn(2, toColumn: 1)

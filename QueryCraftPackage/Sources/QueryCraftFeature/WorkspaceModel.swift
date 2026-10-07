@@ -79,6 +79,7 @@ final class WorkspaceModel {
     private var dataSession: (any WorkspaceSession)?
     private var dataCountSession: (any WorkspaceSession)?
     private var sessionConfiguration: DatabaseConnectionConfiguration?
+    private var sessionKafkaSASLMechanism = KafkaSASLMechanism.plain
     private var dataLoadID: UUID?
     private var dataLoadSelection: WorkspaceDatabaseObjectSelection?
     @ObservationIgnored private var dataReplacementLoadID: UUID?
@@ -120,6 +121,289 @@ final class WorkspaceModel {
     private var objectDataFilters: [
         WorkspaceDatabaseObjectSelection: WorkspaceDatabaseDataFilter
     ] = [:]
+    private var kafkaReadRequests: [WorkspaceDatabaseObjectSelection: WorkspaceKafkaReadRequest] = [:]
+    let kafkaLive = WorkspaceKafkaLiveModel()
+    @ObservationIgnored var kafkaHasPendingChanges: @MainActor (WorkspaceDatabaseObjectSelection) -> Bool = { _ in false }
+
+    func deleteKafkaTopic(_ selection: WorkspaceDatabaseObjectSelection) async throws {
+        let activeSession: any WorkspaceSession
+        let configuration: DatabaseConnectionConfiguration
+        do {
+            try WorkspaceKafkaTopicDeletionRequest(topic: selection.objectName).validate()
+            guard databaseType == .kafka, selection.kind == .table, selection.databaseName == databaseContextName,
+                  connectionState == .connected, let currentSession = session, let currentConfiguration = sessionConfiguration
+            else { throw WorkspaceSessionError.notConnected }
+            activeSession = currentSession
+            configuration = currentConfiguration
+            try validateKafkaTopicDeletion(selection, session: activeSession)
+        } catch {
+            throw WorkspaceKafkaTopicDeletionError.notSent(error.localizedDescription)
+        }
+        let mechanism = sessionKafkaSASLMechanism
+        let adminSession = await sessionFactory.makeSession(configuration: configuration)
+        do {
+            let deleting: any WorkspaceKafkaTopicDeleting
+            do {
+                guard let provider = adminSession as? any WorkspaceKafkaTopicDeleting else {
+                    throw WorkspaceKafkaTopicDeletionError.driverUpdateRequired
+                }
+                deleting = provider
+                try await WorkspaceKafkaAuthentication.configure(adminSession, configuration: configuration, mechanism: mechanism)
+                try await adminSession.connect()
+                try Task.checkCancellation()
+                try validateKafkaTopicDeletion(selection, session: activeSession)
+            } catch {
+                throw WorkspaceKafkaTopicDeletionError.notSent(error.localizedDescription)
+            }
+            try await deleting.deleteTopic(name: selection.objectName)
+            await adminSession.close()
+        } catch {
+            await adminSession.close()
+            throw error
+        }
+        // Reconcile only the connection that received the acknowledged deletion.
+        guard session === activeSession else {
+            throw WorkspaceKafkaTopicDeletionError.unconfirmed(AppCopy.current.text("工作区连接已切换，请刷新列表。", "The workspace connection changed. Refresh the topic list."))
+        }
+        await stopDataWork(for: selection, reason: .leftDataTab)
+        guard session === activeSession else {
+            throw WorkspaceKafkaTopicDeletionError.unconfirmed(AppCopy.current.text("工作区连接已切换，请刷新列表。", "The workspace connection changed. Refresh the topic list."))
+        }
+        if kafkaLive.isShowing(selection) { kafkaLive.leave() }
+        _ = nextObjectRequestGeneration(for: selection.databaseName)
+        if let index = databases.firstIndex(where: { $0.name == selection.databaseName }),
+           case .loaded(let objects) = databases[index].objectsState {
+            databases[index].objectsState = .loaded(objects.filter { $0.name != selection.objectName })
+        }
+        objectDetailsStates[selection] = nil
+        objectDataStates[selection] = nil
+        objectDataCountStates[selection] = nil
+        kafkaReadRequests[selection] = nil
+        kafkaScanRequests[selection] = nil
+        kafkaScanProgresses[selection] = nil
+    }
+
+    private func validateKafkaTopicDeletion(_ selection: WorkspaceDatabaseObjectSelection, session activeSession: any WorkspaceSession) throws {
+        guard !safetyLock.isEnabled else { throw WorkspaceDatabaseDataCellEditError.safetyLockEnabled }
+        guard !kafkaHasPendingChanges(selection) else { throw WorkspaceKafkaTopicDeletionError.pendingChanges }
+        guard session === activeSession, connectionState == .connected, databaseContextName == selection.databaseName else {
+            throw WorkspaceSessionError.notConnected
+        }
+    }
+
+    func kafkaMessageForCopy(_ reference: WorkspaceKafkaMessageReference) async throws -> WorkspaceKafkaMessagePayload {
+        guard databaseType == .kafka, connectionState == .connected,
+              let configuration = sessionConfiguration, let activeSession = session else {
+            throw WorkspaceSessionError.notConnected
+        }
+        let mechanism = sessionKafkaSASLMechanism
+        let readerSession = await sessionFactory.makeSession(configuration: configuration)
+        do {
+            guard let reader = readerSession as? any WorkspaceKafkaMessageCopying else {
+                throw WorkspaceKafkaMessageCopyError.driverUpdateRequired
+            }
+            try await WorkspaceKafkaAuthentication.configure(readerSession, configuration: configuration, mechanism: mechanism)
+            try await readerSession.connect()
+            try Task.checkCancellation()
+            guard session === activeSession, connectionState == .connected else { throw WorkspaceSessionError.notConnected }
+            let payload = try await reader.messageForCopy(reference)
+            await readerSession.close()
+            try Task.checkCancellation()
+            guard session === activeSession, connectionState == .connected else { throw WorkspaceSessionError.notConnected }
+            return payload
+        } catch {
+            await readerSession.close()
+            throw error
+        }
+    }
+
+    func updateKafkaTopicConfiguration(_ request: WorkspaceKafkaTopicConfigurationRequest) async throws {
+        guard !safetyLock.isEnabled else { throw WorkspaceDatabaseDataCellEditError.safetyLockEnabled }
+        try request.validate()
+        guard databaseType == .kafka, connectionState == .connected,
+              let configuration = sessionConfiguration, let activeSession = session else {
+            throw WorkspaceSessionError.notConnected
+        }
+        let mechanism = sessionKafkaSASLMechanism
+        let adminSession = await sessionFactory.makeSession(configuration: configuration)
+        do {
+            guard let editor = adminSession as? any WorkspaceKafkaTopicConfigurationEditing else {
+                throw WorkspaceKafkaTopicConfigurationError.driverUpdateRequired
+            }
+            try await WorkspaceKafkaAuthentication.configure(adminSession, configuration: configuration, mechanism: mechanism)
+            try await adminSession.connect()
+            try Task.checkCancellation()
+            guard !safetyLock.isEnabled else { throw WorkspaceDatabaseDataCellEditError.safetyLockEnabled }
+            guard session === activeSession, connectionState == .connected else { throw WorkspaceSessionError.notConnected }
+            try await editor.updateTopicConfiguration(request)
+            await adminSession.close()
+        } catch {
+            await adminSession.close()
+            throw error
+        }
+    }
+
+    func produceKafkaMessage(_ request: WorkspaceKafkaProduceRequest) async throws -> WorkspaceKafkaProduceReceipt {
+        guard !safetyLock.isEnabled else { throw WorkspaceDatabaseDataCellEditError.safetyLockEnabled }
+        try request.validate()
+        guard databaseType == .kafka, connectionState == .connected,
+              let configuration = sessionConfiguration, let activeSession = session else {
+            throw WorkspaceSessionError.notConnected
+        }
+        let mechanism = sessionKafkaSASLMechanism
+        let producerSession = await sessionFactory.makeSession(configuration: configuration)
+        do {
+            guard let producer = producerSession as? any WorkspaceKafkaProducing else {
+                throw WorkspaceKafkaProduceError.driverUpdateRequired
+            }
+            try await WorkspaceKafkaAuthentication.configure(producerSession, configuration: configuration, mechanism: mechanism)
+            try await producerSession.connect()
+            try Task.checkCancellation()
+            guard !safetyLock.isEnabled else { throw WorkspaceDatabaseDataCellEditError.safetyLockEnabled }
+            guard session === activeSession, connectionState == .connected else { throw WorkspaceSessionError.notConnected }
+            let receipt = try await producer.produce(request)
+            // Once dispatched, preserve the broker's result even if the caller
+            // was cancelled. A write must never silently turn into a retry.
+            await producerSession.close()
+            return receipt
+        } catch {
+            await producerSession.close()
+            throw error
+        }
+    }
+
+    func startKafkaLive(for selection: WorkspaceDatabaseObjectSelection, partition: Int32?, filter: WorkspaceKafkaScanRequest?) async {
+        guard databaseType == .kafka, selectedObject == selection,
+              let configuration = sessionConfiguration, let activeSession = session else { return }
+        await stopDataWork(for: selection, reason: .userStopped)
+        guard selectedObject == selection, session === activeSession else { return }
+        let factory = sessionFactory
+        let mechanism = sessionKafkaSASLMechanism
+        kafkaLive.start(selection: selection, partition: partition, filter: filter,
+                        previousPage: selectedObjectDataState.page) {
+            let newSession = await factory.makeSession(configuration: configuration)
+            do {
+                try await WorkspaceKafkaAuthentication.configure(newSession, configuration: configuration, mechanism: mechanism)
+                try await newSession.connect()
+                try Task.checkCancellation()
+                return newSession
+            } catch {
+                await newSession.close()
+                throw error
+            }
+        }
+    }
+    private var kafkaScanRequests: [WorkspaceDatabaseObjectSelection: WorkspaceKafkaScanRequest] = [:]
+    private var kafkaScanProgresses: [WorkspaceDatabaseObjectSelection: WorkspaceKafkaScanProgress] = [:]
+
+    func kafkaScanRequest(for selection: WorkspaceDatabaseObjectSelection) -> WorkspaceKafkaScanRequest? {
+        kafkaScanRequests[selection]
+    }
+
+    func kafkaScanProgress(for selection: WorkspaceDatabaseObjectSelection) -> WorkspaceKafkaScanProgress? {
+        kafkaScanProgresses[selection]
+    }
+
+    func setKafkaScanRequest(_ request: WorkspaceKafkaScanRequest?, for selection: WorkspaceDatabaseObjectSelection) {
+        guard databaseType == .kafka, request?.isValid != false else { return }
+        kafkaScanRequests[selection] = request
+        kafkaScanProgresses[selection] = nil
+    }
+
+    private func prepareKafkaScan(
+        session: any WorkspaceSession, selection: WorkspaceDatabaseObjectSelection,
+        request: WorkspaceKafkaScanRequest?, loadID: UUID
+    ) async throws {
+        guard let request else { return }
+        guard let scanner = session as? any WorkspaceKafkaScanning else {
+            throw WorkspaceKafkaConsumerGroupError.driverUpdateRequired
+        }
+        try await scanner.prepareScanning(topic: selection.objectName, request: request) { [weak self] progress in
+            await self?.acceptKafkaScanProgress(progress, for: selection, loadID: loadID)
+        }
+    }
+
+    private func acceptKafkaScanProgress(_ progress: WorkspaceKafkaScanProgress,
+                                        for selection: WorkspaceDatabaseObjectSelection, loadID: UUID) {
+        guard dataLoadID == loadID, dataLoadSelection == selection, selectedObject == selection else { return }
+        kafkaScanProgresses[selection] = progress
+    }
+
+    private func finishKafkaScan(for selection: WorkspaceDatabaseObjectSelection,
+                                status: WorkspaceKafkaScanProgress.Status, error: String? = nil) {
+        guard kafkaScanRequests[selection] != nil else { return }
+        let progress = kafkaScanProgresses[selection]
+        kafkaScanProgresses[selection] = .init(scanned: progress?.scanned ?? 0,
+                                              matched: progress?.matched ?? 0, status: status, error: error)
+    }
+
+    func kafkaReadRequest(for selection: WorkspaceDatabaseObjectSelection) -> WorkspaceKafkaReadRequest {
+        kafkaReadRequests[selection] ?? WorkspaceKafkaReadRequest()
+    }
+
+    func fetchKafkaConsumerGroups() async throws -> [WorkspaceKafkaConsumerGroup] {
+        guard let activeSession = session else { throw WorkspaceSessionError.notConnected }
+        guard let provider = activeSession as? any WorkspaceKafkaConsumerGroupProviding else {
+            throw WorkspaceKafkaConsumerGroupError.driverUpdateRequired
+        }
+        let groups = try await sessionOperationGate.run { try await provider.fetchConsumerGroups() }
+        try Task.checkCancellation()
+        guard session === activeSession else { throw WorkspaceSessionError.notConnected }
+        return groups
+    }
+
+    func fetchKafkaTopicDetails(topic: String) async throws -> WorkspaceKafkaTopicDetails {
+        guard let activeSession = session else { throw WorkspaceSessionError.notConnected }
+        guard let provider = activeSession as? any WorkspaceKafkaTopicDetailsProviding else {
+            throw WorkspaceKafkaConsumerGroupError.driverUpdateRequired
+        }
+        let result = try await sessionOperationGate.run { try await provider.fetchTopicDetails(topic: topic) }
+        try Task.checkCancellation()
+        guard session === activeSession else { throw WorkspaceSessionError.notConnected }
+        return result
+    }
+
+    func fetchKafkaGroupTopicMembership(groupID: String, topic: String) async throws -> WorkspaceKafkaGroupTopicMembership {
+        guard let activeSession = session else { throw WorkspaceSessionError.notConnected }
+        guard let provider = activeSession as? any WorkspaceKafkaGroupTopicMembershipProviding else { return .unknown }
+        let result = try await sessionOperationGate.run {
+            try await provider.fetchGroupTopicMembership(groupID: groupID, topic: topic)
+        }
+        try Task.checkCancellation()
+        guard session === activeSession else { throw WorkspaceSessionError.notConnected }
+        return result
+    }
+
+    func fetchKafkaConsumerGroupDetails(groupID: String, topic: String) async throws -> WorkspaceKafkaConsumerGroupDetails {
+        guard let activeSession = session else { throw WorkspaceSessionError.notConnected }
+        guard let provider = activeSession as? any WorkspaceKafkaConsumerGroupDetailsProviding else {
+            throw WorkspaceKafkaConsumerGroupError.driverUpdateRequired
+        }
+        let result = try await sessionOperationGate.run {
+            try await provider.fetchConsumerGroupDetails(groupID: groupID, topic: topic)
+        }
+        try Task.checkCancellation()
+        guard session === activeSession else { throw WorkspaceSessionError.notConnected }
+        return result
+    }
+
+    func fetchKafkaConsumerOffsets(groupID: String, topic: String) async throws -> [WorkspaceKafkaConsumerOffset] {
+        guard let activeSession = session else { throw WorkspaceSessionError.notConnected }
+        guard let provider = activeSession as? any WorkspaceKafkaConsumerGroupProviding else {
+            throw WorkspaceKafkaConsumerGroupError.driverUpdateRequired
+        }
+        let offsets = try await sessionOperationGate.run {
+            try await provider.fetchConsumerOffsets(groupID: groupID, topic: topic)
+        }
+        try Task.checkCancellation()
+        guard session === activeSession else { throw WorkspaceSessionError.notConnected }
+        return offsets
+    }
+
+    func setKafkaReadRequest(_ request: WorkspaceKafkaReadRequest, for selection: WorkspaceDatabaseObjectSelection) {
+        guard databaseType == .kafka, request.isValid else { return }
+        kafkaReadRequests[selection] = request
+    }
     private var objectDataCountStates: [
         WorkspaceDatabaseObjectSelection: WorkspaceDatabaseDataCountState
     ] = [:]
@@ -180,7 +464,8 @@ final class WorkspaceModel {
     }
 
     var visibleSavedQueries: [SavedQuery] {
-        savedQueries.filter(savedQueryMatchesSearch)
+        guard databaseType != .kafka else { return [] }
+        return savedQueries.filter(savedQueryMatchesSearch)
     }
 
     var availableDatabaseNames: [String] {
@@ -239,6 +524,7 @@ final class WorkspaceModel {
 
     var selectedObjectDataState: WorkspaceDatabaseDataState {
         guard let selectedObject else { return .notLoaded }
+        if kafkaLive.isShowing(selectedObject) { return kafkaLive.dataState }
         return objectDataStates[selectedObject] ?? .notLoaded
     }
 
@@ -249,6 +535,7 @@ final class WorkspaceModel {
 
     var selectedObjectDataCountState: WorkspaceDatabaseDataCountState {
         guard let selectedObject else { return .notLoaded }
+        if kafkaLive.isShowing(selectedObject) { return .loaded(kafkaLive.page?.rowCount ?? 0) }
         return objectDataCountStates[selectedObject] ?? .notLoaded
     }
 
@@ -781,6 +1068,11 @@ final class WorkspaceModel {
             }
             profileName = profile.name
             databaseType = profile.databaseType
+            if databaseType == .kafka {
+                // Kafka exposes topics only; a restored query tab has no
+                // corresponding sidebar content.
+                sidebarMode = .items
+            }
             connectionEndpoint = "\(profile.username)@\(profile.host):\(profile.port)"
             if databaseContextName == nil {
                 databaseContextName = profile.defaultDatabase
@@ -803,6 +1095,7 @@ final class WorkspaceModel {
                 tlsMode: profile.tlsMode
             )
             if profile.databaseType != .redis,
+               profile.databaseType != .kafka,
                await recoverDraftsIfNeeded(configuration: configuration)
             {
                 await didRecoverDocuments()
@@ -813,6 +1106,8 @@ final class WorkspaceModel {
             connectingSession = newSession
             session = newSession
 
+            try await WorkspaceKafkaAuthentication.configure(newSession, configuration: configuration,
+                                                              mechanism: profile.kafkaSASLMechanism ?? .plain)
             try await newSession.connect()
             try Task.checkCancellation()
             let editingProvider: (any DatabaseSchemaEditingProvider)?
@@ -854,6 +1149,7 @@ final class WorkspaceModel {
             schemaEditingDescriptor = editingProvider?.descriptor ?? .unavailable
             schemaCatalogCoordinator.seedDatabases(names)
             sessionConfiguration = configuration
+            sessionKafkaSASLMechanism = profile.kafkaSASLMechanism ?? .plain
             for document in queryDocuments {
                 await document.replaceConnectionConfiguration(
                     configuration,
@@ -1055,6 +1351,7 @@ final class WorkspaceModel {
         guard
             databaseType != .redis,
             databaseType != .elasticsearch,
+            databaseType != .kafka,
             connectionState == .connected,
             let sessionConfiguration
         else {
@@ -1404,6 +1701,7 @@ final class WorkspaceModel {
     func openSavedQueryDocument(
         _ savedQueryID: SavedQuery.ID
     ) -> WorkspaceSavedQueryOpenResult? {
+        guard databaseType != .kafka else { return nil }
         restoredSelectedObject = nil
         if let document = queryDocuments.first(where: {
             $0.savedQueryID == savedQueryID
@@ -1453,6 +1751,9 @@ final class WorkspaceModel {
         name requestedName: String? = nil,
         now: Date = .now
     ) async throws -> SavedQuery {
+        guard databaseType != .kafka else {
+            throw WorkspaceSavedQueryError.documentNotFound
+        }
         guard let document = queryDocuments.first(where: {
             $0.id == documentID
         }) else {
@@ -1866,6 +2167,9 @@ final class WorkspaceModel {
         for selection: WorkspaceDatabaseObjectSelection,
         reason: WorkspaceDataStopReason
     ) async {
+        if kafkaLive.isShowing(selection) {
+            if reason == .userStopped { kafkaLive.stop() } else { kafkaLive.pause() }
+        }
         let currentState = objectDataStates[selection] ?? .notLoaded
         let hasActiveRowFetch = currentState.isFetching
         let ownsActiveRowFetch = hasActiveRowFetch
@@ -1873,6 +2177,7 @@ final class WorkspaceModel {
         let rowSession = ownsActiveRowFetch ? dataSession : nil
 
         if hasActiveRowFetch {
+            finishKafkaScan(for: selection, status: .cancelled)
             if ownsActiveRowFetch {
                 dataLoadID = nil
                 dataLoadSelection = nil
@@ -2188,6 +2493,12 @@ final class WorkspaceModel {
         }
 
         let mutationRevision = elasticsearchMutationRevision
+        if kafkaLive.isShowing(selection) {
+            if force { await kafkaLive.refresh() }
+            return
+        }
+        let kafkaRequest = kafkaReadRequest(for: selection)
+        let kafkaScanRequest = kafkaScanRequest(for: selection)
         let force = force || (databaseType == .elasticsearch && mutationRevision > 0
             && elasticsearchDataRevisions[selection] != mutationRevision)
         if !force {
@@ -2243,7 +2554,12 @@ final class WorkspaceModel {
             previousPage = nil
         }
 
-        if dataLoadID != nil || refreshesDocuments, let dataSession {
+        if
+            dataLoadID != nil
+                || refreshesDocuments
+                || (force && databaseType == .kafka),
+            let dataSession
+        {
             let supersededSelection = dataLoadSelection
             dataLoadID = nil
             dataLoadSelection = nil
@@ -2268,6 +2584,7 @@ final class WorkspaceModel {
         let loadID = UUID()
         dataLoadID = loadID
         dataLoadSelection = selection
+        if kafkaScanRequest != nil { kafkaScanProgresses[selection] = .init() }
         if replacesCurrentPage {
             dataReplacementLoadID = loadID
             dataReplacementRowStore = WorkspaceDatabaseDataRowStore()
@@ -2287,6 +2604,7 @@ final class WorkspaceModel {
             fetchSession = try await connectedDataSession()
         } catch is CancellationError {
             if dataLoadID == loadID, dataLoadSelection == selection {
+                finishKafkaScan(for: selection, status: .cancelled)
                 dataLoadID = nil
                 dataLoadSelection = nil
                 clearDataReplacement(for: loadID)
@@ -2306,7 +2624,9 @@ final class WorkspaceModel {
             dataLoadID = nil
             dataLoadSelection = nil
             clearDataReplacement(for: loadID)
-            objectDataStates[selection] = .failed(error.localizedDescription)
+            finishKafkaScan(for: selection, status: .failed, error: error.localizedDescription)
+            objectDataStates[selection] = kafkaScanRequest != nil && previousPage != nil
+                ? .stopped(previousPage) : .failed(error.localizedDescription)
             return
         }
         guard
@@ -2322,12 +2642,17 @@ final class WorkspaceModel {
             return
         }
 
-        await startDataCountIfNeeded(
-            for: selection,
-            filter: filter,
-            force: force
-        )
-        if refreshesDocuments, let countTask = dataCountTask {
+        if databaseType != .kafka {
+            await startDataCountIfNeeded(
+                for: selection,
+                filter: filter,
+                force: force
+            )
+        }
+        if databaseType != .kafka,
+           refreshesDocuments,
+           let countTask = dataCountTask
+        {
             await withTaskCancellationHandler {
                 await countTask.value
             } onCancel: {
@@ -2367,6 +2692,10 @@ final class WorkspaceModel {
             try Task.checkCancellation()
             let result: WorkspaceDatabaseDataFetchResult
             do {
+                if let reader = fetchSession as? any WorkspaceKafkaReading {
+                    try await reader.prepareReading(topic: selection.objectName, request: kafkaRequest)
+                }
+                try await prepareKafkaScan(session: fetchSession, selection: selection, request: kafkaScanRequest, loadID: loadID)
                 result = try await fetchSession.fetchDataPage(
                     for: selection.object,
                     in: selection.databaseName,
@@ -2417,6 +2746,10 @@ final class WorkspaceModel {
                     .fetching($0)
                 } ?? .loading
                 fetchSession = try await connectedDataSession()
+                if let reader = fetchSession as? any WorkspaceKafkaReading {
+                    try await reader.prepareReading(topic: selection.objectName, request: kafkaRequest)
+                }
+                try await prepareKafkaScan(session: fetchSession, selection: selection, request: kafkaScanRequest, loadID: loadID)
                 result = try await fetchSession.fetchDataPage(
                     for: selection.object,
                     in: selection.databaseName,
@@ -2500,6 +2833,7 @@ final class WorkspaceModel {
             else {
                 return
             }
+            finishKafkaScan(for: selection, status: .cancelled)
             dataLoadID = nil
             dataLoadSelection = nil
             clearDataReplacement(for: loadID)
@@ -2525,6 +2859,7 @@ final class WorkspaceModel {
             else {
                 return
             }
+            finishKafkaScan(for: selection, status: .failed, error: error.localizedDescription)
             dataLoadID = nil
             dataLoadSelection = nil
             clearDataReplacement(for: loadID)
@@ -2535,9 +2870,13 @@ final class WorkspaceModel {
                 objectDataSorts[selection] == sort,
                 objectDataFilters[selection] == filter
             {
-                objectDataStates[selection] = selectedObject == selection
-                    ? .failed(error.localizedDescription)
-                    : .notLoaded
+                if kafkaScanRequest != nil, let previousPage, selectedObject == selection {
+                    objectDataStates[selection] = .stopped(previousPage)
+                } else {
+                    objectDataStates[selection] = selectedObject == selection
+                        ? .failed(error.localizedDescription)
+                        : .notLoaded
+                }
             }
             if let dataSession, dataSession === fetchSession {
                 self.dataSession = nil
@@ -2618,7 +2957,7 @@ final class WorkspaceModel {
     }
 
     private func adoptImplicitDatabaseContextIfNeeded(from names: [String]) {
-        guard databaseType == .elasticsearch,
+        guard databaseType == .elasticsearch || databaseType == .kafka,
               databaseContextName == nil
         else { return }
         databaseContextName = names.first
@@ -3484,6 +3823,29 @@ final class WorkspaceModel {
         }
     }
 
+    func createKafkaTopic(
+        name: String,
+        partitions: Int32,
+        replicationFactor: Int16
+    ) async throws {
+        guard databaseType == .kafka,
+              connectionState == .connected,
+              let databaseName = databaseContextName,
+              let session,
+              let provider = session as? any WorkspaceTopicCreationProviding
+        else {
+            throw WorkspaceSessionError.queryUnavailable
+        }
+        try await sessionOperationGate.run {
+            try await provider.createTopic(
+                name: name,
+                partitions: partitions,
+                replicationFactor: replicationFactor
+            )
+        }
+        _ = await refreshObjects(in: databaseName)
+    }
+
     private func replaceAvailableSchemas(_ names: [String]) {
         guard databaseType == .postgresql else {
             availableSchemas = []
@@ -3511,6 +3873,7 @@ final class WorkspaceModel {
 
     private func close(_ session: any WorkspaceSession) async {
         if self.session === session {
+            kafkaLive.leave()
             cancelObjectLoads()
             redisKeyLoadTask?.cancel()
             redisKeyLoadTask = nil
@@ -3748,11 +4111,14 @@ final class WorkspaceModel {
             throw WorkspaceSessionError.notConnected
         }
 
+        let mechanism = sessionKafkaSASLMechanism
         let newSession = await sessionFactory.makeSession(
             configuration: configuration
         )
         dataSession = newSession
         do {
+            try await WorkspaceKafkaAuthentication.configure(newSession, configuration: configuration,
+                                                              mechanism: mechanism)
             try await newSession.connect()
             try Task.checkCancellation()
         } catch {
@@ -3766,6 +4132,7 @@ final class WorkspaceModel {
         guard
             dataSession === newSession,
             sessionConfiguration == configuration,
+            sessionKafkaSASLMechanism == mechanism,
             session != nil
         else {
             if dataSession === newSession {
@@ -3784,6 +4151,26 @@ final class WorkspaceModel {
         filter: WorkspaceDatabaseDataFilter,
         force: Bool
     ) async {
+        if databaseType == .kafka, page.hasNextPage {
+            // Kafka cannot provide an exact filtered count without scanning
+            // the topic. Keep the range status limited to the loaded page
+            // until the reader reaches the end.
+            let ownsActiveCount = dataCountLoadSelection == selection
+            let countSession = ownsActiveCount ? dataCountSession : nil
+            if ownsActiveCount {
+                dataCountLoadID = nil
+                dataCountLoadSelection = nil
+                dataCountTask?.cancel()
+                dataCountTask = nil
+                dataCountSession = nil
+            }
+            objectDataCountStates[selection] = .notLoaded
+            objectDataCountFilters[selection] = filter
+            if let countSession {
+                await countSession.close()
+            }
+            return
+        }
         if
             !page.hasNextPage,
             page.offset == 0 || page.rowCount > 0
@@ -3964,10 +4351,13 @@ final class WorkspaceModel {
             throw WorkspaceSessionError.notConnected
         }
 
+        let mechanism = sessionKafkaSASLMechanism
         let newSession = await sessionFactory.makeSession(
             configuration: configuration
         )
         do {
+            try await WorkspaceKafkaAuthentication.configure(newSession, configuration: configuration,
+                                                              mechanism: mechanism)
             try await newSession.connect()
             try Task.checkCancellation()
         } catch {
@@ -3977,6 +4367,7 @@ final class WorkspaceModel {
 
         guard
             sessionConfiguration == configuration,
+            sessionKafkaSASLMechanism == mechanism,
             session != nil
         else {
             await newSession.close()
@@ -4191,6 +4582,13 @@ final class WorkspaceModel {
         selectedQueryDocumentID = nil
         selectedObject = selection
         restoredSelectedObject = nil
+        if databaseType == .kafka {
+            await loadData(
+                for: selection,
+                offset: 0,
+                limit: ApplicationPreferences.shared.tableDataPageSize
+            )
+        }
     }
 
     private func scheduleRecoverableDraftUpdate(for documentID: UUID) {

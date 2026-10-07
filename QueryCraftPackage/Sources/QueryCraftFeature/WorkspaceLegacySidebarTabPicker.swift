@@ -2,13 +2,14 @@ import SwiftUI
 
 struct WorkspaceLegacySidebarTabPicker: View {
     @Binding var selection: WorkspaceSidebarMode
+    var showsQueries = true
 
     var body: some View {
         Picker(
             AppCopy.current.text("侧边栏内容", "Sidebar Content"),
             selection: $selection
         ) {
-            ForEach(WorkspaceSidebarMode.allCases) { mode in
+            ForEach(visibleModes) { mode in
                 Text(mode.title)
                     .tag(mode)
                     .accessibilityIdentifier("sidebarTab.\(mode.rawValue)")
@@ -19,5 +20,11 @@ struct WorkspaceLegacySidebarTabPicker: View {
         .controlSize(.small)
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
+    }
+
+    private var visibleModes: [WorkspaceSidebarMode] {
+        showsQueries
+            ? WorkspaceSidebarMode.allCases
+            : [.items]
     }
 }

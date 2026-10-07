@@ -13,7 +13,7 @@ struct WorkspaceJSONPresentationTests {
 
     @Test func plainAndInvalidTextRemainsUnchanged() async throws {
         let worker = WorkspaceJSONPresentationWorker()
-        for source in ["hello", "null", "42", #"{"unfinished":"#] {
+        for source in ["hello", "null", "42", #"{"unfinished":"#, #""{\"taskId\":123}""#] {
             #expect(try await worker.format(source, automatic: true) == nil)
             #expect(try await worker.format(source, automatic: false) == source)
         }

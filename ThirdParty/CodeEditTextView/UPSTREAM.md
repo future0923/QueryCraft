@@ -22,5 +22,8 @@ tooling must not be required to build or distribute QueryCraft.
   refinement passes and allowance for the gutter/minimap.
 - Preserve the widest measured line across incremental layout by updating the
   layout manager's stored width rather than a shadowing local variable.
+- Convert a suggested wrap end offset to a fragment length before creating a
+  Core Text line. Wrapped JSON/SQL strings must not redraw subsequent text
+  beyond the viewport or lose access to their trailing characters.
 
 No TablePro source code or patches are included in this directory.

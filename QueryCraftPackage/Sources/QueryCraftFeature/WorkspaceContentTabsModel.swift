@@ -40,6 +40,27 @@ final class WorkspaceContentTabsModel {
         selectedContentID = contentItem.id
     }
 
+    /// Removes SQL query tabs when the active connection does not support SQL.
+    /// The query documents remain owned by the workspace so unsaved drafts are
+    /// not discarded as a side effect of changing the visible connection UI.
+    @discardableResult
+    func removeQueryDocuments() -> [UUID] {
+        let queryIDs = contentItems.compactMap { item -> UUID? in
+            guard case let .query(queryItem) = item else { return nil }
+            return queryItem.id
+        }
+        guard !queryIDs.isEmpty else { return [] }
+
+        let removedIDs = Set(queryIDs.map(WorkspaceContentTabID.queryDocument))
+        contentItems.removeAll { removedIDs.contains($0.id) }
+        if let selectedContentID,
+           removedIDs.contains(selectedContentID)
+        {
+            self.selectedContentID = contentItems.last?.id
+        }
+        return queryIDs
+    }
+
     func restore(
         queryItems: [WorkspaceQueryTabItem],
         elasticsearchRequestDocuments:

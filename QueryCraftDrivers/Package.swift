@@ -31,6 +31,11 @@ let package = Package(
             type: .dynamic,
             targets: ["QueryCraftElasticsearchDriver"]
         ),
+        .library(
+            name: "QueryCraftKafkaDriver",
+            type: .dynamic,
+            targets: ["QueryCraftKafkaDriver"]
+        ),
     ],
     dependencies: [
         .package(path: "../QueryCraftPackage"),
@@ -43,6 +48,12 @@ let package = Package(
         .systemLibrary(
             name: "CLibPQ",
             path: "Sources/CLibPQ"
+        ),
+        .systemLibrary(
+            name: "CRdkafka",
+            path: "Sources/CRdkafka",
+            pkgConfig: "rdkafka",
+            providers: [.brew(["librdkafka"])]
         ),
         .target(
             name: "CHiredis",
@@ -143,6 +154,23 @@ let package = Package(
                 .unsafeFlags(["-enable-testing"]),
             ]
         ),
+        .target(
+            name: "QueryCraftKafkaDriver",
+            dependencies: [
+                .product(
+                    name: "QueryCraftFeature",
+                    package: "QueryCraftPackage"
+                ),
+                "CRdkafka",
+            ],
+            swiftSettings: [
+                .unsafeFlags(["-enable-testing"]),
+            ],
+            linkerSettings: [
+                .linkedFramework("Network"),
+                .linkedFramework("Security"),
+            ]
+        ),
         .testTarget(
             name: "QueryCraftMySQLDriverTests",
             dependencies: [
@@ -192,6 +220,17 @@ let package = Package(
             name: "QueryCraftElasticsearchDriverTests",
             dependencies: [
                 "QueryCraftElasticsearchDriver",
+                .product(
+                    name: "QueryCraftFeature",
+                    package: "QueryCraftPackage"
+                ),
+            ]
+        ),
+        .testTarget(
+            name: "QueryCraftKafkaDriverTests",
+            dependencies: [
+                "QueryCraftKafkaDriver",
+                "CRdkafka",
                 .product(
                     name: "QueryCraftFeature",
                     package: "QueryCraftPackage"

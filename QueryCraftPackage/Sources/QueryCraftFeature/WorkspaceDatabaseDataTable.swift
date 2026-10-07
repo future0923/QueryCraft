@@ -8,6 +8,7 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
     let nullDisplayText: String
     let emptyStringDisplayText: String
     let copyIncludesColumnNames: Bool
+    var formatsTimestamps: Bool = true
     let cellFont: NSFont
     let exportController: WorkspaceDataExportController
     let searchController: WorkspaceGridSearchController
@@ -40,6 +41,7 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
     let deleteRows: (@MainActor (IndexSet) -> Void)?
     let pasteRows: WorkspaceGridPasteRowsAction?
     let selectRowsForActions: @MainActor (IndexSet) -> Void
+    var kafkaCopyAction: WorkspaceKafkaMessageCopyAction? = nil
     var mappingActions: WorkspaceMappingGridActions? = nil
 
     func makeCoordinator() -> WorkspaceDatabaseDataTableCoordinator {
@@ -50,6 +52,7 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
             nullDisplayText: nullDisplayText,
             emptyStringDisplayText: emptyStringDisplayText,
             copyIncludesColumnNames: copyIncludesColumnNames,
+            formatsTimestamps: formatsTimestamps,
             cellFont: cellFont,
             exportController: exportController,
             searchController: searchController,
@@ -80,6 +83,7 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
         context: Context
     ) -> NSScrollView {
         context.coordinator.mappingActions = mappingActions
+        context.coordinator.kafkaCopyAction = kafkaCopyAction
         return context.coordinator.makeScrollView()
     }
 
@@ -88,6 +92,7 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
         context: Context
     ) {
         context.coordinator.mappingActions = mappingActions
+        context.coordinator.kafkaCopyAction = kafkaCopyAction
         context.coordinator.update(
             page: page,
             isFetching: isFetching,
@@ -95,6 +100,7 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
             nullDisplayText: nullDisplayText,
             emptyStringDisplayText: emptyStringDisplayText,
             copyIncludesColumnNames: copyIncludesColumnNames,
+            formatsTimestamps: formatsTimestamps,
             cellFont: cellFont,
             exportAllRowsProvider: exportAllRowsProvider,
             exportFileName: exportFileName,

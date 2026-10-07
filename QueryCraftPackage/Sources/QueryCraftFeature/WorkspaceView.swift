@@ -90,6 +90,9 @@ public struct WorkspaceView: View {
                             redisKeyActionRegistry.requestRename(for: reference)
                         },
                         openDatabaseObjectTab: { selection, tab in
+                            guard model.databaseType != .kafka || tab == .data else {
+                                return
+                            }
                             openDatabaseObject(selection)
                             objectDetailTabRegistry.request(
                                 tab,
@@ -100,7 +103,12 @@ public struct WorkspaceView: View {
                         tableDidDelete: tableDidDelete,
                         createTable: createTable,
                         createRedisKey: createRedisKey,
-                        showDatabasePicker: { showsDatabasePicker = true }
+                        showDatabasePicker: {
+                            guard toolbarModel.showsDatabaseSelection else {
+                                return
+                            }
+                            showsDatabasePicker = true
+                        }
                     )
                     .frame(
                         minWidth: Self.sidebarMinimumWidth,
@@ -164,9 +172,9 @@ public struct WorkspaceView: View {
             \.workspaceDatabaseActions,
             WorkspaceDatabaseCommandActions(
                 openConnectionPicker: prepareConnectionPicker,
-                canOpenDatabasePicker: model.databaseType != .elasticsearch,
+                canOpenDatabasePicker: toolbarModel.showsDatabaseSelection,
                 openDatabasePicker: {
-                    guard model.databaseType != .elasticsearch else { return }
+                    guard toolbarModel.showsDatabaseSelection else { return }
                     showsDatabasePicker = true
                 },
                 refreshWorkspace: toolbarModel.refreshWorkspace
@@ -215,7 +223,7 @@ public struct WorkspaceView: View {
             prepareConnectionPicker()
         }
         .onChange(of: presentation.databasePickerRequestID) {
-            guard model.databaseType != .elasticsearch else { return }
+            guard toolbarModel.showsDatabaseSelection else { return }
             showsDatabasePicker = true
         }
         .onChange(of: model.redisKeyDeletionRevision) {
@@ -452,7 +460,7 @@ public struct WorkspaceView: View {
 
     private var workspaceContentTabActions: WorkspaceContentTabCommandActions {
         WorkspaceContentTabCommandActions(
-            canCreateQuery: model.connectionState == .connected,
+            canCreateQuery: toolbarModel.canCreateQuery,
             hasContentTabs: !tabsModel.contentItems.isEmpty,
             createDocumentTitle: model.databaseType == .redis
                 ? AppCopy.current.text(

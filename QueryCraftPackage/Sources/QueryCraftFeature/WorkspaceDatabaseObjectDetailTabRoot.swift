@@ -45,6 +45,7 @@ struct WorkspaceDatabaseObjectDetailTabRoot: Equatable, View {
     let deleteRows: (@MainActor (IndexSet) -> Void)?
     let pasteRows: WorkspaceGridPasteRowsAction?
     let selectRowsForActions: @MainActor (IndexSet) -> Void
+    var kafkaCopyAction: WorkspaceKafkaMessageCopyAction? = nil
     let canEditSchema: Bool
     let schemaEditingDescriptor: WorkspaceDatabaseSchemaEditingDescriptor
     nonisolated let schemaEditor: WorkspaceDatabaseSchemaEditorState
@@ -84,6 +85,7 @@ struct WorkspaceDatabaseObjectDetailTabRoot: Equatable, View {
                 && lhs.pendingDeleteRowIndexes == rhs.pendingDeleteRowIndexes
                 && lhs.selectedDataRowIndexes == rhs.selectedDataRowIndexes
                 && lhs.rowActionKind == rhs.rowActionKind
+                && lhs.kafkaCopyAction?.topic == rhs.kafkaCopyAction?.topic
                 && WorkspaceDatabaseDataView.statesRenderEqually(
                     lhs.dataState,
                     rhs.dataState
@@ -138,7 +140,8 @@ struct WorkspaceDatabaseObjectDetailTabRoot: Equatable, View {
                 duplicateRow: duplicateRow,
                 deleteRows: deleteRows,
                 pasteRows: pasteRows,
-                selectRowsForActions: selectRowsForActions
+                selectRowsForActions: selectRowsForActions,
+                kafkaCopyAction: kafkaCopyAction
             )
             .equatable()
 

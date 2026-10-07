@@ -6,16 +6,17 @@ struct WorkspaceToolbarPrimaryControls: View {
     var body: some View {
         HStack(spacing: 0) {
             ControlGroup {
-                Button(
-                    newDocumentTitle,
-                    systemImage: "plus",
-                    action: model.createQueryDocument
-                )
-                .labelStyle(.iconOnly)
-                .keyboardShortcut("n", modifiers: .command)
-                .disabled(!model.canCreateQuery)
-                .help(newDocumentTitle)
-                .accessibilityIdentifier("newQueryButton")
+                if model.canCreateQuery {
+                    Button(
+                        newDocumentTitle,
+                        systemImage: "plus",
+                        action: model.createQueryDocument
+                    )
+                    .labelStyle(.iconOnly)
+                    .keyboardShortcut("n", modifiers: .command)
+                    .help(newDocumentTitle)
+                    .accessibilityIdentifier("newQueryButton")
+                }
 
                 Button(
                     model.refreshActionTitle,

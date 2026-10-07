@@ -16,6 +16,8 @@ struct WorkspacePendingChangesPreviewView: View {
                 requests: requests,
                 dismiss: dismiss
             )
+        case .kafka(let topic, let changes):
+            WorkspaceKafkaConfigurationPreviewView(topic: topic, changes: changes, dismiss: dismiss)
         }
     }
 }

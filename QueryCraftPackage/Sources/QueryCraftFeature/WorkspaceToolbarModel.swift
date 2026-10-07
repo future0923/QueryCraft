@@ -30,10 +30,12 @@ final class WorkspaceToolbarModel {
 
     var canCreateQuery: Bool {
         model.connectionState == .connected
+            && model.databaseType != .kafka
     }
 
     var showsDatabaseSelection: Bool {
         model.databaseType != .elasticsearch
+            && model.databaseType != .kafka
     }
 
     var showsInspector: Bool {
@@ -84,6 +86,7 @@ final class WorkspaceToolbarModel {
 
     var isRefreshActionDisabled: Bool {
         model.connectionState != .connected
+            || (model.databaseType == .kafka && pendingChangesAreCommitting)
             || (selectedContentUsesContextualRefresh
                 && selectedContentRefreshActions == nil)
     }
@@ -154,6 +157,9 @@ final class WorkspaceToolbarModel {
     }
 
     var previewPendingChangesHelp: String {
+        if model.databaseType == .kafka {
+            return AppCopy.current.text("预览配置更改 (⌘⇧P)", "Preview Configuration Changes (⌘⇧P)")
+        }
         if pendingChangesPreviewIsElasticsearch {
             return AppCopy.current.text(
                 "预览请求 (⌘⇧P)",
@@ -172,6 +178,9 @@ final class WorkspaceToolbarModel {
     }
 
     var previewPendingChangesTitle: String {
+        if model.databaseType == .kafka {
+            return AppCopy.current.text("预览配置更改", "Preview Configuration Changes")
+        }
         if pendingChangesPreviewIsElasticsearch {
             return AppCopy.current.text("预览请求", "Preview Request")
         }

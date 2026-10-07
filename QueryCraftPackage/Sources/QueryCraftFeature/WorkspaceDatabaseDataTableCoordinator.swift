@@ -17,6 +17,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
     private var nullDisplayText: String
     private var emptyStringDisplayText: String
     private var copyIncludesColumnNames: Bool
+    private var formatsTimestamps: Bool
     private var cellFont: NSFont
     private let exportController: WorkspaceDataExportController
     private let searchController: WorkspaceGridSearchController
@@ -34,6 +35,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
     private var databaseColumns: [WorkspaceDatabaseColumn]
     private var pendingLoadedUpdates: [WorkspaceDatabaseInspectorPendingUpdate]
     var mappingActions: WorkspaceMappingGridActions?
+    var kafkaCopyAction: WorkspaceKafkaMessageCopyAction?
     private var mappingOptionPresenter: WorkspaceMappingGridOptionPresenter?
     private var hasSizedLoadedMappingRows = false
     private var rowInsertEditor: WorkspaceDatabaseDataRowInsertEditorState
@@ -93,6 +95,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         nullDisplayText: String = "NULL",
         emptyStringDisplayText: String = "",
         copyIncludesColumnNames: Bool = false,
+        formatsTimestamps: Bool = true,
         cellFont: NSFont = WorkspaceGridMetrics.cellFont,
         exportController: WorkspaceDataExportController =
             WorkspaceDataExportController(),
@@ -139,6 +142,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         self.nullDisplayText = nullDisplayText
         self.emptyStringDisplayText = emptyStringDisplayText
         self.copyIncludesColumnNames = copyIncludesColumnNames
+        self.formatsTimestamps = formatsTimestamps
         self.cellFont = cellFont
         self.exportController = exportController
         self.searchController = searchController
@@ -188,6 +192,11 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         tableView.allowsMultipleSelection = true
         tableView.style = .fullWidth
         tableView.workspaceDataSource = self
+        tableView.formatsTimestamps = formatsTimestamps
+        tableView.timestampDisplayChanged = { [weak self, weak tableView] columnID in
+            guard let self, let tableView else { return }
+            self.applyAutomaticColumnWidths(in: tableView, onlyColumnID: columnID)
+        }
         tableView.rowNumberIdentifier = Self.rowNumberIdentifier
         tableView.nullDisplayText = nullDisplayText
         tableView.emptyStringDisplayText = emptyStringDisplayText
@@ -234,6 +243,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         nullDisplayText: String = "NULL",
         emptyStringDisplayText: String = "",
         copyIncludesColumnNames: Bool = false,
+        formatsTimestamps: Bool = true,
         cellFont: NSFont = WorkspaceGridMetrics.cellFont,
         exportAllRowsProvider: WorkspaceDataExportAllRowsProvider? = nil,
         exportFileName: String = "table-data",
@@ -300,7 +310,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         }
         defer {
             if let tableView = tableView as? WorkspaceDirectDrawTableView {
-                syncRequestedSelection(in: tableView)
+                if page.live == nil { syncRequestedSelection(in: tableView) }
                 if mappingActions != nil {
                     tableView.enumerateAvailableRowViews { [self] _, rowIndex in
                         reconfigureLoadedRow(at: rowIndex, in: tableView)
@@ -328,7 +338,15 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             defersRemovedRowsReload: rowActionKind == .elasticsearchDocument && page.revision != self.page.revision
         )
         self.exportAllRowsProvider = exportAllRowsProvider
+        let timestampScopeChanged = self.exportFileName != exportFileName
         self.exportFileName = exportFileName
+        if timestampScopeChanged, let tableView = tableView as? WorkspaceDirectDrawTableView {
+            tableView.configureTimestampDisplay(
+                columns: mappingActions == nil ? page.columns : [], scope: exportFileName
+            )
+            applyAutomaticColumnWidths(in: tableView)
+            tableView.reloadData()
+        }
         exportController.updateAllRowsProvider(
             exportAllRowsProvider,
             suggestedFileName: exportFileName
@@ -338,16 +356,19 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         let displayTextChanged =
             nullDisplayText != self.nullDisplayText
             || emptyStringDisplayText != self.emptyStringDisplayText
+            || formatsTimestamps != self.formatsTimestamps
         self.usesAlternatingRows = usesAlternatingRows
         self.nullDisplayText = nullDisplayText
         self.emptyStringDisplayText = emptyStringDisplayText
         self.copyIncludesColumnNames = copyIncludesColumnNames
+        self.formatsTimestamps = formatsTimestamps
         self.cellFont = cellFont
         if let tableView {
             tableView.usesAlternatingRowBackgroundColors = usesAlternatingRows
             if let directDrawTableView =
                 tableView as? WorkspaceDirectDrawTableView {
                 directDrawTableView.nullDisplayText = nullDisplayText
+                directDrawTableView.formatsTimestamps = formatsTimestamps
                 directDrawTableView.emptyStringDisplayText =
                     emptyStringDisplayText
                 directDrawTableView.copyIncludesColumnNames =
@@ -377,6 +398,13 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             && page.rowCount >= self.page.rowCount
         let replacesCurrentPage = updatesCurrentPage
             && page.rowStore !== self.page.rowStore
+        let previousLive = self.page.live
+        let previousRowCount = self.page.rowCount
+        let oldVisibleRect = tableView?.visibleRect ?? .zero
+        let followsLiveEnd = previousRowCount == 0 || (tableView.map {
+            $0.rect(ofRow: previousRowCount - 1).maxY <= oldVisibleRect.maxY + 2
+        } ?? false)
+        let oldGridSelection = (tableView as? WorkspaceDirectDrawTableView)?.gridSelection
         self.page = page
         displayedSort = page.sort
         searchController.update(source: .tablePage(page))
@@ -393,7 +421,29 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         if !isFetching {
             updateLoadedSortAccessibility(in: tableView)
         }
-        if appendsCurrentPage {
+        if let live = page.live {
+            let sameStream = previousLive?.id == live.id
+            let removed = sameStream ? max(0, live.firstSequence - (previousLive?.firstSequence ?? 0)) : 0
+            tableView.reloadData()
+            if let grid = tableView as? WorkspaceDirectDrawTableView {
+                if sameStream, removed > 0, let anchor = oldGridSelection?.anchor, let active = oldGridSelection?.active,
+                   anchor.row >= removed, active.row >= removed {
+                    grid.selectGridRange(anchor: .init(row: anchor.row - removed, column: anchor.column),
+                                         active: .init(row: active.row - removed, column: active.column))
+                } else if !sameStream || removed > 0 {
+                    grid.clearGridSelection()
+                }
+            }
+            let requestedLatest = sameStream && previousLive?.scrollRequest != live.scrollRequest
+            if page.rowCount > 0, !sameStream || followsLiveEnd || requestedLatest {
+                tableView.scrollRowToVisible(page.rowCount - 1)
+            } else if let scroll = tableView.enclosingScrollView {
+                let rowHeight = tableView.rowHeight + tableView.intercellSpacing.height
+                let point = NSPoint(x: oldVisibleRect.minX, y: max(0, oldVisibleRect.minY - CGFloat(removed) * rowHeight))
+                scroll.contentView.scroll(to: point)
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+        } else if appendsCurrentPage {
             tableView.noteNumberOfRowsChanged()
         } else if replacesCurrentPage {
             if
@@ -414,6 +464,9 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
     }
 
     private func rebuildColumns(in tableView: NSTableView) {
+        (tableView as? WorkspaceDirectDrawTableView)?.configureTimestampDisplay(
+            columns: mappingActions == nil ? page.columns : [], scope: exportFileName
+        )
         (tableView as? WorkspaceDirectDrawTableView)?.clearGridSelection()
         tableView.tableColumns.forEach(tableView.removeTableColumn)
         columnIndexes.removeAll(keepingCapacity: true)
@@ -464,7 +517,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         applyAutomaticColumnWidths(in: tableView)
     }
 
-    private func applyAutomaticColumnWidths(in tableView: NSTableView) {
+    private func applyAutomaticColumnWidths(in tableView: NSTableView, onlyColumnID: Int? = nil) {
         if mappingActions != nil, page.rowCount > 0 { hasSizedLoadedMappingRows = true }
         let widths = WorkspaceGridColumnSizing.automaticWidths(
             columns: page.columns,
@@ -473,17 +526,20 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             rowAt: page.row(at:),
             nullDisplayText: nullDisplayText,
             emptyStringDisplayText: emptyStringDisplayText,
-            cellFont: cellFont
+            cellFont: cellFont,
+            timestampDisplayModes: (tableView as? WorkspaceDirectDrawTableView)?.timestampDisplayModes ?? [:],
+            formatsTimestamps: formatsTimestamps && mappingActions == nil
         )
         isApplyingAutomaticColumnWidths = true
         for tableColumn in tableView.tableColumns {
             guard
                 let columnIndex = columnIndexes[tableColumn.identifier],
+                onlyColumnID == nil || columnIndex == onlyColumnID,
                 let width = widths[columnIndex]
             else {
                 continue
             }
-            if mappingActions != nil, columnIndex >= 2 {
+            if mappingActions?.compactColumns.contains(columnIndex) == true {
                 // Checkbox columns size to their localized headers, not hidden raw text.
                 tableColumn.width = max(WorkspaceGridColumnSizing.minimumColumnWidth,
                     ceil((tableColumn.title as NSString).size(withAttributes: [.font: WorkspaceGridMetrics.headerFont]).width)
@@ -1674,6 +1730,24 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
                 ? [addItem, copyItem, deleteItem]
                 : [addItem, copyItem, duplicateItem, deleteItem]
         }
+        // Read-only table drivers (for example Kafka) still expose row
+        // copying, but mutation commands should not appear as disabled menu
+        // items. Their handlers are nil by design.
+        if addRow == nil, duplicateRow == nil, deleteRows == nil {
+            let copyItem = NSMenuItem(
+                title: AppCopy.current.text("复制行", "Copy Row"),
+                action: #selector(copyRowFromMenu(_:)),
+                keyEquivalent: "c"
+            )
+            copyItem.keyEquivalentModifierMask = .command
+            copyItem.target = self
+            copyItem.representedObject = row
+            if let sourceRow = page.row(at: row),
+               let duplicate = kafkaCopyAction?.menuItem(row: sourceRow, columns: page.columns) {
+                return [copyItem, duplicate]
+            }
+            return [copyItem]
+        }
         let addItem = NSMenuItem(
             title: AppCopy.current.text("新增行", "Add Row"),
             action: #selector(addRowFromMenu(_:)),
@@ -2289,6 +2363,7 @@ extension WorkspaceDatabaseDataTableCoordinator: NSTableViewDelegate {
         MainActor.assumeIsolated {
             guard
                 !isFetching,
+                page.live == nil,
                 mappingActions == nil,
                 let columnIndex = columnIndexes[tableColumn.identifier],
                 page.columns.indices.contains(columnIndex)
@@ -2463,10 +2538,7 @@ private extension WorkspaceDatabaseDataTableCoordinator {
             isPendingDeletion: pendingDeleteRowIndexes.contains(rowIndex),
             cellControls: mappingActions?.cellControls(rowIndex) ?? [:]
         )
-        rowView.toolTip = mappingActions == nil ? nil : AppCopy.current.text(
-            "已索引：半选表示服务器默认，勾选表示开启，空框表示关闭；— 表示不适用。新增字段点击可切换，右侧检查器也可选择服务器默认。可搜索、可聚合由服务器提供，只读。",
-            "Indexed: mixed means Server Default, checked means enabled, unchecked means disabled; — means not applicable. Click to cycle for new fields, or choose Server Default in the inspector. Searchable and Aggregatable are read-only server capabilities."
-        )
+        rowView.toolTip = mappingActions?.rowToolTip
     }
 
     private func effectiveLoadedRow(

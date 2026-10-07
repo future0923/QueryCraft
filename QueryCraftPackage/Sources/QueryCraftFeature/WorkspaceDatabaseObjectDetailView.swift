@@ -23,6 +23,15 @@ struct WorkspaceDatabaseObjectDetailView: View {
     @State private var pendingRefreshRequest: Int?
     @State private var refreshCompletionRequest = 0
     @State private var showsRefreshCompletion = false
+    @State private var kafkaConfigurationEditor: WorkspaceKafkaTopicConfigurationModel
+    @State private var showsKafkaCommitConfirmation = false
+    @State private var showsKafkaReloadConfirmation = false
+    @State private var kafkaCommitTask: Task<Void, Never>?
+    @State private var kafkaTopicDetails: WorkspaceKafkaTopicDetails?
+    @State private var kafkaTopicDetailsError: String?
+    @State private var kafkaTopicDetailsLoading = false
+    @State private var kafkaTopicDetailsSelectionID: String?
+    @State private var kafkaTopicDetailsRequestID = UUID()
     @State private var exportController = WorkspaceDataExportController()
     @State private var searchController = WorkspaceGridSearchController()
     @State private var pendingInspectorUpdates:
@@ -87,6 +96,10 @@ struct WorkspaceDatabaseObjectDetailView: View {
     @State private var mappingEditor = WorkspaceElasticsearchMappingEditor()
     @State private var indexInspector = WorkspaceElasticsearchIndexInspectorModel()
     @State private var aliasEditor = WorkspaceElasticsearchAliasEditor()
+    @State private var showsKafkaConsumerGroups = false
+    @AppStorage("kafkaJSONTableEnabled") private var kafkaJSONTableEnabled = true
+    @State private var kafkaJSONTable = WorkspaceKafkaJSONTableModel()
+    @State private var kafkaJSONSchemaID = UUID()
 
     init(
         selection: WorkspaceDatabaseObjectSelection,
@@ -96,6 +109,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
         inspectorRegistry: WorkspaceInspectorRegistry,
         objectDetailTabRegistry: WorkspaceDatabaseObjectDetailTabRegistry
     ) {
+        _kafkaConfigurationEditor = State(initialValue: WorkspaceKafkaTopicConfigurationModel(topic: selection.objectName))
         self.selection = selection
         self.model = model
         self.contentRefreshRegistry = contentRefreshRegistry
@@ -110,14 +124,52 @@ struct WorkspaceDatabaseObjectDetailView: View {
 
     private var detailContent: some View {
         VStack(spacing: 0) {
-            if isElasticsearchObject && selectedTab == .structure {
+            if model.databaseType == .kafka && selectedTab == .data {
+                WorkspaceKafkaReadBar(
+                    request: model.kafkaReadRequest(for: selection),
+                    scanRequest: model.kafkaScanRequest(for: selection),
+                    progress: model.kafkaScanProgress(for: selection),
+                    isLoading: model.selectedObjectDataState.isFetching,
+                    stop: stopDataFetching,
+                    live: model.kafkaLive,
+                    isLive: model.kafkaLive.isShowing(selection),
+                    startLive: { partition, filter in
+                        selectedDataRowIndexes = []
+                        dataOffset = 0
+                        dataSort = .none
+                        Task { await model.startKafkaLive(for: selection, partition: partition, filter: filter) }
+                    },
+                    showsJSONTable: $kafkaJSONTableEnabled,
+                    rebuildJSONColumns: { kafkaJSONSchemaID = UUID() }
+                ) { request, scan in
+                    model.kafkaLive.leave()
+                    model.setKafkaReadRequest(request, for: selection)
+                    model.setKafkaScanRequest(scan, for: selection)
+                    dataOffset = 0
+                    dataSort = .none
+                    selectedDataRowIndexes = []
+                    retry()
+                }
+                .id(selection.id)
+                Divider()
+            }
+            if model.databaseType == .kafka && selectedTab == .structure {
+                WorkspaceKafkaTopicDetailsView(
+                    topic: selection.objectName,
+                    details: kafkaTopicDetailsSelectionID == selection.id ? kafkaTopicDetails : nil,
+                    error: kafkaTopicDetailsSelectionID == selection.id ? kafkaTopicDetailsError : nil,
+                    loading: kafkaTopicDetailsLoading,
+                    editor: kafkaConfigurationEditor
+                )
+                    .id(selection.id)
+            } else if isElasticsearchObject && selectedTab == .structure {
                 WorkspaceElasticsearchEditableMappingView(editor: mappingEditor, workspace: model,
                     resource: .init(resource: selection.objectName, kind: selection.kind))
             } else {
             WorkspaceDatabaseObjectDetailContent(
                 detailsState: model.selectedObjectDetailsState,
                 indexesState: model.selectedObjectIndexesState,
-                dataState: documentCreationPresentation?.dataState ?? model.selectedObjectDataState,
+                dataState: displayedDataState,
                 availableTabs: availableTabs,
                 selectedTab: selectedTab,
                 retry: retry,
@@ -131,7 +183,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
                 closeDataFilter: dismissDataFilter,
                 applyDataFilter: applyDataFilter,
                 retryDataFilterDetails: loadFilterColumns,
-                exportAllRowsProvider: model.dataExportAllRowsProvider(
+                exportAllRowsProvider: model.databaseType == .kafka ? nil : model.dataExportAllRowsProvider(
                     for: selection,
                     sort: dataSort,
                     filter: currentAppliedDataFilter
@@ -157,6 +209,12 @@ struct WorkspaceDatabaseObjectDetailView: View {
                 deleteRows: dataRowDeletionAction,
                 pasteRows: canAddRowOrDocument ? beginPastingRows : nil,
                 selectRowsForActions: selectRowsForActions,
+                kafkaCopyAction: model.databaseType == .kafka ? WorkspaceKafkaMessageCopyAction(
+                    topic: selection.objectName,
+                    open: { reference in
+                        WorkspaceKafkaProducerWindowController.show(topic: reference.topic, workspace: model, copying: reference)
+                    }
+                ) : nil,
                 canEditSchema: model.schemaEditingDescriptor.canEdit
                     && selection.kind == .table
                     && !isSubmittingPendingChanges,
@@ -188,10 +246,10 @@ struct WorkspaceDatabaseObjectDetailView: View {
                     guard !indexInspector.isCommitting, !aliasEditor.isCommitting else { return }
                     selectedTab = tab
                 }),
-                page: (documentCreationPresentation?.dataState ?? model.selectedObjectDataState).page,
+                page: displayedDataState.page,
                 countState: documentCreationPresentation?.countState ?? model.selectedObjectDataCountState,
-                isFetching: (documentCreationPresentation?.dataState ?? model.selectedObjectDataState).isFetching,
-                isStopped: (documentCreationPresentation?.dataState ?? model.selectedObjectDataState).isStopped,
+                isFetching: displayedDataState.isFetching,
+                isStopped: displayedDataState.isStopped,
                 previousPage: previousDataPage,
                 nextPage: nextDataPage,
                 loadRange: loadDataRange,
@@ -199,6 +257,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
                 searchController: searchController,
                 isDataFilterPresented: isCurrentDataFilterPresented,
                 hasActiveDataFilter: currentAppliedDataFilter.isActive,
+                isDataFilterVisible: model.databaseType != .kafka,
                 isDataFilterDisabled: dataFilterDetailsTask != nil
                     && !isCurrentDataFilterPresented,
                 toggleDataFilter: toggleDataFilter,
@@ -213,14 +272,76 @@ struct WorkspaceDatabaseObjectDetailView: View {
                 addIndex: addSchemaIndex,
                 mappingActions: isElasticsearchObject
                     ? WorkspaceElasticsearchMappingActionsView(editor: mappingEditor, workspace: model)
+                    : nil,
+                showsSchemaAddControls: model.databaseType != .kafka,
+                showKafkaConsumerGroups: model.databaseType == .kafka
+                    ? { showsKafkaConsumerGroups = true }
+                    : nil,
+                sendKafkaMessage: model.databaseType == .kafka
+                    ? { WorkspaceKafkaProducerWindowController.show(topic: selection.objectName, workspace: model) }
                     : nil
             )
         }
+        .sheet(isPresented: $showsKafkaConsumerGroups) {
+            WorkspaceKafkaConsumerGroupsView(topic: selection.objectName, model: model) { request in
+                showsKafkaConsumerGroups = false
+                model.kafkaLive.leave()
+                model.setKafkaReadRequest(request, for: selection)
+                model.setKafkaScanRequest(nil, for: selection)
+                dataOffset = 0
+                dataSort = .none
+                selectedDataRowIndexes = []
+                selectedTab = .data
+                retry()
+            }
+        }
+    }
+
+    private struct KafkaJSONLoadID: Equatable {
+        let selection: String
+        let revision: UUID?
+        let enabled: Bool
+        let schema: UUID
+    }
+
+    private var kafkaJSONLoadID: KafkaJSONLoadID {
+        .init(selection: selection.id, revision: model.selectedObjectDataState.page?.revision,
+              enabled: kafkaJSONTableEnabled, schema: kafkaJSONSchemaID)
+    }
+
+    private var displayedDataState: WorkspaceDatabaseDataState {
+        if model.databaseType == .kafka, kafkaJSONTableEnabled {
+            return kafkaJSONTable.state(for: model.selectedObjectDataState,
+                selectionID: selection.id, schemaID: kafkaJSONSchemaID)
+        }
+        return documentCreationPresentation?.dataState ?? model.selectedObjectDataState
+    }
+
+    private var kafkaInspectorSourcePage: WorkspaceDatabaseDataPage? {
+        if kafkaJSONTableEnabled {
+            return kafkaJSONTable.selectionID == selection.id ? kafkaJSONTable.sourcePage : nil
+        }
+        return model.selectedObjectDataState.page
     }
 
     private var observedContent: some View {
         detailContent
+        .task(id: kafkaJSONLoadID) {
+            guard model.databaseType == .kafka, kafkaJSONTableEnabled else { return }
+            await kafkaJSONTable.load(model.selectedObjectDataState.page,
+                selectionID: selection.id, schemaID: kafkaJSONSchemaID)
+        }
+        .onChange(of: kafkaJSONTableEnabled) { _, _ in
+            kafkaJSONSchemaID = UUID()
+            selectedDataRowIndexes = []
+        }
         .task(id: loadID + (isElasticsearchObject ? ":\(model.elasticsearchMutationRevision)" : "")) {
+            // Kafka selections are page-local. Clear the inspector selection
+            // before a new page or refresh starts so the old row index cannot
+            // be applied to a different batch of messages.
+            if model.databaseType == .kafka {
+                selectedDataRowIndexes = []
+            }
             await loadSelectedContentIfNeeded()
         }
         .task(id: "\(selection.id):\(reloadRequest):\(model.elasticsearchMutationRevision)") {
@@ -244,6 +365,18 @@ struct WorkspaceDatabaseObjectDetailView: View {
             guard selectedTab != .data else { return }
             await model.stopDataWork(for: selection, reason: .leftDataTab)
         }
+        .onChange(of: model.kafkaLive.firstSequence) { previous, current in
+            guard !kafkaJSONTableEnabled else { return }
+            guard model.kafkaLive.isShowing(selection), current > previous else { return }
+            let removed = current - previous
+            selectedDataRowIndexes = IndexSet(selectedDataRowIndexes.compactMap { $0 >= removed ? $0 - removed : nil })
+        }
+        .onChange(of: kafkaJSONTable.page?.live?.firstSequence) { previous, current in
+            guard kafkaJSONTableEnabled, model.kafkaLive.isShowing(selection),
+                  let previous, let current, current > previous else { return }
+            let removed = current - previous
+            selectedDataRowIndexes = IndexSet(selectedDataRowIndexes.compactMap { $0 >= removed ? $0 - removed : nil })
+        }
         .task(id: WorkspaceDocumentInspectorLoadRequest(reference: selectedDocumentReference,
             serverRevision: model.elasticsearchMutationRevision)) {
             await documentInspectorModel.load(
@@ -259,7 +392,33 @@ struct WorkspaceDatabaseObjectDetailView: View {
                 selectedTab = .data
             }
         }
+        .alert(AppCopy.current.text("提交 Topic 配置更改？", "Commit Topic Configuration Changes?"), isPresented: $showsKafkaCommitConfirmation) {
+            Button(AppCopy.current.text("取消", "Cancel"), role: .cancel) {}
+            Button(model.safetyLock.isEnabled
+                   ? AppCopy.current.text("停用安全锁并提交", "Unlock and Commit")
+                   : AppCopy.current.text("提交", "Commit"), role: .destructive) {
+                if model.safetyLock.isEnabled { model.safetyLock.disable() }
+                commitKafkaConfiguration()
+            }
+        } message: {
+            Text(AppCopy.current.text(
+                "将提交 Topic \(kafkaConfigurationEditor.topic) 的 \(kafkaConfigurationEditor.changes.count) 项配置更改。调整清理与保留设置可能影响现有消息。",
+                "Commit \(kafkaConfigurationEditor.changes.count) configuration changes for topic \(kafkaConfigurationEditor.topic). Cleanup and retention changes may affect existing messages."))
+        }
+        .alert(AppCopy.current.text("放弃草稿并重新读取？", "Discard Draft and Reload?"), isPresented: $showsKafkaReloadConfirmation) {
+            Button(AppCopy.current.text("保留草稿", "Keep Draft"), role: .cancel) {}
+            Button(AppCopy.current.text("放弃并重新读取", "Discard and Reload"), role: .destructive) {
+                kafkaConfigurationEditor.discard()
+                retry()
+            }
+        } message: {
+            Text(AppCopy.current.text("上次修改的结果未确认，需要读取服务器当前值后才能再次提交。", "The previous change was not confirmed. Reload current server values before submitting again."))
+        }
         .onChange(of: selection.id) { _, selectionID in
+            if kafkaConfigurationEditor.topic != selection.objectName {
+                kafkaConfigurationEditor.lifetime.finish(commit: true)
+                kafkaConfigurationEditor = WorkspaceKafkaTopicConfigurationModel(topic: selection.objectName)
+            }
             resetDataState(for: selectionID)
         }
         .onChange(of: model.selectedObjectDataState.page?.revision) { _, _ in
@@ -555,11 +714,12 @@ struct WorkspaceDatabaseObjectDetailView: View {
             inspectorRegistry.update(context, for: contentID)
         }
         .onDisappear {
+            kafkaConfigurationEditor.lifetime.finish(commit: true)
             mappingEditor.stop()
             indexInspector.stopReading()
             aliasEditor.stopReading()
             contentRefreshRegistry.remove(for: contentID)
-            if isElasticsearchObject, let actions = pendingChangesActions {
+            if isElasticsearchObject || model.databaseType == .kafka, let actions = pendingChangesActions {
                 pendingChangesRegistry.update(actions, for: contentID)
             } else { pendingChangesRegistry.remove(for: contentID) }
             inspectorRegistry.remove(for: contentID)
@@ -569,7 +729,10 @@ struct WorkspaceDatabaseObjectDetailView: View {
     }
 
     private var availableTabs: [WorkspaceDatabaseObjectDetailTab] {
-        WorkspaceDatabaseObjectDetailTab.available(for: selection.kind).filter {
+        if model.databaseType == .kafka {
+            return [.data, .structure]
+        }
+        return WorkspaceDatabaseObjectDetailTab.available(for: selection.kind).filter {
             $0 != .options || model.schemaEditingDescriptor.supportsTableOptions
         }
     }
@@ -612,6 +775,15 @@ struct WorkspaceDatabaseObjectDetailView: View {
     }
 
     private var inspectorContext: WorkspaceInspectorContext {
+        if model.databaseType == .kafka {
+            return .kafkaMessage(
+                WorkspaceKafkaMessageInspectorContext(
+                    topic: selection.objectName,
+                    page: kafkaInspectorSourcePage,
+                    selectedRowIndexes: selectedDataRowIndexes
+                )
+            )
+        }
         if isElasticsearchObject && selectedTab == .structure {
             if mappingEditor.selectedRow != nil {
                 return .elasticsearchMapping(.init(editor: mappingEditor, workspace: model))
@@ -743,6 +915,17 @@ struct WorkspaceDatabaseObjectDetailView: View {
     }
 
     private var pendingChangesActions: WorkspacePendingChangesActions? {
+        if model.databaseType == .kafka, kafkaConfigurationEditor.hasChanges || kafkaConfigurationEditor.isBusy {
+            return .init(hasChanges: true,
+                previewContent: .kafka(topic: kafkaConfigurationEditor.topic, changes: kafkaConfigurationEditor.changes),
+                canCommit: kafkaConfigurationEditor.canCommit && !kafkaTopicDetailsLoading,
+                isCommitting: kafkaConfigurationEditor.isBusy,
+                discard: { kafkaConfigurationEditor.discard() }, preview: {},
+                commit: {
+                    kafkaConfigurationEditor.lifetime.finish(commit: true)
+                    if kafkaConfigurationEditor.canCommit { showsKafkaCommitConfirmation = true }
+                })
+        }
         if aliasEditor.hasChanges {
             return .init(hasChanges: true,
                 elasticsearchRequests: aliasEditor.prepared.map { [$0.request] } ?? [],
@@ -883,7 +1066,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
     }
 
     private var hasPendingChanges: Bool {
-        aliasEditor.hasChanges || indexInspector.hasChanges || mappingEditor.hasChanges
+        kafkaConfigurationEditor.hasChanges || aliasEditor.hasChanges || indexInspector.hasChanges || mappingEditor.hasChanges
             || documentInspectorModel.hasChanges
             || hasPendingRowChanges
             || schemaEditor.hasChanges
@@ -898,7 +1081,9 @@ struct WorkspaceDatabaseObjectDetailView: View {
     private var synchronousCellEditPreparer: ((
         WorkspaceDatabaseDataCellEditTarget
     ) -> WorkspaceDatabaseDataCellInlineEditContext?)? {
-        guard !isElasticsearchObject else { return nil }
+        guard !isElasticsearchObject,
+              model.sessionCapabilities.supportsDataEditing
+        else { return nil }
         return { target in
             prepareInlineCellEdit(target)
         }
@@ -1469,7 +1654,8 @@ struct WorkspaceDatabaseObjectDetailView: View {
     }
 
     private var isDataWorkActive: Bool {
-        model.selectedObjectDataState.isFetching
+        displayedDataState.isFetching
+            || (model.kafkaLive.isShowing(selection) && model.kafkaLive.isReading)
             || model.selectedObjectDataCountState == .loading
             || isPreparingDocumentDeletion
             || isPreparingDocumentDuplication
@@ -1494,6 +1680,14 @@ struct WorkspaceDatabaseObjectDetailView: View {
     }
 
     private func retry() {
+        if model.databaseType == .kafka {
+            guard !kafkaConfigurationEditor.isBusy else { return }
+            kafkaConfigurationEditor.lifetime.finish(commit: true)
+            if kafkaConfigurationEditor.needsReload && kafkaConfigurationEditor.hasChanges {
+                showsKafkaReloadConfirmation = true
+                return
+            }
+        }
         guard allowDocumentDraftInvalidation() else { return }
         if isElasticsearchObject, selectedTab == .structure {
             mappingEditor.load(target: mappingEditor.snapshot?.target ?? .init(resource: selection.objectName, kind: selection.kind), workspace: model)
@@ -1533,6 +1727,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
                 in: selection.databaseName
             )
             await loadSelectedTab(force: true)
+            await prepareKafkaJSONTable()
             let didRefreshObjects = await objectsWereRefreshed
             finishRefresh(
                 request: refreshRequest,
@@ -1540,7 +1735,15 @@ struct WorkspaceDatabaseObjectDetailView: View {
             )
         } else {
             await loadSelectedTab(force: false)
+            await prepareKafkaJSONTable()
         }
+    }
+
+    private func prepareKafkaJSONTable() async {
+        guard model.databaseType == .kafka, kafkaJSONTableEnabled, selectedTab == .data,
+              !Task.isCancelled else { return }
+        await kafkaJSONTable.load(model.selectedObjectDataState.page,
+            selectionID: selection.id, schemaID: kafkaJSONSchemaID)
     }
 
     private func loadSelectedContentIfNeeded() async {
@@ -1552,6 +1755,19 @@ struct WorkspaceDatabaseObjectDetailView: View {
             synchronizedDocumentPageLoadID = nil
             return
         }
+        // A restored tab can be mounted before the workspace connection has
+        // finished. Keep this task alive until the connection is ready instead
+        // of returning and leaving the data view in its initial loading state.
+        while model.connectionState == .connecting {
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+        }
+        guard model.connectionState == .connected else { return }
         await loadSelectedContent()
     }
 
@@ -1614,6 +1830,10 @@ struct WorkspaceDatabaseObjectDetailView: View {
             )
             await details
         case .structure:
+            if model.databaseType == .kafka {
+                await loadKafkaTopicDetails(force: force)
+                return
+            }
             async let indexes: Void = model.loadIndexes(
                 for: selection,
                 force: force
@@ -1629,6 +1849,54 @@ struct WorkspaceDatabaseObjectDetailView: View {
             )
             await model.loadIndexes(for: selection, force: force)
             await details
+        }
+    }
+
+    private func commitKafkaConfiguration() {
+        guard kafkaConfigurationEditor.canCommit, !kafkaTopicDetailsLoading, kafkaCommitTask == nil else { return }
+        let editor = kafkaConfigurationEditor
+        let selectionID = selection.id
+        kafkaTopicDetailsRequestID = UUID()
+        kafkaCommitTask = Task { @MainActor in
+            await editor.save(using: { try await model.updateKafkaTopicConfiguration($0) }, read: {
+                let details = try await model.fetchKafkaTopicDetails(topic: editor.topic)
+                if kafkaTopicDetailsSelectionID == selectionID {
+                    kafkaTopicDetails = details
+                    kafkaTopicDetailsError = nil
+                }
+                return details
+            })
+            kafkaCommitTask = nil
+            publishPendingChangesActions()
+        }
+    }
+
+    private func loadKafkaTopicDetails(force: Bool) async {
+        guard !Task.isCancelled, !kafkaConfigurationEditor.isBusy else { return }
+        if !force, kafkaTopicDetailsSelectionID == selection.id,
+           kafkaTopicDetails != nil, kafkaTopicDetailsError == nil,
+           kafkaTopicDetails?.configurationError == nil { return }
+
+        let requestID = UUID()
+        kafkaTopicDetailsRequestID = requestID
+        if kafkaTopicDetailsSelectionID != selection.id {
+            kafkaTopicDetails = nil
+            kafkaTopicDetailsSelectionID = selection.id
+        }
+        kafkaTopicDetailsError = nil
+        kafkaTopicDetailsLoading = true
+        defer {
+            if kafkaTopicDetailsRequestID == requestID { kafkaTopicDetailsLoading = false }
+        }
+        do {
+            let result = try await model.fetchKafkaTopicDetails(topic: selection.objectName)
+            try Task.checkCancellation()
+            guard kafkaTopicDetailsRequestID == requestID else { return }
+            kafkaTopicDetails = result
+            kafkaConfigurationEditor.receive(result)
+        } catch {
+            guard !Task.isCancelled, kafkaTopicDetailsRequestID == requestID else { return }
+            kafkaTopicDetailsError = error.localizedDescription
         }
     }
 
@@ -1650,6 +1918,16 @@ struct WorkspaceDatabaseObjectDetailView: View {
     }
 
     private var selectedContentLoadedSuccessfully: Bool {
+        if selectedTab == .data, model.kafkaLive.isShowing(selection) {
+            return model.kafkaLive.error == nil && !model.kafkaLive.isRefreshing && model.kafkaLive.mode != .starting
+        }
+        if model.databaseType == .kafka, selectedTab == .structure {
+            return kafkaTopicDetailsSelectionID == selection.id
+                && kafkaTopicDetails != nil
+                && kafkaTopicDetailsError == nil
+                && kafkaTopicDetails?.configurationError == nil
+                && !kafkaTopicDetailsLoading
+        }
         switch selectedTab {
         case .data:
             if case .loaded = model.selectedObjectDataState {
@@ -1673,6 +1951,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
         WorkspaceDatabaseDataFilterPresentationActions?
     {
         guard
+            model.databaseType != .kafka,
             selectedTab == .data,
             dataFilterDetailsTask == nil || isCurrentDataFilterPresented
         else {
@@ -1707,6 +1986,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
     }
 
     private func toggleDataFilter() {
+        guard model.databaseType != .kafka else { return }
         guard allowDocumentDraftInvalidation() else { return }
         if isCurrentDataFilterPresented {
             dismissDataFilter()

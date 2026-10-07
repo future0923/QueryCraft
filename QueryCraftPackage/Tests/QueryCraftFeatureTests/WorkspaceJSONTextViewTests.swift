@@ -1,6 +1,6 @@
 import AppKit
 @testable import CodeEditSourceEditor
-import CodeEditTextView
+@testable import CodeEditTextView
 import SwiftUI
 import Testing
 @testable import QueryCraftFeature
@@ -8,6 +8,35 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct WorkspaceJSONTextViewTests {
+    @Test func longWrappedStringsDrawEveryCharacterOnceWithinTheViewport() {
+        let source = #"  "snapshotJson":""# + String(repeating: #"{\"区域\":\"经开区👩‍💻\",\"id\":18446744073709551615},"#, count: 40) + #"END""#
+        let storage = NSTextStorage(string: source, attributes: [.font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)])
+        for strategy in [LineBreakStrategy.word, .character] {
+            for width: CGFloat in [120, 480, 1_200] {
+                let line = TextLine()
+                line.prepareForDisplay(displayData: .init(maxWidth: width, lineHeightMultiplier: 1,
+                    estimatedLineHeight: 16, breakStrategy: strategy),
+                    range: NSRange(location: 0, length: storage.length), stringRef: storage, markedRanges: nil, attachments: [])
+                var drawn = ""
+                var fragmentCount = 0
+                for fragment in line.lineFragments {
+                    fragmentCount += 1
+                    #expect(fragment.data.width <= width + 0.5)
+                    let drawnLength = fragment.data.contents.reduce(0) { $0 + $1.length }
+                    #expect(drawnLength == fragment.range.length)
+                    for content in fragment.data.contents {
+                        if case .text(let ctLine) = content.data {
+                            let range = CTLineGetStringRange(ctLine)
+                            drawn += (source as NSString).substring(with: NSRange(location: range.location, length: range.length))
+                        }
+                    }
+                }
+                #expect(fragmentCount > 2)
+                #expect(drawn == source)
+            }
+        }
+    }
+
     private let source = """
     {
       "name" : "沈阳",

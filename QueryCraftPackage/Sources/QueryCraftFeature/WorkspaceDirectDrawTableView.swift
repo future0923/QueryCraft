@@ -84,6 +84,65 @@ final class WorkspaceDirectDrawTableView: NSTableView {
     var canDeleteDataRowsHandler: ((IndexSet) -> Bool)?
     var selectedDataRowsChanged: ((IndexSet) -> Void)?
     var inlineEditorLayoutHandler: (() -> Void)?
+    var timestampDisplayChanged: ((Int) -> Void)?
+    var formatsTimestamps = true
+    private(set) var timestampDisplayModes: [Int: WorkspaceTimestampDisplayMode] = [:]
+    private var timestampColumns: [Int: WorkspaceDatabaseDataColumn] = [:]
+    private var timestampScope = ""
+
+    func configureTimestampDisplay(columns: [WorkspaceDatabaseDataColumn], scope: String) {
+        let newColumns = Dictionary(uniqueKeysWithValues: columns.map { ($0.id, $0) })
+        if timestampScope != scope || timestampColumns != newColumns {
+            timestampDisplayModes.removeAll()
+        }
+        timestampScope = scope
+        timestampColumns = newColumns
+    }
+
+    func cellPreview(_ cell: WorkspaceDatabaseDataCell, dataColumnIndex: Int,
+                     maximumCharacterCount: Int) -> String {
+        WorkspaceTimestampDisplayFormatter.shared.preview(
+            cell, column: formatsTimestamps ? timestampColumns[dataColumnIndex] : nil,
+            mode: timestampDisplayModes[dataColumnIndex] ?? .automatic,
+            nullDisplayText: nullDisplayText,
+            emptyStringDisplayText: emptyStringDisplayText,
+            maximumCharacterCount: maximumCharacterCount
+        )
+    }
+
+    func setTimestampDisplayMode(_ mode: WorkspaceTimestampDisplayMode, dataColumnIndex: Int) {
+        guard timestampColumns[dataColumnIndex] != nil else { return }
+        timestampDisplayModes[dataColumnIndex] = mode == .automatic ? nil : mode
+        timestampDisplayChanged?(dataColumnIndex)
+        reloadData()
+    }
+
+    func timestampDisplayMenu(for identifier: NSUserInterfaceItemIdentifier) -> NSMenuItem? {
+        guard let index = workspaceDataSource?.workspaceTableView(self, dataColumnIndexFor: identifier),
+              timestampColumns[index] != nil else { return nil }
+        let item = NSMenuItem(title: AppCopy.current.text("显示格式", "Display Format"),
+                              action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for mode in WorkspaceTimestampDisplayMode.allCases {
+            let option = NSMenuItem(title: mode.title, action: #selector(changeTimestampDisplay(_:)),
+                                    keyEquivalent: "")
+            option.target = self
+            option.tag = mode.rawValue
+            option.representedObject = identifier.rawValue
+            option.state = (timestampDisplayModes[index] ?? .automatic) == mode ? .on : .off
+            submenu.addItem(option)
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func changeTimestampDisplay(_ sender: NSMenuItem) {
+        guard let rawIdentifier = sender.representedObject as? String,
+              let index = workspaceDataSource?.workspaceTableView(
+                self, dataColumnIndexFor: NSUserInterfaceItemIdentifier(rawIdentifier)),
+              let mode = WorkspaceTimestampDisplayMode(rawValue: sender.tag) else { return }
+        setTimestampDisplayMode(mode, dataColumnIndex: index)
+    }
 
     private(set) var gridSelection = WorkspaceGridSelection.empty
     private(set) var suppressedActiveCellIndicator:
@@ -92,7 +151,8 @@ final class WorkspaceDirectDrawTableView: NSTableView {
     private(set) var draggedColumnIdentifier:
         NSUserInterfaceItemIdentifier?
     private var backgroundCopyTask: Task<String?, Never>?
-    private var fullCellValuePopover: NSPopover?
+    private var fullCellValueWindowController:
+        WorkspaceFullCellValueWindowController?
     private var copyGeneration = UUID()
     private var columnDragOverlay: WorkspaceColumnSnapshotView?
     private var columnDragOverlayOriginX: CGFloat?
@@ -151,8 +211,8 @@ final class WorkspaceDirectDrawTableView: NSTableView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil {
-            fullCellValuePopover?.close()
-            fullCellValuePopover = nil
+            fullCellValueWindowController?.close()
+            fullCellValueWindowController = nil
         }
     }
 
@@ -353,10 +413,8 @@ final class WorkspaceDirectDrawTableView: NSTableView {
         }
 
         if shortcutModifiers.isEmpty,
-           let active = gridSelection.active,
            let characters = event.characters,
-           isDirectTextEntry(characters),
-           cellTypingHandler?(active.row, active.column, characters) == true
+           isDirectTextEntry(characters)
         {
             return
         }
@@ -573,7 +631,6 @@ final class WorkspaceDirectDrawTableView: NSTableView {
               let dataColumn = copyColumn(at: column),
               let source = workspaceDataSource,
               let value = source.workspaceTableViewCopySnapshot(self).rowAt(row)?.value(at: dataColumn.dataIndex),
-              value.textExceeds(characterCount: WorkspaceDatabaseDataRowView.maximumDrawnTextCharacters),
               case .text(let text) = value else { return nil }
         return text
     }
@@ -587,18 +644,22 @@ final class WorkspaceDirectDrawTableView: NSTableView {
     private func showFullCellValue(row: Int, column: Int) -> Bool {
         guard let text = fullCellText(row: row, column: column),
               let name = copyColumn(at: column)?.name else { return false }
-        fullCellValuePopover?.close()
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = false
-        popover.contentSize = NSSize(width: 560, height: 360)
-        popover.contentViewController = NSHostingController(rootView:
-            WorkspaceReadOnlyTextView(text: text, usesMonospacedFont: false,
-                accessibilityLabel: AppCopy.current.text("\(name)，完整内容", "\(name), full content"),
-                showsBorder: false, presentation: .automaticJSON)
+        fullCellValueWindowController?.close()
+        let windowController = WorkspaceFullCellValueWindowController(
+            text: text,
+            title: AppCopy.current.text("\(name)，完整内容", "\(name), full content")
         )
-        fullCellValuePopover = popover
-        popover.show(relativeTo: frameOfCell(atColumn: column, row: row), of: self, preferredEdge: .maxY)
+        windowController.onClose = { [weak self, weak windowController] in
+            guard self?.fullCellValueWindowController === windowController else {
+                return
+            }
+            self?.fullCellValueWindowController = nil
+        }
+        fullCellValueWindowController = windowController
+        windowController.show(
+            relativeTo: frameOfCell(atColumn: column, row: row),
+            of: self
+        )
         return true
     }
 
@@ -606,6 +667,8 @@ final class WorkspaceDirectDrawTableView: NSTableView {
         _ item: NSValidatedUserInterfaceItem
     ) -> Bool {
         switch item.action {
+        case #selector(changeTimestampDisplay(_:)):
+            formatsTimestamps
         case #selector(copy(_:)), #selector(copyWithColumnNames(_:)):
             !gridSelection.isEmpty || !selectedRowIndexes.isEmpty
         case #selector(findInData(_:)):
@@ -1715,6 +1778,10 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
         copyWithNameItem.target = tableView
         copyWithNameItem.representedObject = identifier
         menu.addItem(copyWithNameItem)
+        if let formatItem = tableView.timestampDisplayMenu(for: NSUserInterfaceItemIdentifier(identifier)) {
+            menu.addItem(.separator())
+            menu.addItem(formatItem)
+        }
         return menu
     }
 }

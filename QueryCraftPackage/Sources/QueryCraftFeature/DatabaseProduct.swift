@@ -7,6 +7,7 @@ public enum DatabaseProduct: String, CaseIterable, Codable, Identifiable, Sendab
     case selectDB
     case redis
     case elasticsearch
+    case kafka
 
     public var id: String { rawValue }
 
@@ -22,6 +23,8 @@ public enum DatabaseProduct: String, CaseIterable, Codable, Identifiable, Sendab
             .redis
         case .elasticsearch:
             .elasticsearch
+        case .kafka:
+            .kafka
         }
     }
 
@@ -37,6 +40,8 @@ public enum DatabaseProduct: String, CaseIterable, Codable, Identifiable, Sendab
             .redis
         case .elasticsearch:
             .elasticsearch
+        case .kafka:
+            .kafka
         }
     }
 }

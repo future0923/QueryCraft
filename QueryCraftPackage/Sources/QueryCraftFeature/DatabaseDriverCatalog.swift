@@ -1,10 +1,24 @@
 import Foundation
 
 struct DatabaseDriverCatalogEntry: Equatable, Identifiable, Sendable {
-    enum Category: String, Sendable {
+    enum Category: String, CaseIterable, Hashable, Sendable {
         case relational
         case keyValue
         case document
+        case messaging
+
+        var title: String {
+            switch self {
+            case .relational:
+                AppCopy.current.text("关系型", "Relational")
+            case .keyValue:
+                AppCopy.current.text("键值", "Key-Value")
+            case .document:
+                AppCopy.current.text("文档", "Document")
+            case .messaging:
+                AppCopy.current.text("消息流", "Messaging")
+            }
+        }
     }
 
     let databaseType: DatabaseType
@@ -105,6 +119,12 @@ enum DatabaseDriverCatalog {
             category: .document,
             isDownloadable: true,
             manifestURL: manifestURL(for: .elasticsearch)
+        ),
+        DatabaseDriverCatalogEntry(
+            databaseType: .kafka,
+            category: .messaging,
+            isDownloadable: true,
+            manifestURL: manifestURL(for: .kafka)
         ),
     ]
 

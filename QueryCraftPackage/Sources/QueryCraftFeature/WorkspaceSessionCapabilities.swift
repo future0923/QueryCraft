@@ -44,10 +44,27 @@ public struct WorkspaceSessionCapabilities: Equatable, Sendable {
     )
 
     public static let elasticsearchReadOnly = elasticsearch
+
+    public static let kafka = Self(
+        readOnlyExecution: .classifiedStatementsOnly,
+        supportsDataEditing: false,
+        supportsTransactions: false
+    )
 }
 
 public protocol WorkspaceSessionCapabilityProviding: Sendable {
     var capabilities: WorkspaceSessionCapabilities { get }
+}
+
+/// Optional capability for sessions that can create a named Kafka topic.
+/// Keeping this separate from the general session protocol avoids exposing
+/// Kafka-specific mutation parameters to every database driver.
+public protocol WorkspaceTopicCreationProviding: Sendable {
+    func createTopic(
+        name: String,
+        partitions: Int32,
+        replicationFactor: Int16
+    ) async throws
 }
 
 public extension WorkspaceSession {

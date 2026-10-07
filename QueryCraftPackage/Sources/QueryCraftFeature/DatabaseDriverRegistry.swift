@@ -97,4 +97,20 @@ struct DatabaseDriverConnectionTester: ConnectionTester {
     ) async throws {
         try await registry.testConnection(configuration: configuration)
     }
+
+    func test(_ configuration: DatabaseConnectionConfiguration, kafkaSASLMechanism: KafkaSASLMechanism) async throws {
+        guard configuration.databaseType == .kafka, kafkaSASLMechanism != .plain,
+              configuration.authentication.method == .usernamePassword else {
+            return try await test(configuration)
+        }
+        let session = try await registry.makeSession(configuration: configuration)
+        do {
+            try await WorkspaceKafkaAuthentication.configure(session, configuration: configuration, mechanism: kafkaSASLMechanism)
+            try await session.connect()
+            await session.close()
+        } catch {
+            await session.close()
+            throw error
+        }
+    }
 }

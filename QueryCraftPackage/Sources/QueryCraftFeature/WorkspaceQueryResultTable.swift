@@ -6,6 +6,7 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
     let nullDisplayText: String
     let emptyStringDisplayText: String
     let copyIncludesColumnNames: Bool
+    var formatsTimestamps: Bool = true
     let cellFont: NSFont
     let exportController: WorkspaceDataExportController
     let searchController: WorkspaceGridSearchController
@@ -29,6 +30,7 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
             nullDisplayText: nullDisplayText,
             emptyStringDisplayText: emptyStringDisplayText,
             copyIncludesColumnNames: copyIncludesColumnNames,
+            formatsTimestamps: formatsTimestamps,
             cellFont: cellFont,
             exportController: exportController,
             searchController: searchController,
@@ -54,6 +56,7 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
             nullDisplayText: nullDisplayText,
             emptyStringDisplayText: emptyStringDisplayText,
             copyIncludesColumnNames: copyIncludesColumnNames,
+            formatsTimestamps: formatsTimestamps,
             cellFont: cellFont,
             pendingUpdates: pendingUpdates,
             cellEditRequest: cellEditRequest,

@@ -274,11 +274,18 @@ final class WorkspaceWindowController: NSWindowController,
     ) {
         guard !isClosing else { return }
 
-        if case let .closeOthers(contentID) = action {
+        let visibleContentIDs = visibleContentIDsForCurrentConnection()
+        let visibleContentIDSet = Set(visibleContentIDs)
+
+        if case let .closeOthers(contentID) = action,
+           visibleContentIDSet.contains(contentID)
+        {
             workspaceGroup?.selectContent(contentID)
         }
 
-        let contentIDsToClose = tabsModel.contentIDs(for: action)
+        let contentIDsToClose = tabsModel
+            .contentIDs(for: action)
+            .filter { visibleContentIDSet.contains($0) }
         guard !contentIDsToClose.isEmpty else { return }
         isClosing = true
         Task { @MainActor [weak self] in
@@ -287,6 +294,25 @@ final class WorkspaceWindowController: NSWindowController,
                 guard await self.closeContentTab(contentID) else { break }
             }
             self.isClosing = false
+        }
+    }
+
+    private func visibleContentIDsForCurrentConnection()
+        -> [WorkspaceContentTabID]
+    {
+        guard model.databaseType == .kafka,
+              let databaseName = model.databaseContextName
+        else {
+            return tabsModel.contentItems.map(\.id)
+        }
+        return tabsModel.contentItems.compactMap { item in
+            guard case let .databaseObject(selection) = item,
+                  selection.kind == .table,
+                  selection.databaseName == databaseName
+            else {
+                return nil
+            }
+            return item.id
         }
     }
 

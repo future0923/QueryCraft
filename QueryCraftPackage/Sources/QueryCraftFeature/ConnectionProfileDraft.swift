@@ -9,6 +9,7 @@ struct ConnectionProfileDraft: Equatable, Sendable {
     var port = 3306
     var username = "root"
     var authenticationMethod = DatabaseConnectionAuthenticationMethod.usernamePassword
+    var kafkaSASLMechanism = KafkaSASLMechanism.plain
     var password = ""
     var defaultDatabase = ""
     var tlsMode = ConnectionTLSMode.verifyIdentity
@@ -23,6 +24,9 @@ struct ConnectionProfileDraft: Equatable, Sendable {
             defaultDatabase = "DB 0"
             tlsMode = .disabled
         } else if databaseProduct == .elasticsearch {
+            tlsMode = .disabled
+        } else if databaseProduct == .kafka {
+            authenticationMethod = .none
             tlsMode = .disabled
         }
     }
@@ -40,6 +44,7 @@ struct ConnectionProfileDraft: Equatable, Sendable {
         port = profile.port
         username = profile.username
         authenticationMethod = profile.authenticationMethod
+        kafkaSASLMechanism = profile.kafkaSASLMechanism ?? .plain
         self.password = password
         defaultDatabase = profile.defaultDatabase ?? ""
         tlsMode = profile.tlsMode
@@ -68,6 +73,7 @@ struct ConnectionProfileDraft: Equatable, Sendable {
             port: configuration.port,
             username: configuration.username,
             authenticationMethod: configuration.authentication.method,
+            kafkaSASLMechanism: databaseType == .kafka ? kafkaSASLMechanism : nil,
             defaultDatabase: configuration.database,
             tlsMode: configuration.tlsMode,
             storesCredential: authenticationMethod != .none
@@ -142,10 +148,17 @@ struct ConnectionProfileDraft: Equatable, Sendable {
         } else if newProduct == .elasticsearch {
             if defaultDatabase == "DB 0" { defaultDatabase = "" }
             tlsMode = .disabled
+        } else if newProduct == .kafka {
+            defaultDatabase = ""
+            authenticationMethod = .none
+            tlsMode = .disabled
         } else if previousProduct == .redis {
             if defaultDatabase == "DB 0" { defaultDatabase = "" }
             tlsMode = .verifyIdentity
         } else if previousProduct == .elasticsearch {
+            tlsMode = .verifyIdentity
+            authenticationMethod = .usernamePassword
+        } else if previousProduct == .kafka {
             tlsMode = .verifyIdentity
             authenticationMethod = .usernamePassword
         }

@@ -49,14 +49,40 @@ querycraft_binary_has_rpath() {
     ' | grep -Fqx -- "$expected"
 }
 
+querycraft_delete_rpath_for_directory() {
+    local binary="$1"
+    local expected_directory="$2"
+    local candidate
+    local expected_real
+
+    expected_real="$(cd "$expected_directory" && pwd -P)"
+    while IFS= read -r candidate; do
+        if [[ "$candidate" == "$expected_directory" ||
+              "$candidate" == "$expected_real" ]]; then
+            install_name_tool -delete_rpath "$candidate" "$binary"
+            continue
+        fi
+        if [[ "$candidate" == /* && -d "$candidate" ]]; then
+            if [[ "$(cd "$candidate" && pwd -P)" == "$expected_real" ]]; then
+                install_name_tool -delete_rpath "$candidate" "$binary"
+            fi
+        fi
+    done < <(
+        otool -l "$binary" | awk '
+            $1 == "cmd" && $2 == "LC_RPATH" { expecting_path = 1; next }
+            expecting_path && $1 == "path" { print $2; expecting_path = 0 }
+        '
+    )
+}
+
 querycraft_prepare_driver_rpaths() {
     local binary="$1"
     local build_frameworks_rpath="$2"
     local runtime_rpath
 
-    if querycraft_binary_has_rpath "$binary" "$build_frameworks_rpath"; then
-        install_name_tool -delete_rpath "$build_frameworks_rpath" "$binary"
-    fi
+    # Xcode can record /tmp while the same directory is addressed as
+    # /private/tmp by the shell. Compare resolved directories before removal.
+    querycraft_delete_rpath_for_directory "$binary" "$build_frameworks_rpath"
     for runtime_rpath in \
         '@executable_path/../Frameworks' \
         '@loader_path/../Frameworks'

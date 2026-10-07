@@ -201,6 +201,7 @@ jobs:
           - doris
           - redis
           - elasticsearch
+          - kafka
         architecture:
           - x86_64
           - arm64

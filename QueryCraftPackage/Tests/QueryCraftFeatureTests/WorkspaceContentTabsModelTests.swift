@@ -75,6 +75,40 @@ struct WorkspaceContentTabsModelTests {
         #expect(replacement == .databaseObject(selections[2]))
     }
 
+    @Test
+    func removingQueryDocumentsKeepsObjectTabsAndSelectsTheRemainingTab() {
+        let model = WorkspaceContentTabsModel()
+        let document = WorkspaceQueryDocumentModel(
+            title: "Query 1",
+            configuration: DatabaseConnectionConfiguration(
+                host: "127.0.0.1",
+                port: 3306,
+                username: "reader",
+                password: nil,
+                database: nil,
+                tlsMode: .disabled
+            ),
+            sessionFactory: InMemoryWorkspaceSessionFactory(databases: [])
+        )
+        model.append(
+            WorkspaceQueryTabItem(
+                document: document,
+                editorContext: WorkspaceQueryEditorContext(
+                    document: document,
+                    schemaCatalog: .empty,
+                    prepareCompletionColumns: { _ in .empty }
+                )
+            )
+        )
+        let object = selection("events")
+        model.open(object)
+        model.select(.queryDocument(document.id))
+
+        #expect(model.removeQueryDocuments() == [document.id])
+        #expect(model.contentItems.map(\.id) == [.databaseObject(object)])
+        #expect(model.selectedContentID == .databaseObject(object))
+    }
+
     private func selection(_ name: String) -> WorkspaceDatabaseObjectSelection {
         WorkspaceDatabaseObjectSelection(
             databaseName: "app",

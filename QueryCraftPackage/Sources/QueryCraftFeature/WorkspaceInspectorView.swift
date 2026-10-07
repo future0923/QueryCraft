@@ -81,6 +81,12 @@ struct WorkspaceInspectorView: View {
                 )
             }
 
+        case .kafkaMessage(let kafkaContext):
+            WorkspaceKafkaMessageInspectorView(
+                context: kafkaContext,
+                searchText: searchText
+            )
+
         case .queryResult(let queryContext):
             WorkspaceQueryResultInspectorView(
                 context: queryContext,

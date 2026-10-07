@@ -15,15 +15,46 @@ struct WorkspaceContentTabsView: View {
         WorkspaceContentTabAction
     ) -> Void
 
+    private var visibleContentItems: [WorkspaceContentTabItem] {
+        guard model.databaseType == .kafka else {
+            return tabsModel.contentItems
+        }
+
+        return tabsModel.contentItems.filter {
+            guard case let .databaseObject(selection) = $0 else {
+                return false
+            }
+            return selection.kind == .table
+                && selection.databaseName == model.databaseContextName
+        }
+    }
+
+    private func contentRevision(for contentItems: [WorkspaceContentTabItem]) -> Int {
+        var hasher = Hasher()
+        hasher.combine(tabsModel.contentRevision)
+        hasher.combine(model.databaseType.rawValue)
+        hasher.combine(model.databaseContextName)
+        for item in contentItems {
+            hasher.combine(item.id)
+        }
+        return hasher.finalize()
+    }
+
     var body: some View {
-        let contentItems = tabsModel.contentItems
-        let contentRevision = tabsModel.contentRevision
-        let selectedContentID = tabsModel.selectedContentID
+        // Editor tabs belong to their original connection type. Keep this
+        // guard at the view boundary as a defensive fallback for a restored
+        // workspace whose tabs were created before it was connected to Kafka.
+        let contentItems = visibleContentItems
+        let contentRevision = contentRevision(for: contentItems)
+        let selectedContentID = contentItems.contains {
+            $0.id == tabsModel.selectedContentID
+        } ? tabsModel.selectedContentID : nil
 
         VStack(spacing: 0) {
             if !contentItems.isEmpty {
                 WorkspaceContentTabStrip(
                     tabsModel: tabsModel,
+                    items: contentItems,
                     selectContent: selectContent,
                     performAction: performContentTabAction
                 )
@@ -52,7 +83,9 @@ struct WorkspaceContentTabsView: View {
                             ? "key"
                             : model.databaseType == .elasticsearch
                                 ? "doc.text.magnifyingglass"
-                                : "tablecells",
+                                : model.databaseType == .kafka
+                                    ? "point.3.connected.trianglepath.dotted"
+                                    : "tablecells",
                         description: Text(
                             model.databaseType == .redis
                                 ? AppCopy.current.text(
@@ -64,6 +97,11 @@ struct WorkspaceContentTabsView: View {
                                         "请选择索引、Alias、数据流或创建请求。",
                                         "Select an index, alias, data stream, or create a request."
                                     )
+                                : model.databaseType == .kafka
+                                    ? AppCopy.current.text(
+                                        "请选择 Topic 查看消息。",
+                                        "Select a topic to browse its messages."
+                                    )
                                 : AppCopy.current.text(
                                     "请选择数据库对象或创建查询。",
                                     "Select a database object or create a query."
@@ -71,6 +109,20 @@ struct WorkspaceContentTabsView: View {
                         )
                     )
                 }
+            }
+        }
+        .task(id: model.databaseType) {
+            guard model.databaseType == .kafka else { return }
+            tabsModel.removeQueryDocuments()
+            guard let selectedContentID = tabsModel.selectedContentID else {
+                return
+            }
+            if contentItems.contains(where: { $0.id == selectedContentID }) {
+                selectContent(selectedContentID)
+            } else {
+                // Do not activate a restored object that was filtered out for
+                // the current Kafka database context.
+                model.sidebarSelection = nil
             }
         }
     }

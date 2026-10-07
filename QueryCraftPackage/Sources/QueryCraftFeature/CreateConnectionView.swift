@@ -1,5 +1,16 @@
 import SwiftUI
 
+private enum ConnectionTestError: LocalizedError {
+    case timedOut
+
+    var errorDescription: String? {
+        AppCopy.current.text(
+            "连接测试超时（30 秒）。请检查 Kafka 地址和网络后重试。",
+            "Connection test timed out after 30 seconds. Check the Kafka address and network, then try again."
+        )
+    }
+}
+
 struct CreateConnectionView: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: CreateConnectionField?
@@ -114,14 +125,16 @@ struct CreateConnectionView: View {
                     }
                 }
 
-                if draft.databaseProduct == .elasticsearch {
+                if draft.databaseProduct == .elasticsearch
+                    || draft.databaseProduct == .kafka
+                {
                     GridRow {
                         Text(AppCopy.current.text("认证", "Authentication"))
                         Picker(
                             AppCopy.current.text("认证", "Authentication"),
                             selection: $draft.authenticationMethod
                         ) {
-                            ForEach(DatabaseConnectionAuthenticationMethod.allCases) { method in
+                            ForEach(authenticationMethods) { method in
                                 Text(method.title).tag(method)
                             }
                         }
@@ -131,6 +144,18 @@ struct CreateConnectionView: View {
                 }
 
                 if draft.authenticationMethod == .usernamePassword {
+                    if draft.databaseProduct == .kafka {
+                        GridRow {
+                            Text(AppCopy.current.text("SASL 机制", "SASL Mechanism"))
+                            Picker("SASL", selection: $draft.kafkaSASLMechanism) {
+                                ForEach(KafkaSASLMechanism.allCases) { mechanism in
+                                    Text(mechanism.rawValue).tag(mechanism)
+                                }
+                            }
+                            .labelsHidden()
+                            .accessibilityIdentifier("connectionKafkaSASLPicker")
+                        }
+                    }
                     GridRow {
                         Text(AppCopy.current.text("用户名", "Username"))
                         TextField(usernamePlaceholder, text: $draft.username)
@@ -157,7 +182,9 @@ struct CreateConnectionView: View {
                     }
                 }
 
-                if draft.databaseProduct != .elasticsearch {
+                if draft.databaseProduct != .elasticsearch,
+                   draft.databaseProduct != .kafka
+                {
                     GridRow {
                         Text(databaseFieldTitle)
                         TextField(
@@ -305,7 +332,17 @@ struct CreateConnectionView: View {
         connectionTestState = .testing
 
         do {
-            try await model.testConnection(from: draft)
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await model.testConnection(from: draft)
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(30))
+                    throw ConnectionTestError.timedOut
+                }
+                defer { group.cancelAll() }
+                try await group.next()
+            }
             try Task.checkCancellation()
             connectionTestState = .succeeded
         } catch is CancellationError {
@@ -337,6 +374,14 @@ struct CreateConnectionView: View {
             "\(draft.databaseProduct.title) 用户名",
             "\(draft.databaseProduct.title) username"
         )
+    }
+
+    private var authenticationMethods:
+        [DatabaseConnectionAuthenticationMethod]
+    {
+        draft.databaseProduct == .kafka
+            ? [.none, .usernamePassword]
+            : DatabaseConnectionAuthenticationMethod.allCases
     }
 
     private var databaseFieldTitle: String {

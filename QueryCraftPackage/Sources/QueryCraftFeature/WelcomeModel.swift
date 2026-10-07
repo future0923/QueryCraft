@@ -130,6 +130,7 @@ final class WelcomeModel {
             port: profile.port,
             username: profile.username,
             authenticationMethod: profile.authenticationMethod,
+            kafkaSASLMechanism: profile.kafkaSASLMechanism,
             defaultDatabase: profile.defaultDatabase,
             tlsMode: profile.tlsMode,
             storesCredential: false,
@@ -311,7 +312,7 @@ final class WelcomeModel {
 
     func testConnection(from draft: ConnectionProfileDraft) async throws {
         let configuration = try draft.makeConnectionConfiguration()
-        try await connectionTester.test(configuration)
+        try await connectionTester.test(configuration, kafkaSASLMechanism: draft.kafkaSASLMechanism)
     }
 
     static func makeDefault() -> WelcomeModel {

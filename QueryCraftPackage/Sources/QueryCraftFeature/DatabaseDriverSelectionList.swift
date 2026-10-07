@@ -11,18 +11,25 @@ struct DatabaseDriverSelectionList: View {
             ContentUnavailableView.search(text: model.searchText)
         } else {
             List(selection: $model.selectedDatabaseProduct) {
-                Section(AppCopy.current.text("关系型", "Relational")) {
-                    ForEach(model.visibleItems) { item in
-                        DatabaseDriverSelectionRow(
-                            item: item,
-                            isSelected:
-                                model.selectedDatabaseProduct
-                                    == item.entry.databaseProduct
-                        )
-                            .tag(item.entry.databaseProduct)
-                            .accessibilityIdentifier(
-                                "databaseProduct.\(item.entry.databaseProduct.rawValue)"
-                            )
+                ForEach(DatabaseDriverCatalogEntry.Category.allCases, id: \.self) { category in
+                    let items = model.visibleItems.filter {
+                        $0.driverItem.entry.category == category
+                    }
+                    if !items.isEmpty {
+                        Section(category.title) {
+                            ForEach(items) { item in
+                                DatabaseDriverSelectionRow(
+                                    item: item,
+                                    isSelected:
+                                        model.selectedDatabaseProduct
+                                            == item.entry.databaseProduct
+                                )
+                                .tag(item.entry.databaseProduct)
+                                .accessibilityIdentifier(
+                                    "databaseProduct.\(item.entry.databaseProduct.rawValue)"
+                                )
+                            }
+                        }
                     }
                 }
             }

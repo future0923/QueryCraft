@@ -738,13 +738,22 @@ final class WorkspaceWindowGroup {
         let context = context ?? activeDatabaseContext
         let model = context.model
         let tabsModel = context.tabsModel
+        if model.databaseType == .kafka {
+            // Kafka has no SQL editor. Remove any tabs restored from a
+            // previous SQL connection before reconstructing visible content.
+            tabsModel.removeQueryDocuments()
+        }
         let restorationState = model.workspaceRestorationState?
             .selectedDatabaseContext
         let existingItems = Dictionary(
             uniqueKeysWithValues: tabsModel.items.map { ($0.id, $0) }
         )
-        let queryItems = model.queryDocuments.map { document in
-            existingItems[document.id] ?? makeTabItem(for: document)
+        let queryItems: [WorkspaceQueryTabItem] = if model.databaseType == .kafka {
+            []
+        } else {
+            model.queryDocuments.map { document in
+                existingItems[document.id] ?? makeTabItem(for: document)
+            }
         }
         let existingRequestDocuments: [
             UUID: WorkspaceElasticsearchRequestDocumentModel
@@ -757,11 +766,13 @@ final class WorkspaceWindowGroup {
                 return (document.id, document)
             }
         )
-        let requestDocuments: [WorkspaceElasticsearchRequestDocumentModel] = (
-            restorationState?.elasticsearchRequestDocuments ?? []
-        ).compactMap { state in
-            existingRequestDocuments[state.id]
-                ?? model.restoreElasticsearchRequestDocuments([state]).first
+        let requestDocuments: [WorkspaceElasticsearchRequestDocumentModel] = if model.databaseType == .kafka {
+            []
+        } else {
+            (restorationState?.elasticsearchRequestDocuments ?? []).compactMap { state in
+                existingRequestDocuments[state.id]
+                    ?? model.restoreElasticsearchRequestDocuments([state]).first
+            }
         }
         for document in requestDocuments {
             configureElasticsearchRequestDocument(document)
@@ -773,15 +784,29 @@ final class WorkspaceWindowGroup {
         }
         let contentOrder = restorationState?.contentTabOrder
             ?? defaultContentOrder
+        let compatibleContentOrder: [WorkspaceContentTabID] = if model.databaseType == .kafka {
+            contentOrder.filter { contentID in
+                guard case let .databaseObject(selection) = contentID else {
+                    return false
+                }
+                return selection.kind == .table
+                    && selection.databaseName == model.databaseContextName
+            }
+        } else {
+            contentOrder
+        }
         let selectedContent = restorationState?.selectedContentTab
             ?? model.selectedQueryDocumentID.map {
                 .queryDocument($0)
             }
+        let compatibleSelectedContent = selectedContent.flatMap { contentID in
+            compatibleContentOrder.contains(contentID) ? contentID : nil
+        }
         tabsModel.restore(
             queryItems: queryItems,
             elasticsearchRequestDocuments: requestDocuments,
-            contentOrder: contentOrder,
-            selecting: selectedContent
+            contentOrder: compatibleContentOrder,
+            selecting: compatibleSelectedContent
         )
         startObservingRestorationState()
         scheduleRestorationPersistence()

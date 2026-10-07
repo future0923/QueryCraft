@@ -495,12 +495,7 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
     private nonisolated static func defaultDriversDirectory(
         fileManager: FileManager
     ) -> URL {
-        let applicationSupport = fileManager.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? fileManager.temporaryDirectory
-        return applicationSupport
-            .appending(path: "QueryCraft", directoryHint: .isDirectory)
+        QueryCraftStorageLocation.applicationSupportDirectory
             // Keep incompatible app generations from loading or deleting each
             // other's drivers and pending updates when users switch builds.
             .appending(

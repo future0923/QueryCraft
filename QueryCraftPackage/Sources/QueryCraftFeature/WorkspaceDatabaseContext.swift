@@ -23,5 +23,8 @@ final class WorkspaceDatabaseContext: Identifiable {
         model.elasticsearchHasPendingChanges = { [weak pendingChangesRegistry] in
             pendingChangesRegistry?.hasChanges ?? false
         }
+        model.kafkaHasPendingChanges = { [weak pendingChangesRegistry] selection in
+            pendingChangesRegistry?.actions(for: .databaseObject(selection))?.hasChanges ?? false
+        }
     }
 }

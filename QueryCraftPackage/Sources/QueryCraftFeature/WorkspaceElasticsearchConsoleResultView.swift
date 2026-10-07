@@ -80,6 +80,7 @@ struct WorkspaceElasticsearchConsoleResultView: View {
                         emptyStringDisplayText:
                             preferences.tableEmptyStringDisplayStyle.displayText,
                         copyIncludesColumnNames: preferences.copyIncludesColumnNames,
+                        formatsTimestamps: preferences.formatsTimestamps,
                         cellFont: preferences.dataGridFont(),
                         exportController: exportController,
                         searchController: searchController,

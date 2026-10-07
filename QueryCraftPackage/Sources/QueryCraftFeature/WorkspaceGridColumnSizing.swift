@@ -40,7 +40,9 @@ enum WorkspaceGridColumnSizing {
         rowAt: (Int) -> WorkspaceDatabaseDataRow?,
         nullDisplayText: String = "NULL",
         emptyStringDisplayText: String = "",
-        cellFont: NSFont = WorkspaceGridMetrics.cellFont
+        cellFont: NSFont = WorkspaceGridMetrics.cellFont,
+        timestampDisplayModes: [Int: WorkspaceTimestampDisplayMode] = [:],
+        formatsTimestamps: Bool = true
     ) -> [Int: CGFloat] {
         let consideredRowCount = maximumConsideredRows.map {
             min(rowCount, $0)
@@ -57,9 +59,19 @@ enum WorkspaceGridColumnSizing {
                 font: WorkspaceGridMetrics.headerFont
             )
                 + headerHorizontalPadding
+            let mode = timestampDisplayModes[column.id] ?? .automatic
+            if formatsTimestamps, mode == .seconds || mode == .milliseconds
+                || (mode == .automatic && WorkspaceTimestampDisplayFormatter.hasTimestampHint(column)) {
+                // Reserve room before asynchronous rows arrive as well.
+                width = max(width, measuredWidth("2000-01-01 00:00:00", font: cellFont)
+                    + WorkspaceGridMetrics.cellTrailingPadding)
+            }
             for row in sampleRows {
                 let text = measurementText(
-                    row.value(at: column.id).gridPreviewText(
+                    WorkspaceTimestampDisplayFormatter.shared.preview(
+                        row.value(at: column.id),
+                        column: formatsTimestamps ? column : nil,
+                        mode: timestampDisplayModes[column.id] ?? .automatic,
                         nullDisplayText: nullDisplayText,
                         emptyStringDisplayText: emptyStringDisplayText,
                         maximumCharacterCount: maximumMeasuredCharacters

@@ -61,21 +61,32 @@ struct WorkspaceDatabaseInspectorFieldRow: View {
             }
             .textSelection(.enabled)
 
-            TextField(
-                "",
-                text: editTextBinding,
-                prompt: Text(prompt)
-            )
-            .textFieldStyle(.roundedBorder)
-            .font(.subheadline)
-            .focused($isFocused)
-            .disabled(
-                !field.isEditable || isBusy || field.isTextPreviewTruncated
-            )
-            .overlay(alignment: .trailing) {
-                if field.isEditable && isHovered {
-                    fieldMenu
-                        .padding(.trailing, 4)
+            if showsReadOnlyTextView {
+                WorkspaceReadOnlyTextView(
+                    text: readOnlyText,
+                    usesMonospacedFont: true,
+                    accessibilityLabel: field.name,
+                    showsBorder: true,
+                    presentation: .plain
+                )
+                .frame(minHeight: 72, idealHeight: 120, maxHeight: 220)
+            } else {
+                TextField(
+                    "",
+                    text: editTextBinding,
+                    prompt: Text(prompt)
+                )
+                .textFieldStyle(.roundedBorder)
+                .font(.subheadline)
+                .focused($isFocused)
+                .disabled(
+                    !field.isEditable || isBusy || field.isTextPreviewTruncated
+                )
+                .overlay(alignment: .trailing) {
+                    if field.isEditable && isHovered {
+                        fieldMenu
+                            .padding(.trailing, 4)
+                    }
                 }
             }
         }
@@ -103,6 +114,12 @@ struct WorkspaceDatabaseInspectorFieldRow: View {
             )
         }
         if field.isTextPreviewTruncated {
+            if showsReadOnlyTextView {
+                return AppCopy.current.text(
+                    "滚动查看原始值；复制操作仍可获取完整内容。",
+                    "Scroll to view the raw value; Copy Value still provides the complete content."
+                )
+            }
             return AppCopy.current.text(
                 "值过大，当前显示预览；复制和导出仍使用完整值。",
                 "This value is too large for inline editing. Copy and export still use the full value."
@@ -187,6 +204,20 @@ struct WorkspaceDatabaseInspectorFieldRow: View {
     private var showsModificationIndicator: Bool {
         field.isModified
             || (!field.isTextPreviewTruncated && editText != field.editableText)
+    }
+
+    private var showsReadOnlyTextView: Bool {
+        guard !field.isEditable,
+              !field.hasMultipleValues,
+              field.isTextPreviewTruncated,
+              case .text = field.value
+        else { return false }
+        return true
+    }
+
+    private var readOnlyText: String {
+        guard case let .text(value) = field.value else { return "" }
+        return value
     }
 
     private var editTextBinding: Binding<String> {

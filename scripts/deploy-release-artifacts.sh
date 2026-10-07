@@ -13,8 +13,8 @@ When QUERYCRAFT_DEPLOY_CLIENT=true, the artifact directory must contain:
   release-notes.md
 
 When QUERYCRAFT_DEPLOY_DRIVERS=true, it must also contain the MySQL,
-PostgreSQL, Doris, Redis, and Elasticsearch manifests and referenced archives
-for both architectures.
+PostgreSQL, Doris, Redis, Elasticsearch, and Kafka manifests and referenced
+archives for both architectures.
 
 Required environment when publishing:
   QUERYCRAFT_RESOURCE_DEPLOY_URL    Resource deployment API base URL
@@ -118,7 +118,7 @@ fi
 
 driver_archives=()
 driver_manifests=()
-for database_type in mysql postgresql doris redis elasticsearch; do
+for database_type in mysql postgresql doris redis elasticsearch kafka; do
     for architecture in x86_64 arm64; do
         manifest="$artifact_directory/$database_type-$architecture.json"
         if [[ "$deploy_drivers" == "false" ]]; then
