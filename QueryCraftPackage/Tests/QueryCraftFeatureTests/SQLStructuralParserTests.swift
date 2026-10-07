@@ -4,6 +4,25 @@ import CodeEditLanguages
 @testable import QueryCraftFeature
 
 struct SQLStructuralParserTests {
+    @Test(arguments: ["DESC users;", "desc `app`.`users`;", "DESCRIBE users;", "DESC users name;", "DESCRIBE users 'na%';"])
+    func recognizesTableDescriptionStatements(_ source: String) async throws {
+        let parser = try SQLStructuralParser()
+        let snapshot = try await parser.parse(
+            SQLSourceSnapshot(revision: SQLSourceRevision(1), text: source)
+        )
+
+        #expect(snapshot.isReliable)
+        #expect(snapshot.statements.map(\.kind) == [.read])
+        #expect(snapshot.statements.first?.range == SQLSourceRange(
+            location: 0, length: (source as NSString).length
+        ))
+        let highlights = try await parser.highlights(
+            in: SQLSourceRange(location: 0, length: (source as NSString).length),
+            revision: SQLSourceRevision(1)
+        )
+        #expect(highlights.contains { $0.range.location == 0 && $0.kind == .keyword })
+    }
+
     @Test
     func packagedSQLHighlightQueryIsAvailable() throws {
         let queryURL = try #require(CodeLanguage.sql.queryURL(for: "highlights"))

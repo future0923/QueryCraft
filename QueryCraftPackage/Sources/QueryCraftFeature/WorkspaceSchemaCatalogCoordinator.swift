@@ -287,18 +287,10 @@ final class WorkspaceSchemaCatalogCoordinator {
         } catch is CancellationError {
             return
         } catch {
-            guard self.catalogGeneration == catalogGeneration,
-                  relationColumnGeneration == columnGeneration,
-                  self.catalogSession === catalogSession
-            else {
-                return
-            }
-            let activeObjects = objects.filter(activeRelationObjects.contains)
-            guard !activeObjects.isEmpty else { return }
-            for object in activeObjects {
-                activeRelationColumns[object] = []
-            }
-            publishSnapshot()
+            // A failed request is not a successfully loaded empty schema. Leave
+            // these objects unloaded so the next completion request can retry.
+            // Do not publish here: that would immediately retrigger completion.
+            return
         }
     }
 

@@ -610,6 +610,8 @@ enum SQLCompletionEngine {
         }
 
         if isRelationIntroducer(previous)
+            || (precedingTokens.count == 1
+                && ["DESC", "DESCRIBE"].contains(normalizedTokenText(previous)))
             || isDDLRelationIntroducer(
                 previous,
                 precedingTokens: precedingTokens

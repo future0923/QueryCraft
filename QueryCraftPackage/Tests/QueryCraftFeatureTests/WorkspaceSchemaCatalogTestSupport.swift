@@ -25,6 +25,17 @@ actor CatalogPhaseGate {
 
 actor CatalogRequestRecorder {
     private var recordedRequests: [[WorkspaceSchemaObjectReference]] = []
+    private var failsNextColumnLoad = false
+
+    func failNextColumnLoad() {
+        failsNextColumnLoad = true
+    }
+
+    func consumeColumnLoadFailure() -> Bool {
+        let fails = failsNextColumnLoad
+        failsNextColumnLoad = false
+        return fails
+    }
 
     func record(_ objects: [WorkspaceSchemaObjectReference]) {
         recordedRequests.append(objects)
@@ -110,7 +121,8 @@ private actor PhasedCatalogWorkspaceSession: WorkspaceSession {
             await columnGate.wait()
         }
         try Task.checkCancellation()
-        if failsColumnLoad {
+        let transientFailure = await recorder.consumeColumnLoadFailure()
+        if failsColumnLoad || transientFailure {
             throw WorkspaceSessionError.metadataUnavailable(object: "columns")
         }
         return objects.map {

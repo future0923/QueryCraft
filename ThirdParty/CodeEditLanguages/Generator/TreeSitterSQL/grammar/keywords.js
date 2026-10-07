@@ -10,6 +10,7 @@ export default {
   keyword_truncate: _ => make_keyword("truncate"),
   keyword_merge: _ => make_keyword("merge"),
   keyword_show: _ => make_keyword("show"),
+  keyword_describe: _ => make_keyword("describe"),
   keyword_unload: _ => make_keyword("unload"),
   keyword_into: _ => make_keyword("into"),
   keyword_overwrite: _ => make_keyword("overwrite"),

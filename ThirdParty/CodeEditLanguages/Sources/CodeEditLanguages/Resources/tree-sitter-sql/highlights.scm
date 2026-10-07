@@ -49,6 +49,8 @@
 
 (literal) @string
 
+(describe (keyword_desc) @keyword)
+
 [
  (keyword_asc)
  (keyword_desc)
@@ -114,6 +116,7 @@
   (keyword_delete)
   (keyword_create)
   (keyword_show)
+  (keyword_describe)
   (keyword_unload)
   (keyword_insert)
   (keyword_merge)

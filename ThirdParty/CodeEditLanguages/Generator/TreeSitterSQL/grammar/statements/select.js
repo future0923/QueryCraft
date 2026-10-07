@@ -398,7 +398,7 @@ export default {
     comma_list($.order_target, true),
   )),
 
-  order_target: $ => seq(
+  order_target: $ => prec.right(seq(
     $._expression,
     optional(
       seq(
@@ -420,7 +420,7 @@ export default {
         ),
       ),
     ),
-  ),
+  )),
 
   limit: $ => seq(
     $.keyword_limit,

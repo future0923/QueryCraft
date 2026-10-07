@@ -3,6 +3,41 @@ import Testing
 @testable import QueryCraftFeature
 
 struct SQLCompletionEngineTests {
+    @Test(arguments: ["DESC us", "describe us", "SELECT 1;\nDESC us"])
+    func completesTableNamesInDescriptionStatements(_ source: String) async throws {
+        let result = try await completions(for: source, defaultDatabase: "app")
+
+        #expect(result.items.first?.label == "users")
+        #expect(result.items.first?.kind == .table)
+        #expect(result.items.first?.detail == "app")
+    }
+
+    @Test
+    func keepsDescendingOrderCompletionInTheOrderingContext() async throws {
+        let result = try await completions(
+            for: "SELECT * FROM users ORDER BY name DESC ",
+            defaultDatabase: "app"
+        )
+
+        #expect(result.items.contains { $0.label == "LIMIT" })
+        #expect(result.items.contains { $0.kind == .table } == false)
+    }
+
+    @Test(arguments: ["", "\n\nDESC users;", "\n\nDESCRIBE users;", "\n\nSELECT 1;"])
+    func completesPredicateColumnsBeforeAFollowingStatement(_ suffix: String) async throws {
+        let result = try await completions(
+            for: "SELECT * FROM users WHERE na;" + suffix,
+            cursorToken: "WHERE na",
+            defaultDatabase: "app"
+        )
+
+        #expect(result.items.first?.label == "name")
+        #expect(result.items.first?.kind == .column)
+        #expect(result.referencedSchemaObjects == [
+            WorkspaceSchemaObjectReference(databaseName: "app", objectName: "users"),
+        ])
+    }
+
     @Test(arguments: [
         "SELECT * FROM users WHERE id = '119184569302490908897';\n\n2026-08-24 08:53:23;\n\nse",
         "2026-08-24 08:53:23;se",

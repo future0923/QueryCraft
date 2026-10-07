@@ -847,8 +847,9 @@ struct WorkspaceModelTests {
         )
         #expect(table.columns.isEmpty)
         #expect(await recorder.requests() == [[reference]])
+        #expect(model.schemaCatalog.hasLoadedColumns(for: reference) == false)
         _ = await model.prepareCompletionColumns(for: [reference])
-        #expect(await recorder.requests() == [[reference]])
+        #expect(await recorder.requests() == [[reference], [reference]])
         await model.disconnect()
     }
 

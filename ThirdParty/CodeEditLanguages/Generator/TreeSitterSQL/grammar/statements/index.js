@@ -124,6 +124,7 @@ export default {
         $._select_statement,
         $.set_operation,
         $._show_statement,
+        $.describe,
         $._unload_statement,
       ),
     ),
@@ -139,6 +140,13 @@ export default {
       $.keyword_all, // Postgres
       $._show_tables // trino/presto
     ),
+  ),
+
+  // MySQL table inspection; DESC remains a direction in ORDER BY.
+  describe: $ => seq(
+    choice($.keyword_desc, $.keyword_describe),
+    $.object_reference,
+    optional(choice($.identifier, alias($._literal_string, $.literal))),
   ),
 
   _show_create: $ => seq(

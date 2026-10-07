@@ -23,6 +23,8 @@ The grammar was selected independently against QueryCraft-owned MySQL 5.7 and
 - A standalone executable comment remains one exact unclassified statement.
 - `DELIMITER` directives have a structural node so QueryCraft can fail
   stored-routine scripts closed without adding a second statement scanner.
+- MySQL `DESC` and `DESCRIBE` table inspection statements, including qualified
+  names and optional column filters, have a `describe` node and keyword highlights.
 - QueryCraft corrects the numeric highlight predicates to use ICU regular
   expression digit classes understood by SwiftTreeSitter instead of the
   upstream `%d` patterns.

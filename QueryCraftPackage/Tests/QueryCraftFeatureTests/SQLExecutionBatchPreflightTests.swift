@@ -81,9 +81,8 @@ struct SQLExecutionBatchPreflightTests {
         #expect(!plan.requiresDangerousSQLConfirmation)
     }
 
-    @Test
-    func keepsAnExactDescribeGrammarGapExecutableForMySQL() async throws {
-        let text = "DESCRIBE users;"
+    @Test(arguments: ["DESC users;", "DESCRIBE users;"])
+    func classifiesTableDescriptionAsReadOnlyForMySQL(_ text: String) async throws {
         let source = SQLSourceSnapshot(
             revision: SQLSourceRevision(1),
             text: text
@@ -100,9 +99,11 @@ struct SQLExecutionBatchPreflightTests {
             parseSnapshot: snapshot
         )
 
-        #expect(snapshot.statements.map(\.kind) == [.unknown])
+        #expect(snapshot.isReliable)
+        #expect(snapshot.statements.map(\.kind) == [.read])
         #expect(snapshot.unreliableStatementRanges.isEmpty)
         #expect(plan.statements.map(\.sql) == [text])
+        #expect(plan.requiresWriteAccess == false)
     }
 
     @Test
