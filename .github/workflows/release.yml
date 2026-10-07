@@ -94,7 +94,6 @@ jobs:
           - architecture: arm64
             runner: macos-15
     env:
-      QUERYCRAFT_SIGNING_DIRECTORY: ${{ runner.temp }}/querycraft-signing
       QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
       QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
       QUERYCRAFT_BUILD_CLIENT: true
@@ -110,7 +109,10 @@ jobs:
         env:
           QUERYCRAFT_SIGNING_P12_BASE64: ${{ secrets.QUERYCRAFT_SIGNING_P12_BASE64 }}
           QUERYCRAFT_SIGNING_P12_PASSWORD: ${{ secrets.QUERYCRAFT_SIGNING_P12_PASSWORD }}
-        run: python3 scripts/code-signing.py import-ci
+        run: |
+          export QUERYCRAFT_SIGNING_DIRECTORY="$RUNNER_TEMP/querycraft-signing"
+          echo "QUERYCRAFT_SIGNING_DIRECTORY=$QUERYCRAFT_SIGNING_DIRECTORY" >> "$GITHUB_ENV"
+          python3 scripts/code-signing.py import-ci
 
       - name: Install XcodeBuildMCP
         run: npm install --global xcodebuildmcp@2.6.2
@@ -139,7 +141,6 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     env:
-      QUERYCRAFT_SIGNING_DIRECTORY: ${{ runner.temp }}/querycraft-signing
       SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
       QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
       QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
@@ -156,7 +157,10 @@ jobs:
         env:
           QUERYCRAFT_SIGNING_P12_BASE64: ${{ secrets.QUERYCRAFT_SIGNING_P12_BASE64 }}
           QUERYCRAFT_SIGNING_P12_PASSWORD: ${{ secrets.QUERYCRAFT_SIGNING_P12_PASSWORD }}
-        run: python3 scripts/code-signing.py import-ci
+        run: |
+          export QUERYCRAFT_SIGNING_DIRECTORY="$RUNNER_TEMP/querycraft-signing"
+          echo "QUERYCRAFT_SIGNING_DIRECTORY=$QUERYCRAFT_SIGNING_DIRECTORY" >> "$GITHUB_ENV"
+          python3 scripts/code-signing.py import-ci
 
       - name: Install XcodeBuildMCP
         run: npm install --global xcodebuildmcp@2.6.2
