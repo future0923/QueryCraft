@@ -4,7 +4,19 @@ struct WorkspaceQueryResultPage: Equatable, Sendable {
     let revision = UUID()
     let columns: [WorkspaceDatabaseDataColumn]
     let store: WorkspaceQueryResultStore
-    let rowCount: Int
+    var rowCount: Int { store.rowCount }
+
+    init(
+        columns: [WorkspaceDatabaseDataColumn],
+        store: WorkspaceQueryResultStore,
+        rowCount: Int
+    ) {
+        // The store is the source of truth so committed row deletions are
+        // visible through the existing page instance.
+        _ = rowCount
+        self.columns = columns
+        self.store = store
+    }
 
     func row(at index: Int) -> WorkspaceDatabaseDataRow? {
         guard index >= 0, index < rowCount else { return nil }

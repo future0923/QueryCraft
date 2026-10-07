@@ -19,6 +19,20 @@ struct WorkspaceQueryResultPendingCellUpdate: Equatable, Sendable {
     }
 }
 
+struct WorkspaceQueryResultPendingDelete: Equatable, Sendable {
+    let resultID: UUID
+    let rowIndex: Int
+    let pendingDelete: WorkspaceDatabaseInspectorPendingDelete
+
+    var rowDelete: WorkspaceDatabaseDataRowDelete {
+        pendingDelete.rowDelete
+    }
+
+    var replacedUpdates: [WorkspaceDatabaseInspectorPendingUpdate] {
+        pendingDelete.replacedUpdates
+    }
+}
+
 enum WorkspaceQueryResultEditing {
     static func selection(
         for page: WorkspaceQueryResultPage,

@@ -54,6 +54,126 @@ struct WorkspaceDatabaseDataChangeSetTests {
     }
 
     @Test
+    func queryResultDeleteRequestResolvesAliasedPrimaryKeyByOrigin() throws {
+        let selection = makeSelection(objectName: "users")
+        let columns = [
+            WorkspaceDatabaseDataColumn(
+                id: 0,
+                name: "user_identifier",
+                origin: .init(
+                    databaseName: "querycraft_test",
+                    tableName: "users",
+                    columnName: "id"
+                )
+            ),
+            WorkspaceDatabaseDataColumn(
+                id: 1,
+                name: "display_name",
+                origin: .init(
+                    databaseName: "querycraft_test",
+                    tableName: "users",
+                    columnName: "name"
+                )
+            ),
+        ]
+        let row = WorkspaceDatabaseDataRow(
+            id: 4,
+            values: [.text("42"), .text("before")]
+        )
+        let details = WorkspaceDatabaseObjectDetails(
+            columns: [
+                makeColumn(name: "id", key: "PRI"),
+                makeColumn(name: "name"),
+            ],
+            ddl: ""
+        )
+
+        let delete = try WorkspaceDatabaseDataRowDeleteRequest.make(
+            selection: selection,
+            row: row,
+            columns: columns,
+            details: details
+        )
+
+        #expect(delete.conditions == [
+            .init(columnName: "id", value: .text("42")),
+        ])
+    }
+
+    @Test
+    func queryResultDeleteRequestRejectsMissingOrBinaryPrimaryKeyValues() {
+        let selection = makeSelection(objectName: "users")
+        let details = WorkspaceDatabaseObjectDetails(
+            columns: [makeColumn(name: "id", key: "PRI")],
+            ddl: ""
+        )
+
+        #expect(throws: WorkspaceDatabaseDataRowDeleteError.self) {
+            try WorkspaceDatabaseDataRowDeleteRequest.make(
+                selection: selection,
+                row: WorkspaceDatabaseDataRow(id: 0, values: [.text("42")]),
+                columns: [WorkspaceDatabaseDataColumn(id: 0, name: "name")],
+                details: details
+            )
+        }
+
+        #expect(throws: WorkspaceDatabaseDataRowDeleteError.self) {
+            try WorkspaceDatabaseDataRowDeleteRequest.make(
+                selection: selection,
+                row: WorkspaceDatabaseDataRow(
+                    id: 0,
+                    values: [.binary(byteCount: 16)]
+                ),
+                columns: [WorkspaceDatabaseDataColumn(id: 0, name: "id")],
+                details: details
+            )
+        }
+    }
+
+    @Test
+    func queryResultPageDeleteAdapterUsesTheLoadedRow() async throws {
+        let store = try WorkspaceQueryResultStore(temporary: false)
+        try await store.append([
+            WorkspaceDatabaseDataRow(
+                id: 0,
+                values: [.text("42"), .text("before")]
+            ),
+        ])
+        let page = WorkspaceQueryResultPage(
+            columns: [
+                WorkspaceDatabaseDataColumn(
+                    id: 0,
+                    name: "user_id",
+                    origin: .init(
+                        databaseName: "querycraft_test",
+                        tableName: "users",
+                        columnName: "id"
+                    )
+                ),
+                WorkspaceDatabaseDataColumn(id: 1, name: "name"),
+            ],
+            store: store,
+            rowCount: 1
+        )
+        let delete = try WorkspaceDatabaseDataRowDeleteRequest.make(
+            selection: makeSelection(objectName: "users"),
+            rowIndex: 0,
+            page: page,
+            details: WorkspaceDatabaseObjectDetails(
+                columns: [
+                    makeColumn(name: "id", key: "PRI"),
+                    makeColumn(name: "name"),
+                ],
+                ddl: ""
+            )
+        )
+
+        #expect(delete.conditions == [
+            .init(columnName: "id", value: .text("42")),
+        ])
+    }
+
+    @Test
     func requiresEveryPendingChangeToTargetTheSameTable() {
         let users = makeSelection(objectName: "users")
         let auditLog = makeSelection(objectName: "audit_log")

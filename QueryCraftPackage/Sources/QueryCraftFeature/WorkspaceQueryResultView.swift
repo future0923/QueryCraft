@@ -21,6 +21,7 @@ struct WorkspaceQueryResultView: View {
     @State private var exportController = WorkspaceDataExportController()
     @State private var searchController = WorkspaceGridSearchController()
     @State private var pendingCellUpdates: [WorkspaceQueryResultPendingCellUpdate] = []
+    @State private var pendingRowDeletes: [WorkspaceQueryResultPendingDelete] = []
     @State private var detailsBySelection: [
         WorkspaceDatabaseObjectSelection: WorkspaceDatabaseObjectDetails
     ] = [:]
@@ -62,40 +63,7 @@ struct WorkspaceQueryResultView: View {
 
             Group {
                 if let page = displayedState.page, !page.columns.isEmpty {
-                    WorkspaceQueryResultTable(
-                        page: page,
-                        nullDisplayText:
-                            preferences.tableNullDisplayStyle.displayText,
-                        emptyStringDisplayText:
-                            preferences
-                            .tableEmptyStringDisplayStyle.displayText,
-                        copyIncludesColumnNames:
-                            preferences.copyIncludesColumnNames,
-                        formatsTimestamps: preferences.formatsTimestamps,
-                        cellFont: preferences.dataGridFont(),
-                        exportController: exportController,
-                        searchController: searchController,
-                        pendingUpdates: pendingUpdates(for: page),
-                        cellEditRequest: { target in
-                            cellEditRequest(for: target, page: page)
-                        },
-                        prepareCellEdit: { target in
-                            prepareInlineCellEdit(target, page: page)
-                        },
-                        updateCellEdit: { context, mutation in
-                            updateInlineCellEdit(
-                                context,
-                                mutation: mutation,
-                                page: page
-                            )
-                        },
-                        discardPendingUpdates: { updates in
-                            discardPendingUpdates(updates, for: page)
-                        },
-                        updateInspectorContext: { context in
-                            publishInspectorContext(context, page: page)
-                        }
-                    )
+                    resultTable(for: page)
                 } else {
                     emptyState
                 }
@@ -182,6 +150,9 @@ struct WorkspaceQueryResultView: View {
             )
         }
         .onChange(of: pendingCellUpdates, initial: true) { _, _ in
+            publishPendingChangesActions()
+        }
+        .onChange(of: pendingRowDeletes, initial: true) { _, _ in
             publishPendingChangesActions()
         }
         .onChange(of: isCommittingChanges) { _, _ in
@@ -377,6 +348,168 @@ struct WorkspaceQueryResultView: View {
             .map(\.pendingUpdate)
     }
 
+    @ViewBuilder
+    private func resultTable(
+        for page: WorkspaceQueryResultPage
+    ) -> some View {
+        WorkspaceQueryResultTable(
+            page: page,
+            nullDisplayText: preferences.tableNullDisplayStyle.displayText,
+            emptyStringDisplayText:
+                preferences.tableEmptyStringDisplayStyle.displayText,
+            copyIncludesColumnNames: preferences.copyIncludesColumnNames,
+            formatsTimestamps: preferences.formatsTimestamps,
+            cellFont: preferences.dataGridFont(),
+            exportController: exportController,
+            searchController: searchController,
+            pendingUpdates: pendingUpdates(for: page),
+            pendingDeleteRowIndexes: pendingDeleteRowIndexes(for: page),
+            cellEditRequest: { target in
+                cellEditRequest(for: target, page: page)
+            },
+            prepareCellEdit: { target in
+                prepareInlineCellEdit(target, page: page)
+            },
+            updateCellEdit: { context, mutation in
+                updateInlineCellEdit(context, mutation: mutation, page: page)
+            },
+            discardPendingUpdates: { updates in
+                discardPendingUpdates(updates, for: page)
+            },
+            deleteRows: deleteRowsAction(for: page),
+            updateInspectorContext: { context in
+                publishInspectorContext(context, page: page)
+            }
+        )
+    }
+
+    private func pendingDeleteRowIndexes(
+        for page: WorkspaceQueryResultPage
+    ) -> IndexSet {
+        IndexSet(
+            pendingRowDeletes
+                .filter { $0.resultID == page.store.id }
+                .map(\.rowIndex)
+        )
+    }
+
+    private func canDeleteRows(
+        for page: WorkspaceQueryResultPage
+    ) -> Bool {
+        guard
+            !isCommittingChanges,
+            let selection = editableSelection(for: page),
+            let details = detailsBySelection[selection],
+            details.columns.contains(where: { $0.key.uppercased() == "PRI" }),
+            canStageChanges(for: selection)
+        else {
+            return false
+        }
+        return true
+    }
+
+    private func deleteRowsAction(
+        for page: WorkspaceQueryResultPage
+    ) -> (@MainActor (IndexSet) -> Void)? {
+        guard canDeleteRows(for: page) else { return nil }
+        return { rows in
+            deleteRows(rows, for: page)
+        }
+    }
+
+    private func deleteRows(
+        _ rowIndexes: IndexSet,
+        for page: WorkspaceQueryResultPage
+    ) {
+        guard
+            !isCommittingChanges,
+            !rowIndexes.isEmpty,
+            let selection = editableSelection(for: page),
+            let details = detailsBySelection[selection],
+            canStageChanges(for: selection)
+        else { return }
+
+        let existingDeletes = pendingRowDeletes.filter {
+            $0.resultID == page.store.id && rowIndexes.contains($0.rowIndex)
+        }
+        if existingDeletes.count == rowIndexes.count {
+            pendingRowDeletes.removeAll { pending in
+                existingDeletes.contains(pending)
+            }
+            for pending in existingDeletes {
+                for update in pending.replacedUpdates {
+                    guard
+                        !pendingCellUpdates.contains(where: {
+                            $0.resultID == page.store.id
+                                && $0.rowIndex == pending.rowIndex
+                                && $0.matches(update.update)
+                        }),
+                        let dataColumnIndex = page.columns.first(where: {
+                            $0.sourceColumnName == update.update.columnName
+                        })?.id
+                    else { continue }
+                    pendingCellUpdates.append(
+                        WorkspaceQueryResultPendingCellUpdate(
+                            resultID: page.store.id,
+                            rowIndex: pending.rowIndex,
+                            dataColumnIndex: dataColumnIndex,
+                            pendingUpdate: update
+                        )
+                    )
+                }
+            }
+            return
+        }
+
+        let rowsToDelete = rowIndexes.filter { index in
+            !existingDeletes.contains { $0.rowIndex == index }
+        }
+        var preparedDeletes: [WorkspaceQueryResultPendingDelete] = []
+        do {
+            for rowIndex in rowsToDelete {
+                guard let row = page.row(at: rowIndex) else {
+                    throw WorkspaceDatabaseDataRowDeleteError.rowUnavailable
+                }
+                let rowDelete = try WorkspaceDatabaseDataRowDeleteRequest.make(
+                    selection: selection,
+                    row: row,
+                    columns: page.columns,
+                    details: details
+                )
+                let replacedUpdates = pendingCellUpdates.filter {
+                    $0.resultID == page.store.id
+                        && $0.rowIndex == rowIndex
+                        && $0.pendingUpdate.applies(
+                            to: row,
+                            columns: page.columns
+                        )
+                }.map(\.pendingUpdate)
+                preparedDeletes.append(
+                    WorkspaceQueryResultPendingDelete(
+                        resultID: page.store.id,
+                        rowIndex: rowIndex,
+                        pendingDelete: WorkspaceDatabaseInspectorPendingDelete(
+                            rowDelete: rowDelete,
+                            replacedUpdates: replacedUpdates
+                        )
+                    )
+                )
+            }
+        } catch {
+            presentEditError(error.localizedDescription)
+            return
+        }
+
+        pendingRowDeletes.append(contentsOf: preparedDeletes)
+        let replacedUpdates = preparedDeletes.flatMap(\.replacedUpdates)
+        let deletedRowIndexes = Set(preparedDeletes.map(\.rowIndex))
+        pendingCellUpdates.removeAll {
+            $0.resultID == page.store.id
+                && deletedRowIndexes.contains($0.rowIndex)
+                && replacedUpdates.contains($0.pendingUpdate)
+        }
+    }
+
     private func publishInspectorContext(
         _ context: WorkspaceQueryResultInspectorContext,
         page: WorkspaceQueryResultPage
@@ -425,8 +558,7 @@ struct WorkspaceQueryResultView: View {
         else {
             return nil
         }
-        if let pendingSelection = pendingCellUpdates.first?.pendingUpdate.update.selection,
-           pendingSelection != selection
+        if !canStageChanges(for: selection)
         {
             presentEditError(
                 AppCopy.current.text(
@@ -463,13 +595,9 @@ struct WorkspaceQueryResultView: View {
     ) -> WorkspaceDatabaseDataCellEditRequest? {
         guard !isCommittingChanges,
               target.column?.origin != nil,
-              let selection = editableSelection(for: page)
+              let selection = editableSelection(for: page),
+              canStageChanges(for: selection)
         else {
-            return nil
-        }
-        if let pendingSelection = pendingCellUpdates.first?.pendingUpdate.update.selection,
-           pendingSelection != selection
-        {
             return nil
         }
         guard let details = detailsBySelection[selection] else { return nil }
@@ -488,7 +616,8 @@ struct WorkspaceQueryResultView: View {
         guard
             let selection = editableSelection(for: page),
             let details = detailsBySelection[selection],
-            let row = page.cachedRow(at: context.rowIndex)
+            let row = page.cachedRow(at: context.rowIndex),
+            canStageChanges(for: selection)
         else { return }
         let target = WorkspaceDatabaseDataCellEditTarget(
             rowIndex: context.rowIndex,
@@ -530,6 +659,15 @@ struct WorkspaceQueryResultView: View {
         target: WorkspaceDatabaseDataCellEditTarget,
         resultID: UUID
     ) {
+        guard canStageChanges(for: update.selection) else {
+            presentEditError(
+                AppCopy.current.text(
+                    "请先提交或放弃当前基础表的待处理修改。",
+                    "Commit or discard the pending changes for the current base table first."
+                )
+            )
+            return
+        }
         let pending = WorkspaceQueryResultPendingCellUpdate(
             resultID: resultID,
             rowIndex: target.rowIndex,
@@ -582,14 +720,33 @@ struct WorkspaceQueryResultView: View {
         )
     }
 
+    private var pendingChangeSelection: WorkspaceDatabaseObjectSelection? {
+        pendingCellUpdates.first?.pendingUpdate.update.selection
+            ?? pendingRowDeletes.first?.rowDelete.selection
+    }
+
+    private func canStageChanges(
+        for selection: WorkspaceDatabaseObjectSelection
+    ) -> Bool {
+        pendingChangeSelection.map { $0 == selection } ?? true
+    }
+
     private var pendingChangesActions: WorkspacePendingChangesActions? {
-        guard !pendingCellUpdates.isEmpty else { return nil }
+        guard !pendingCellUpdates.isEmpty || !pendingRowDeletes.isEmpty else {
+            return nil
+        }
         let changeSet = WorkspaceDatabaseDataChangeSet(
             updates: pendingCellUpdates.map(\.pendingUpdate.update),
             inserts: [],
-            deletes: []
+            deletes: pendingRowDeletes.map(\.rowDelete)
         )
-        let statements = changeSet.rowUpdates.compactMap {
+        let deleteStatements = changeSet.deletes.compactMap {
+            try? WorkspaceSQLPreviewStatement.make(
+                rowDelete: $0,
+                databaseType: databaseType
+            )
+        }
+        let updateStatements = changeSet.rowUpdates.compactMap {
             try? WorkspaceSQLPreviewStatement.make(
                 rowUpdate: $0,
                 databaseType: databaseType
@@ -597,7 +754,7 @@ struct WorkspaceQueryResultView: View {
         }
         return WorkspacePendingChangesActions(
             hasChanges: true,
-            statements: statements,
+            statements: deleteStatements + updateStatements,
             isCommitting: isCommittingChanges,
             discard: discardPendingChanges,
             preview: {},
@@ -616,10 +773,14 @@ struct WorkspaceQueryResultView: View {
     private func discardPendingChanges() {
         guard !isCommittingChanges else { return }
         pendingCellUpdates.removeAll()
+        pendingRowDeletes.removeAll()
     }
 
     private func requestCommitPendingChanges() {
-        guard !pendingCellUpdates.isEmpty, !isCommittingChanges else { return }
+        guard
+            (!pendingCellUpdates.isEmpty || !pendingRowDeletes.isEmpty),
+            !isCommittingChanges
+        else { return }
         if safetyLock.isEnabled {
             showsDisableSafetyLock = true
         } else {
@@ -628,12 +789,16 @@ struct WorkspaceQueryResultView: View {
     }
 
     private func commitPendingChanges() {
-        guard !pendingCellUpdates.isEmpty, !isCommittingChanges else { return }
+        guard
+            (!pendingCellUpdates.isEmpty || !pendingRowDeletes.isEmpty),
+            !isCommittingChanges
+        else { return }
         let capturedUpdates = pendingCellUpdates
+        let capturedDeletes = pendingRowDeletes
         let changeSet = WorkspaceDatabaseDataChangeSet(
             updates: capturedUpdates.map(\.pendingUpdate.update),
             inserts: [],
-            deletes: []
+            deletes: capturedDeletes.map(\.rowDelete)
         )
         isCommittingChanges = true
         changesTask = Task { @MainActor in
@@ -643,7 +808,6 @@ struct WorkspaceQueryResultView: View {
             }
             do {
                 try await applyChanges(changeSet)
-                pendingCellUpdates.removeAll { capturedUpdates.contains($0) }
                 do {
                     for (resultID, updates) in Dictionary(
                         grouping: capturedUpdates,
@@ -654,9 +818,37 @@ struct WorkspaceQueryResultView: View {
                         }
                         try await store.apply(updates.map(\.mutation))
                     }
+                    for (resultID, deletes) in Dictionary(
+                        grouping: capturedDeletes,
+                        by: \.resultID
+                    ) {
+                        guard let store = resultStore(identifiedBy: resultID)
+                        else { continue }
+                        try await store.remove(
+                            rowsAt: IndexSet(deletes.map(\.rowIndex))
+                        )
+                    }
+                    pendingCellUpdates.removeAll {
+                        capturedUpdates.contains($0)
+                    }
+                    pendingRowDeletes.removeAll {
+                        capturedDeletes.contains($0)
+                    }
                 } catch is CancellationError {
+                    pendingCellUpdates.removeAll {
+                        capturedUpdates.contains($0)
+                    }
+                    pendingRowDeletes.removeAll {
+                        capturedDeletes.contains($0)
+                    }
                     return
                 } catch {
+                    pendingCellUpdates.removeAll {
+                        capturedUpdates.contains($0)
+                    }
+                    pendingRowDeletes.removeAll {
+                        capturedDeletes.contains($0)
+                    }
                     presentEditError(
                         AppCopy.current.text(
                             "修改已保存到数据库，但无法刷新当前查询结果。请重新运行查询。\n\n\(error.localizedDescription)",

@@ -96,6 +96,153 @@ struct WorkspaceQueryResultEditingTests {
 
     @MainActor
     @Test
+    func typingInMultiCellSelectionReplacesEverySelectedCell() async throws {
+        let store = try WorkspaceQueryResultStore(temporary: false)
+        try await store.append([
+            WorkspaceDatabaseDataRow(
+                id: 0,
+                values: [.text("1"), .text("before-1")]
+            ),
+            WorkspaceDatabaseDataRow(
+                id: 1,
+                values: [.text("2"), .text("before-2")]
+            ),
+        ])
+        let page = WorkspaceQueryResultPage(
+            columns: [
+                resultColumn(
+                    id: 0,
+                    name: "id",
+                    database: "app",
+                    table: "users",
+                    column: "id"
+                ),
+                resultColumn(
+                    id: 1,
+                    name: "name",
+                    database: "app",
+                    table: "users",
+                    column: "name"
+                ),
+            ],
+            store: store,
+            rowCount: 2
+        )
+        var editedCells: [(Int, Int, WorkspaceDatabaseInspectorMutation)] = []
+        let coordinator = WorkspaceQueryResultTableCoordinator(
+            page: page,
+            prepareCellEdit: { target in
+                let initialText: String
+                if case let .text(value) = target.originalValue {
+                    initialText = value
+                } else {
+                    initialText = ""
+                }
+                return WorkspaceDatabaseDataCellInlineEditContext(
+                    rowIndex: target.rowIndex,
+                    dataColumnIndex: target.dataColumnIndex,
+                    columnName: target.column?.name ?? "",
+                    initialText: initialText,
+                    initialMutation: .value(initialText)
+                )
+            },
+            updateCellEdit: { context, mutation in
+                editedCells.append((
+                    context.rowIndex,
+                    context.dataColumnIndex,
+                    mutation
+                ))
+            }
+        )
+        let tableView = try #require(
+            coordinator.makeScrollView().documentView
+                as? WorkspaceDirectDrawTableView
+        )
+        tableView.selectGridRange(
+            anchor: WorkspaceGridCoordinate(row: 0, column: 2),
+            active: WorkspaceGridCoordinate(row: 1, column: 2)
+        )
+
+        #expect(tableView.cellTypingHandler?(1, 2, "r") == true)
+        #expect(editedCells.suffix(2).map { "\($0.0):\($0.1)" } == [
+            "0:1", "1:1",
+        ])
+        #expect(editedCells.suffix(2).map { $0.2 } == [
+            .value("r"),
+            .value("r"),
+        ])
+        #expect(tableView.subviews.compactMap { $0 as? NSTextField }.filter {
+            $0.accessibilityIdentifier() == "dataCellInlineEditor"
+        }.isEmpty)
+    }
+
+    @MainActor
+    @Test
+    func typingWithMultipleSelectedRowsReplacesEveryCellInThoseRows() async throws {
+        let store = try WorkspaceQueryResultStore(temporary: false)
+        try await store.append([
+            WorkspaceDatabaseDataRow(
+                id: 0,
+                values: [.text("1"), .text("before-1")]
+            ),
+            WorkspaceDatabaseDataRow(
+                id: 1,
+                values: [.text("2"), .text("before-2")]
+            ),
+        ])
+        let page = WorkspaceQueryResultPage(
+            columns: [
+                resultColumn(
+                    id: 0,
+                    name: "id",
+                    database: "app",
+                    table: "users",
+                    column: "id"
+                ),
+                resultColumn(
+                    id: 1,
+                    name: "name",
+                    database: "app",
+                    table: "users",
+                    column: "name"
+                ),
+            ],
+            store: store,
+            rowCount: 2
+        )
+        var editedCells: [(Int, Int)] = []
+        let coordinator = WorkspaceQueryResultTableCoordinator(
+            page: page,
+            prepareCellEdit: { target in
+                WorkspaceDatabaseDataCellInlineEditContext(
+                    rowIndex: target.rowIndex,
+                    dataColumnIndex: target.dataColumnIndex,
+                    columnName: target.column?.name ?? "",
+                    initialText: "before",
+                    initialMutation: .value("before")
+                )
+            },
+            updateCellEdit: { context, _ in
+                editedCells.append((context.rowIndex, context.dataColumnIndex))
+            }
+        )
+        let tableView = try #require(
+            coordinator.makeScrollView().documentView
+                as? WorkspaceDirectDrawTableView
+        )
+        tableView.selectRowIndexes(
+            IndexSet(integersIn: 0...1),
+            byExtendingSelection: false
+        )
+
+        #expect(tableView.cellTypingHandler?(0, 1, "r") == true)
+        #expect(editedCells.map { "\($0.0):\($0.1)" } == [
+            "0:0", "0:1", "1:0", "1:1",
+        ])
+    }
+
+    @MainActor
+    @Test
     func queryResultCellMenuOffersSupportedMutationsCopyRowAndUndo() async throws {
         let store = try WorkspaceQueryResultStore(temporary: false)
         try await store.append([

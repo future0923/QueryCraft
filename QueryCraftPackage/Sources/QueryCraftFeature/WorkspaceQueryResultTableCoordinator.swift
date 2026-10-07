@@ -10,6 +10,10 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
     )
 
     private var page: WorkspaceQueryResultPage
+    // Keep the count that AppKit last received. The page reads its count from
+    // a mutable store, so comparing page.rowCount after a store mutation
+    // would otherwise lose the previous value before update() runs.
+    private var displayedRowCount: Int
     private var nullDisplayText: String
     private var emptyStringDisplayText: String
     private var copyIncludesColumnNames: Bool
@@ -29,6 +33,8 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
     private var discardPendingUpdates: (
         [WorkspaceDatabaseInspectorPendingUpdate]
     ) -> Void
+    private var pendingDeleteRowIndexes: IndexSet
+    private var deleteRows: ((IndexSet) -> Void)?
     private let inlineEditor = WorkspaceDataCellInlineEditor()
     private var updateInspectorContext:
         @MainActor (WorkspaceQueryResultInspectorContext) -> Void
@@ -61,11 +67,14 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         discardPendingUpdates: @escaping (
             [WorkspaceDatabaseInspectorPendingUpdate]
         ) -> Void = { _ in },
+        pendingDeleteRowIndexes: IndexSet = [],
+        deleteRows: ((IndexSet) -> Void)? = nil,
         updateInspectorContext:
             @escaping @MainActor (WorkspaceQueryResultInspectorContext) -> Void =
             { _ in }
     ) {
         self.page = page
+        self.displayedRowCount = page.rowCount
         self.nullDisplayText = nullDisplayText
         self.emptyStringDisplayText = emptyStringDisplayText
         self.copyIncludesColumnNames = copyIncludesColumnNames
@@ -78,6 +87,8 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         self.prepareCellEdit = prepareCellEdit
         self.updateCellEdit = updateCellEdit
         self.discardPendingUpdates = discardPendingUpdates
+        self.pendingDeleteRowIndexes = pendingDeleteRowIndexes
+        self.deleteRows = deleteRows
         self.updateInspectorContext = updateInspectorContext
     }
 
@@ -170,6 +181,8 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         discardPendingUpdates: @escaping (
             [WorkspaceDatabaseInspectorPendingUpdate]
         ) -> Void = { _ in },
+        pendingDeleteRowIndexes: IndexSet = [],
+        deleteRows: ((IndexSet) -> Void)? = nil,
         updateInspectorContext:
             (@MainActor (WorkspaceQueryResultInspectorContext) -> Void)? = nil
     ) {
@@ -179,6 +192,9 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         self.prepareCellEdit = prepareCellEdit
         self.updateCellEdit = updateCellEdit
         self.discardPendingUpdates = discardPendingUpdates
+        let previousPendingDeleteRowIndexes = self.pendingDeleteRowIndexes
+        self.pendingDeleteRowIndexes = pendingDeleteRowIndexes
+        self.deleteRows = deleteRows
         let fontChanged = cellFont.fontName != self.cellFont.fontName
             || cellFont.pointSize != self.cellFont.pointSize
         let displayTextChanged =
@@ -203,6 +219,15 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
                 directDrawTableView.copyIncludesColumnNames =
                     copyIncludesColumnNames
                 updateCellActionHandlers(in: directDrawTableView)
+                if previousPendingDeleteRowIndexes != pendingDeleteRowIndexes {
+                    directDrawTableView.enumerateAvailableRowViews {
+                        [self] _, rowIndex in
+                        reconfigureLoadedRow(
+                            at: rowIndex,
+                            in: directDrawTableView
+                        )
+                    }
+                }
             }
             if fontChanged {
                 tableView.rowHeight = Self.rowHeight(for: cellFont)
@@ -220,13 +245,17 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
                 publishInspectorSelection()
             }
         }
-        guard page.revision != self.page.revision else { return }
+        let incomingRowCount = page.rowCount
+        let resultChanged = page.revision != self.page.revision
+        let rowCountChanged = incomingRowCount != displayedRowCount
+        guard resultChanged || rowCountChanged else { return }
         let columnsChanged = page.columns != self.page.columns
         let startsNewResult = page.store.id != self.page.store.id
         let appendsCurrentResult = !columnsChanged
             && !startsNewResult
-            && page.rowCount >= self.page.rowCount
+            && incomingRowCount >= displayedRowCount
         self.page = page
+        displayedRowCount = incomingRowCount
         searchController.update(source: .queryResult(page))
         if startsNewResult {
             for task in rowLoadTasks.values {
@@ -401,7 +430,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
 
 extension WorkspaceQueryResultTableCoordinator: NSTableViewDataSource {
     nonisolated func numberOfRows(in tableView: NSTableView) -> Int {
-        MainActor.assumeIsolated { page.rowCount }
+        MainActor.assumeIsolated { displayedRowCount }
     }
 }
 
@@ -483,7 +512,8 @@ extension WorkspaceQueryResultTableCoordinator: NSTableViewDelegate {
                 accessibilityPrefix: "queryResult",
                 pendingUpdateColumnIndexes: pendingUpdateColumnIndexes(
                     for: dataRow
-                )
+                ),
+                isPendingDeletion: pendingDeleteRowIndexes.contains(row)
             )
             return rowView
         }
@@ -493,6 +523,13 @@ extension WorkspaceQueryResultTableCoordinator: NSTableViewDelegate {
 private extension WorkspaceQueryResultTableCoordinator {
     func updateCellActionHandlers(in tableView: WorkspaceDirectDrawTableView) {
         updateCellEditHandler(in: tableView)
+        tableView.deleteDataRowsHandler = deleteRows
+        tableView.canDeleteDataRowsHandler = { [weak self] rows in
+            guard let self, self.deleteRows != nil else {
+                return false
+            }
+            return self.canDeleteRows(rows)
+        }
         tableView.cellValueMutationMenuItemsProvider = { [weak self] row, column in
             self?.loadedValueMutationMenuItems(
                 row: row,
@@ -523,8 +560,15 @@ private extension WorkspaceQueryResultTableCoordinator {
             self?.canEditCell(row: row, tableColumnIndex: column) == true
         }
         tableView.cellTypingHandler = { [weak self] row, column, text in
-            guard let self,
-                  self.canEditCell(row: row, tableColumnIndex: column) else {
+            guard let self else { return false }
+            if self.replaceSelectedCells(
+                clickedRow: row,
+                clickedTableColumnIndex: column,
+                with: text
+            ) {
+                return true
+            }
+            guard self.canEditCell(row: row, tableColumnIndex: column) else {
                 return false
             }
             self.beginEditingCell(
@@ -539,7 +583,94 @@ private extension WorkspaceQueryResultTableCoordinator {
         }
     }
 
+    /// Applies direct text entry to every cell in a multi-cell selection. A
+    /// single-cell selection keeps the normal inline editor path unchanged.
+    func replaceSelectedCells(
+        clickedRow: Int,
+        clickedTableColumnIndex: Int,
+        with text: String
+    ) -> Bool {
+        let coordinates = selectedTypingCoordinates(
+            clickedRow: clickedRow,
+            clickedTableColumnIndex: clickedTableColumnIndex
+        )
+        guard coordinates.count > 1 else { return false }
+
+        let contexts = coordinates.compactMap { coordinate ->
+            WorkspaceDatabaseDataCellInlineEditContext? in
+            guard
+                let target = loadedCellEditTarget(
+                    row: coordinate.row,
+                    tableColumnIndex: coordinate.column
+                ),
+                canEditCell(
+                    row: coordinate.row,
+                    tableColumnIndex: coordinate.column
+                ),
+                let context = prepareCellEdit?(target)
+            else {
+                return nil
+            }
+            return context
+        }
+        guard contexts.count == coordinates.count else {
+            NSSound.beep()
+            return true
+        }
+
+        for context in contexts {
+            updateCellEdit(context, .value(text))
+        }
+        return true
+    }
+
+    func selectedTypingCoordinates(
+        clickedRow: Int,
+        clickedTableColumnIndex: Int
+    ) -> [WorkspaceGridCoordinate] {
+        guard let tableView = tableView as? WorkspaceDirectDrawTableView else {
+            return []
+        }
+        if !tableView.gridSelection.isEmpty {
+            guard tableView.gridSelection.contains(
+                row: clickedRow,
+                column: clickedTableColumnIndex
+            ) else {
+                return [WorkspaceGridCoordinate(
+                    row: clickedRow,
+                    column: clickedTableColumnIndex
+                )]
+            }
+            return selectedLoadedCoordinates(
+                clickedRow: clickedRow,
+                clickedTableColumnIndex: clickedTableColumnIndex
+            )
+        }
+
+        guard tableView.selectedDataRowIndexesForActions.contains(clickedRow)
+        else {
+            return [WorkspaceGridCoordinate(
+                row: clickedRow,
+                column: clickedTableColumnIndex
+            )]
+        }
+        let dataColumnIndexes = tableView.tableColumns.indices.filter {
+            columnIndexes[tableView.tableColumns[$0].identifier] != nil
+        }
+        return tableView.selectedDataRowIndexesForActions.flatMap { row in
+            dataColumnIndexes.compactMap { column in
+                loadedCellEditTarget(
+                    row: row,
+                    tableColumnIndex: column
+                ).map { _ in
+                    WorkspaceGridCoordinate(row: row, column: column)
+                }
+            }
+        }
+    }
+
     func canEditCell(row: Int, tableColumnIndex: Int) -> Bool {
+        guard !pendingDeleteRowIndexes.contains(row) else { return false }
         guard let target = loadedCellEditTarget(
             row: row,
             tableColumnIndex: tableColumnIndex
@@ -560,13 +691,32 @@ private extension WorkspaceQueryResultTableCoordinator {
                   tableColumnIndex: tableColumnIndex
               ),
               let context = prepareCellEdit?(target) else { return }
+        beginInlineEditor(
+            context: context,
+            tableView: tableView,
+            tableColumnIndex: tableColumnIndex,
+            replacingWith: replacement,
+            update: updateCellEdit
+        )
+    }
+
+    func beginInlineEditor(
+        context: WorkspaceDatabaseDataCellInlineEditContext,
+        tableView: WorkspaceDirectDrawTableView,
+        tableColumnIndex: Int,
+        replacingWith replacement: String?,
+        update: @escaping (
+            WorkspaceDatabaseDataCellInlineEditContext,
+            WorkspaceDatabaseInspectorMutation
+        ) -> Void
+    ) {
         inlineEditor.begin(
             in: tableView,
             context: context,
             tableColumnIndex: tableColumnIndex,
             cellFont: cellFont,
             replacingWith: replacement,
-            update: updateCellEdit,
+            update: update,
             canEdit: { [weak self] row, column in
                 self?.canEditCell(row: row, tableColumnIndex: column) == true
             },
@@ -678,6 +828,7 @@ private extension WorkspaceQueryResultTableCoordinator {
                     row: coordinate.row,
                     tableColumnIndex: coordinate.column
                 ),
+                !pendingDeleteRowIndexes.contains(coordinate.row),
                 target.column?.origin != nil,
                 cellEditRequest?(target) != nil,
                 let context = prepareCellEdit?(target)
@@ -704,6 +855,7 @@ private extension WorkspaceQueryResultTableCoordinator {
                     row: coordinate.row,
                     tableColumnIndex: coordinate.column
                 ),
+                !pendingDeleteRowIndexes.contains(coordinate.row),
                 target.column?.origin != nil,
                 let request = cellEditRequest?(target)
             else {
@@ -768,12 +920,55 @@ private extension WorkspaceQueryResultTableCoordinator {
         copyRowItem.target = self
         copyRowItem.representedObject = row
 
+        var rowItems = [copyRowItem]
+        if deleteRows != nil {
+            let actionRows = actionRows(for: row)
+            let isUndo = pendingDeleteRowIndexes.contains(row)
+            let deleteItem = NSMenuItem(
+                title: isUndo
+                    ? AppCopy.current.text("撤销删除", "Undo Delete")
+                    : actionRows.count == 1
+                        ? AppCopy.current.text("删除行", "Delete Row")
+                        : AppCopy.current.text(
+                            "删除 \(actionRows.count) 行",
+                            "Delete \(actionRows.count) Rows"
+                        ),
+                action: #selector(deleteRowsFromMenu(_:)),
+                keyEquivalent: isUndo ? "" : "\u{8}"
+            )
+            deleteItem.target = self
+            deleteItem.representedObject = actionRows
+            deleteItem.isEnabled = canDeleteRows(actionRows)
+            rowItems.append(deleteItem)
+        }
+
         let pendingItems = pendingChangeMenuItems(
             row: row,
             tableColumnIndex: tableColumnIndex
         )
-        guard !pendingItems.isEmpty else { return [copyRowItem] }
-        return [copyRowItem, .separator()] + pendingItems
+        guard !pendingItems.isEmpty else { return rowItems }
+        return rowItems + [.separator()] + pendingItems
+    }
+
+    func actionRows(for row: Int) -> IndexSet {
+        guard let tableView = tableView as? WorkspaceDirectDrawTableView else {
+            return IndexSet(integer: row)
+        }
+        if pendingDeleteRowIndexes.contains(row) {
+            return IndexSet(integer: row)
+        }
+        let selectedRows = tableView.selectedDataRowIndexesForActions
+        return selectedRows.contains(row) ? selectedRows : IndexSet(integer: row)
+    }
+
+    func canDeleteRows(_ rows: IndexSet) -> Bool {
+        guard deleteRows != nil, !rows.isEmpty else { return false }
+        let pendingStates = rows.map(pendingDeleteRowIndexes.contains)
+        guard let firstPendingState = pendingStates.first else { return false }
+        return pendingStates.allSatisfy { $0 == firstPendingState }
+            && rows.allSatisfy {
+                $0 >= 0 && $0 < page.rowCount
+            }
     }
 
     func pendingChangeMenuItems(
@@ -843,6 +1038,11 @@ private extension WorkspaceQueryResultTableCoordinator {
         tableView.copyRow(at: row)
     }
 
+    @objc func deleteRowsFromMenu(_ sender: NSMenuItem) {
+        guard let rows = sender.representedObject as? IndexSet else { return }
+        deleteRows?(rows)
+    }
+
     @objc func undoCellChangeFromMenu(_ sender: NSMenuItem) {
         guard let update = sender.representedObject
             as? WorkspaceDatabaseInspectorPendingUpdate else { return }
@@ -905,7 +1105,8 @@ private extension WorkspaceQueryResultTableCoordinator {
             emptyStringDisplayText: emptyStringDisplayText,
             cellFont: cellFont,
             accessibilityPrefix: "queryResult",
-            pendingUpdateColumnIndexes: pendingUpdateColumnIndexes(for: row)
+            pendingUpdateColumnIndexes: pendingUpdateColumnIndexes(for: row),
+            isPendingDeletion: pendingDeleteRowIndexes.contains(rowIndex)
         )
     }
 

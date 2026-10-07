@@ -28,6 +28,25 @@ struct WorkspaceQueryResultStoreTests {
     }
 
     @Test
+    func removesResidentRowsAndCompactsResultPositions() async throws {
+        let store = try WorkspaceQueryResultStore(temporary: false)
+        try await store.append((0..<5).map { index in
+            WorkspaceDatabaseDataRow(
+                id: index,
+                values: [.text("row-\(index)")]
+            )
+        })
+
+        try await store.remove(rowsAt: IndexSet([1, 3]))
+
+        #expect(store.rowCount == 3)
+        #expect(store.row(at: 0)?.values == [.text("row-0")])
+        #expect(store.row(at: 1)?.values == [.text("row-2")])
+        #expect(store.row(at: 2)?.values == [.text("row-4")])
+        #expect(store.row(at: 2)?.id == 2)
+    }
+
+    @Test
     func diskBackedRowsEvictAndReloadCachePagesAsynchronously() async throws {
         let store = try WorkspaceQueryResultStore(temporary: false)
         let pageSize = 256
@@ -53,6 +72,18 @@ struct WorkspaceQueryResultStoreTests {
 
         #expect(loadedRange == 0..<pageSize)
         #expect(store.cachedRow(at: 0)?.values == [.text("row-0")])
+
+        try await store.remove(rowsAt: IndexSet([0, 257, lastIndex]))
+
+        #expect(store.rowCount == pageCount * pageSize - 3)
+        #expect(store.row(at: 0)?.values == [.text("row-1")])
+        #expect(store.row(at: 255)?.values == [.text("row-256")])
+        #expect(store.row(at: 256)?.values == [.text("row-258")])
+        #expect(
+            store.row(at: store.rowCount - 1)?.values
+                == [.text("row-50430")]
+        )
+        #expect(store.row(at: store.rowCount - 1)?.id == store.rowCount - 1)
     }
 
     @Test

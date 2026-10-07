@@ -219,6 +219,71 @@ final class WorkspaceQueryResultStore: Sendable {
         }
     }
 
+    /// Removes result rows and compacts their positions so the existing page
+    /// can continue to address rows by their zero-based position.
+    func remove(rowsAt indexes: IndexSet) async throws {
+        let currentCount = rowCount
+        let validIndexes = IndexSet(
+            indexes.filter { $0 >= 0 && $0 < currentCount }
+        )
+        guard !validIndexes.isEmpty else { return }
+
+        if let resident = residentRows.withLock({ $0 }) {
+            var remaining: [WorkspaceDatabaseDataRow] = []
+            remaining.reserveCapacity(resident.count - validIndexes.count)
+            var newIndex = 0
+            for (index, row) in resident.enumerated()
+            where !validIndexes.contains(index) {
+                remaining.append(
+                    WorkspaceDatabaseDataRow(id: newIndex, values: row.values)
+                )
+                newIndex += 1
+            }
+            residentRows.withLock { $0 = remaining }
+            storedRowCount.withLock { $0 = remaining.count }
+            cache.withLock {
+                $0.pages.removeAll(keepingCapacity: false)
+                $0.order.removeAll(keepingCapacity: false)
+            }
+            return
+        }
+
+        guard let databaseQueue = databaseQueue() else { return }
+        try await databaseQueue.write { database in
+            let payloads = try Data.fetchAll(
+                database,
+                sql: "SELECT payload FROM queryResultRow ORDER BY position"
+            )
+            let decoder = JSONDecoder()
+            let encoder = JSONEncoder()
+            let statement = try database.makeStatement(
+                sql: "INSERT INTO queryResultRow (position, payload) VALUES (?, ?)"
+            )
+            try database.execute(sql: "DELETE FROM queryResultRow")
+            var newIndex = 0
+            for (index, payload) in payloads.enumerated()
+            where !validIndexes.contains(index) {
+                let row = try decoder.decode(
+                    WorkspaceDatabaseDataRow.self,
+                    from: payload
+                )
+                let replacement = WorkspaceDatabaseDataRow(
+                    id: newIndex,
+                    values: row.values
+                )
+                try statement.execute(
+                    arguments: [newIndex, try encoder.encode(replacement)]
+                )
+                newIndex += 1
+            }
+            storedRowCount.withLock { $0 = newIndex }
+        }
+        cache.withLock {
+            $0.pages.removeAll(keepingCapacity: false)
+            $0.order.removeAll(keepingCapacity: false)
+        }
+    }
+
     func cachePageIdentifier(containing index: Int) -> Int? {
         guard index >= 0, index < rowCount else { return nil }
         return index / Self.pageSize

@@ -22,7 +22,56 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
     let discardPendingUpdates: @MainActor (
         [WorkspaceDatabaseInspectorPendingUpdate]
     ) -> Void
+    let pendingDeleteRowIndexes: IndexSet
+    let deleteRows: (@MainActor (IndexSet) -> Void)?
     let updateInspectorContext: @MainActor (WorkspaceQueryResultInspectorContext) -> Void
+
+    init(
+        page: WorkspaceQueryResultPage,
+        nullDisplayText: String,
+        emptyStringDisplayText: String,
+        copyIncludesColumnNames: Bool,
+        formatsTimestamps: Bool = true,
+        cellFont: NSFont,
+        exportController: WorkspaceDataExportController,
+        searchController: WorkspaceGridSearchController,
+        pendingUpdates: [WorkspaceDatabaseInspectorPendingUpdate],
+        pendingDeleteRowIndexes: IndexSet = [],
+        cellEditRequest: @escaping @MainActor (
+            WorkspaceDatabaseDataCellEditTarget
+        ) -> WorkspaceDatabaseDataCellEditRequest?,
+        prepareCellEdit: @escaping @MainActor (
+            WorkspaceDatabaseDataCellEditTarget
+        ) -> WorkspaceDatabaseDataCellInlineEditContext?,
+        updateCellEdit: @escaping @MainActor (
+            WorkspaceDatabaseDataCellInlineEditContext,
+            WorkspaceDatabaseInspectorMutation
+        ) -> Void,
+        discardPendingUpdates: @escaping @MainActor (
+            [WorkspaceDatabaseInspectorPendingUpdate]
+        ) -> Void,
+        deleteRows: (@MainActor (IndexSet) -> Void)? = nil,
+        updateInspectorContext: @escaping @MainActor (
+            WorkspaceQueryResultInspectorContext
+        ) -> Void
+    ) {
+        self.page = page
+        self.nullDisplayText = nullDisplayText
+        self.emptyStringDisplayText = emptyStringDisplayText
+        self.copyIncludesColumnNames = copyIncludesColumnNames
+        self.formatsTimestamps = formatsTimestamps
+        self.cellFont = cellFont
+        self.exportController = exportController
+        self.searchController = searchController
+        self.pendingUpdates = pendingUpdates
+        self.pendingDeleteRowIndexes = pendingDeleteRowIndexes
+        self.cellEditRequest = cellEditRequest
+        self.prepareCellEdit = prepareCellEdit
+        self.updateCellEdit = updateCellEdit
+        self.discardPendingUpdates = discardPendingUpdates
+        self.deleteRows = deleteRows
+        self.updateInspectorContext = updateInspectorContext
+    }
 
     func makeCoordinator() -> WorkspaceQueryResultTableCoordinator {
         WorkspaceQueryResultTableCoordinator(
@@ -39,6 +88,8 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
             prepareCellEdit: prepareCellEdit,
             updateCellEdit: updateCellEdit,
             discardPendingUpdates: discardPendingUpdates,
+            pendingDeleteRowIndexes: pendingDeleteRowIndexes,
+            deleteRows: deleteRows,
             updateInspectorContext: updateInspectorContext
         )
     }
@@ -63,6 +114,8 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
             prepareCellEdit: prepareCellEdit,
             updateCellEdit: updateCellEdit,
             discardPendingUpdates: discardPendingUpdates,
+            pendingDeleteRowIndexes: pendingDeleteRowIndexes,
+            deleteRows: deleteRows,
             updateInspectorContext: updateInspectorContext
         )
     }

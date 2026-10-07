@@ -416,7 +416,22 @@ final class WorkspaceDirectDrawTableView: NSTableView {
            let characters = event.characters,
            isDirectTextEntry(characters)
         {
-            return
+            let typingCoordinate = gridSelection.active ?? selectedRowIndexes
+                .first
+                .flatMap { row in
+                    dataTableColumnIndexes.first.map { column in
+                        WorkspaceGridCoordinate(row: row, column: column)
+                    }
+                }
+            if let typingCoordinate,
+               cellTypingHandler?(
+                   typingCoordinate.row,
+                   typingCoordinate.column,
+                   characters
+               ) == true
+            {
+                return
+            }
         }
         super.keyDown(with: event)
     }
