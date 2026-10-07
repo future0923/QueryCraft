@@ -263,7 +263,8 @@ final class WorkspaceQueryDocumentModel: Identifiable {
             WorkspaceStatementResult(
                 statement: executionStatement,
                 state: .running(nil),
-                elapsedSeconds: 0
+                elapsedSeconds: 0,
+                maximumResultRows: options.maximumResultRows
             )
         ]
 
@@ -390,7 +391,8 @@ final class WorkspaceQueryDocumentModel: Identifiable {
             WorkspaceStatementResult(
                 statement: $0,
                 state: .idle,
-                elapsedSeconds: 0
+                elapsedSeconds: 0,
+                maximumResultRows: options.maximumResultRows
             )
         }
         executionState = .running(nil)

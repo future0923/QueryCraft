@@ -907,6 +907,8 @@ struct WorkspaceQueryDocumentTests {
         #expect(page.row(at: 2)?.values == [.text("2")])
         #expect(page.row(at: 3) == nil)
         #expect(await session.requestedMaximumRows() == [3])
+        document.resultRowLimit = .rows500
+        #expect(document.statementResults.first?.maximumResultRows == 3)
         await document.close()
     }
 

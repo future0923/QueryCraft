@@ -8,6 +8,7 @@ enum WorkspaceSQLResultSection: Equatable {
 
 struct WorkspaceSQLExecutionMessagesView: View {
     let results: [WorkspaceStatementResult]
+    let databaseType: DatabaseType
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -17,6 +18,12 @@ struct WorkspaceSQLExecutionMessagesView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(verbatim: result.statement.sql)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                            if result.didExecute,
+                               result.statement.kind == .read || result.hasRowResult,
+                               let limit = result.maximumResultRows {
+                                Text(verbatim: "> \(resultLimitMessage(limit, for: result))")
+                                    .foregroundStyle(.secondary)
+                            }
                             Text(verbatim: "> \(result.statusMessage)")
                                 .foregroundStyle(result.state.reportColor)
                             if let rowCount = result.rowCountMessage {
@@ -46,6 +53,18 @@ struct WorkspaceSQLExecutionMessagesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityIdentifier("queryExecutionMessages")
+    }
+
+    private func resultLimitMessage(_ limit: Int, for result: WorkspaceStatementResult) -> String {
+        if databaseType == .mysql, result.statement.kind == .read {
+            return AppCopy.current.text(
+                "本次结果上限：\(limit) 行（会话设置 SQL_SELECT_LIMIT = \(limit)，SELECT 原文不变）",
+                "Result limit for this run: \(limit) rows (session SQL_SELECT_LIMIT = \(limit); SELECT text unchanged)"
+            )
+        }
+        return AppCopy.current.text(
+            "本次结果上限：\(limit) 行", "Result limit for this run: \(limit) rows"
+        )
     }
 }
 

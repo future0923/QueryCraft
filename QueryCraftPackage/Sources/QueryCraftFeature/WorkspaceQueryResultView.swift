@@ -38,7 +38,7 @@ struct WorkspaceQueryResultView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !statementResults.isEmpty {
+            if !statementResults.isEmpty && !usesSingleResultLayout {
                 HStack {
                     WorkspaceStatementResultTabs(
                         results: statementResults.filter(\.hasRowResult),
@@ -68,11 +68,15 @@ struct WorkspaceQueryResultView: View {
 
             Group {
                 if !statementResults.isEmpty && displayedSection == .messages {
-                    WorkspaceSQLExecutionMessagesView(results: statementResults)
+                    WorkspaceSQLExecutionMessagesView(
+                        results: statementResults, databaseType: databaseType
+                    )
                 } else if !statementResults.isEmpty && displayedSection == .summary {
                     WorkspaceSQLExecutionSummaryView(results: statementResults)
                 } else if let page = displayedState.page, !page.columns.isEmpty {
                     resultTable(for: page)
+                } else if usesSingleResultLayout && state.isRunning {
+                    Color.clear
                 } else {
                     emptyState
                 }
@@ -81,7 +85,8 @@ struct WorkspaceQueryResultView: View {
 
             WorkspaceDatabaseDataProgressBar(isActive: state.isRunning)
 
-            if displayedSection == .statement, let result = displayedResult {
+            if !usesSingleResultLayout, displayedSection == .statement,
+                let result = displayedResult {
                 HStack(spacing: 8) {
                     Text("SQL")
                         .foregroundStyle(.secondary)
@@ -369,10 +374,22 @@ struct WorkspaceQueryResultView: View {
     }
 
     private var displayedSection: WorkspaceSQLResultSection {
+        if usesSingleResultLayout {
+            return .statement
+        }
         if resultSection == .statement, displayedResult?.hasRowResult != true {
             return .messages
         }
         return resultSection
+    }
+
+    private var usesSingleResultLayout: Bool {
+        guard statementResults.count == 1, let result = statementResults.first else {
+            return false
+        }
+        // Reserve the table layout before a single read starts returning rows.
+        // Use the actual columns for statements such as INSERT ... RETURNING.
+        return result.statement.kind == .read || result.hasRowResult
     }
 
     private var displayedTablePage: WorkspaceQueryResultPage? {

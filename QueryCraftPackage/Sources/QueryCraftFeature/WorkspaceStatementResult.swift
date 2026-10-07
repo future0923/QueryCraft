@@ -2,6 +2,7 @@ struct WorkspaceStatementResult: Equatable, Sendable, Identifiable {
     let statement: SQLExecutionStatement
     var state: WorkspaceQueryExecutionState
     var elapsedSeconds: Double
+    var maximumResultRows: Int? = nil
 
     var id: Int { statement.index }
 
