@@ -361,6 +361,9 @@ jobs:
       - name: Publish selected resources
         run: scripts/deploy-release-artifacts.sh "${{ needs.metadata.outputs.version }}" dist
 
+      - name: Synchronize canonical published download URLs
+        run: python3 scripts/ci/sync-published-release-metadata.py dist
+
       - name: Create or update GitHub client release
         if: needs.metadata.outputs.publish == 'true'
         env:
