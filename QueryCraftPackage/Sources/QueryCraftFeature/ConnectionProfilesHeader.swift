@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ConnectionProfilesHeader: View {
     let profileCount: Int
+    @Binding var searchText: String
     let createProfile: () -> Void
     let createGroup: () -> Void
 
@@ -15,7 +16,15 @@ struct ConnectionProfilesHeader: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
 
-            Spacer()
+            WorkspaceGridSearchField(
+                text: $searchText,
+                placeholder: AppCopy.current.text("搜索连接", "Search connections"),
+                focusRequest: 0,
+                submit: {},
+                cancel: { searchText = "" },
+                accessibilityIdentifier: "connectionProfilesSearchField"
+            )
+            .frame(minWidth: 80, maxWidth: .infinity)
 
             Button(
                 AppCopy.current.text("新建连接", "New Connection"),

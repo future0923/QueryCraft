@@ -9,11 +9,18 @@ struct ConnectionProfilesPane: View {
     let createGroup: () -> Void
     let renameGroup: (ConnectionGroup) -> Void
     let deleteGroup: (ConnectionGroup) -> Void
+    @State private var searchText = ""
 
     var body: some View {
+        let results = ConnectionProfilesSearchResults(
+            groups: model.groups,
+            profiles: model.profiles,
+            searchText: searchText
+        )
         VStack(spacing: 0) {
             ConnectionProfilesHeader(
                 profileCount: model.profiles.count,
+                searchText: $searchText,
                 createProfile: { createProfile(nil) },
                 createGroup: createGroup
             )
@@ -39,8 +46,10 @@ struct ConnectionProfilesPane: View {
                     .accessibilityIdentifier("emptyConnectionProfilesMessage")
                 } else {
                     ConnectionProfilesOutlineView(
-                        groups: model.groups,
-                        profiles: model.profiles,
+                        groups: results.groups,
+                        profiles: results.profiles,
+                        searchQuery: results.query,
+                        showsUngrouped: results.showsUngrouped,
                         openProfile: openProfile,
                         createProfile: createProfile,
                         editProfile: editProfile,
@@ -52,6 +61,14 @@ struct ConnectionProfilesPane: View {
                         moveGroup: moveGroup
                     )
                     .accessibilityIdentifier("connectionProfilesList")
+                    .overlay {
+                        if results.isSearching && results.groups.isEmpty
+                            && results.profiles.isEmpty && !results.showsUngrouped
+                        {
+                            ContentUnavailableView.search(text: results.query)
+                                .accessibilityIdentifier("emptyConnectionSearchMessage")
+                        }
+                    }
                 }
             }
         }

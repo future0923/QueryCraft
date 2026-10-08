@@ -20,6 +20,8 @@ final class ConnectionProfilesOutlineCoordinator:
     private var contextNode: ConnectionProfilesOutlineNode?
     private var collapsedSectionIDs: Set<String> = []
     private var isApplyingExpansion = false
+    private var searchQuery = ""
+    private var showsUngrouped = true
 
     private var openProfile: ((ConnectionProfile) -> Void)?
     private var createProfile: ((ConnectionGroup.ID?) -> Void)?
@@ -52,23 +54,38 @@ final class ConnectionProfilesOutlineCoordinator:
         moveProfile = view.moveProfile
         moveGroup = view.moveGroup
 
-        guard groups != view.groups || profiles != view.profiles else {
+        guard groups != view.groups || profiles != view.profiles
+            || searchQuery != view.searchQuery || showsUngrouped != view.showsUngrouped
+        else {
             return
         }
         groups = view.groups
         profiles = view.profiles
+        searchQuery = view.searchQuery
+        showsUngrouped = view.showsUngrouped
         reload()
     }
 
     private func reload() {
         guard let outlineView else { return }
-        outlineView.reloadData()
+        let selectedNode = outlineView.item(atRow: outlineView.selectedRow)
+            as? ConnectionProfilesOutlineNode
         isApplyingExpansion = true
+        defer { isApplyingExpansion = false }
+        outlineView.reloadData()
+        outlineView.collapseItem(nil, collapseChildren: true)
         for node in rootNodes()
-        where !collapsedSectionIDs.contains(node.id) {
+        where !searchQuery.isEmpty || !collapsedSectionIDs.contains(node.id) {
             outlineView.expandItem(node)
         }
-        isApplyingExpansion = false
+        if let selectedNode {
+            let row = outlineView.row(forItem: selectedNode)
+            if row >= 0 {
+                outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            } else {
+                outlineView.deselectAll(nil)
+            }
+        }
     }
 
     private func node(
@@ -85,9 +102,8 @@ final class ConnectionProfilesOutlineCoordinator:
     }
 
     private func rootNodes() -> [ConnectionProfilesOutlineNode] {
-        var result = [
-            node(id: "ungrouped", kind: .ungrouped)
-        ]
+        var result: [ConnectionProfilesOutlineNode] = showsUngrouped
+            ? [node(id: "ungrouped", kind: .ungrouped)] : []
         result.append(
             contentsOf: groups.map { group in
                 node(id: "group:\(group.id)", kind: .group(group))
@@ -300,7 +316,7 @@ final class ConnectionProfilesOutlineCoordinator:
         else {
             return
         }
-        guard !isApplyingExpansion else {
+        guard !isApplyingExpansion, searchQuery.isEmpty else {
             return
         }
         collapsedSectionIDs.remove(node.id)
@@ -314,7 +330,7 @@ final class ConnectionProfilesOutlineCoordinator:
         else {
             return
         }
-        guard !isApplyingExpansion else {
+        guard !isApplyingExpansion, searchQuery.isEmpty else {
             return
         }
         collapsedSectionIDs.insert(node.id)
@@ -324,6 +340,7 @@ final class ConnectionProfilesOutlineCoordinator:
         _ outlineView: NSOutlineView,
         pasteboardWriterForItem item: Any
     ) -> NSPasteboardWriting? {
+        guard searchQuery.isEmpty else { return nil }
         guard let node = item as? ConnectionProfilesOutlineNode else {
             return nil
         }
@@ -365,6 +382,7 @@ final class ConnectionProfilesOutlineCoordinator:
         proposedChildIndex index: Int
     ) -> NSDragOperation {
         guard
+            searchQuery.isEmpty,
             let dragItem = dragItem(from: info)
         else {
             return []
@@ -453,6 +471,7 @@ final class ConnectionProfilesOutlineCoordinator:
         item: Any?,
         childIndex index: Int
     ) -> Bool {
+        guard searchQuery.isEmpty else { return false }
         guard let dragItem = dragItem(from: info) else {
             return false
         }

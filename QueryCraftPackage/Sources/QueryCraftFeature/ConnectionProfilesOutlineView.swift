@@ -4,6 +4,8 @@ import SwiftUI
 struct ConnectionProfilesOutlineView: NSViewRepresentable {
     let groups: [ConnectionGroup]
     let profiles: [ConnectionProfile]
+    let searchQuery: String
+    let showsUngrouped: Bool
     let openProfile: (ConnectionProfile) -> Void
     let createProfile: (ConnectionGroup.ID?) -> Void
     let editProfile: (ConnectionProfile) -> Void
@@ -25,7 +27,7 @@ struct ConnectionProfilesOutlineView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let outlineView = NSOutlineView()
+        let outlineView = ConnectionProfilesNativeOutlineView()
         outlineView.headerView = nil
         outlineView.style = .sourceList
         outlineView.rowSizeStyle = .default
@@ -79,5 +81,16 @@ struct ConnectionProfilesOutlineView: NSViewRepresentable {
         context: Context
     ) {
         context.coordinator.update(from: self)
+    }
+}
+
+private final class ConnectionProfilesNativeOutlineView: NSOutlineView {
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect {
+        var frame = super.frameOfOutlineCell(atRow: row)
+        guard !frame.isEmpty else { return frame }
+        // Source-list disclosure buttons otherwise use the default row height,
+        // while the delegate supplies taller rows for our hosted content.
+        frame.origin.y = rect(ofRow: row).midY - frame.height / 2
+        return frame
     }
 }

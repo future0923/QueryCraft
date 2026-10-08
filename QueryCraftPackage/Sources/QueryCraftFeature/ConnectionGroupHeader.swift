@@ -10,6 +10,7 @@ struct ConnectionGroupHeader: View {
         HStack(spacing: 7) {
             if let systemImage {
                 Image(systemName: systemImage)
+                    .frame(width: 16)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
