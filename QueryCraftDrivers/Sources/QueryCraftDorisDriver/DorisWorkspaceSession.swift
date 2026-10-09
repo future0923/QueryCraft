@@ -202,7 +202,7 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
             bindings: predicate.bindings
         )
         try Task.checkCancellation()
-        let columns = dataColumns(from: result)
+        let columns = Self.dataColumns(from: result)
         let rows = dataRows(from: result, offset: offset, limit: limit)
         if !columns.isEmpty || !rows.isEmpty {
             await onBatch(WorkspaceDatabaseDataBatch(columns: columns, rows: rows))
@@ -337,7 +337,7 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
         }
         let result = try await client.query(sql)
         try Task.checkCancellation()
-        let columns = dataColumns(from: result)
+        let columns = Self.dataColumns(from: result)
         let rows = dataRows(
             from: result,
             offset: 0,
@@ -352,12 +352,10 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
         )
     }
 
-    private func dataColumns(
+    nonisolated static func dataColumns(
         from result: CDatabaseQueryResult
     ) -> [WorkspaceDatabaseDataColumn] {
-        result.columns.enumerated().map {
-            WorkspaceDatabaseDataColumn(id: $0.offset, name: $0.element)
-        }
+        result.workspaceColumns
     }
 
     private func dataRows(

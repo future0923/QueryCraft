@@ -201,7 +201,10 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession {
             """
             SELECT
                 c.column_name::text AS column_name,
-                c.data_type::text AS column_type,
+                COALESCE(
+                    pg_catalog.format_type(attr.atttypid, attr.atttypmod),
+                    c.data_type
+                )::text AS column_type,
                 c.collation_name::text AS collation_name,
                 c.is_nullable::text AS is_nullable,
                 CASE WHEN pk.column_name IS NULL THEN '' ELSE 'PRI' END::text AS column_key,
@@ -214,10 +217,15 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession {
                 COALESCE(pgd.description, '')::text AS column_comment,
                 COALESCE(c.generation_expression, '')::text AS generation_expression
             FROM information_schema.columns c
-            LEFT JOIN pg_catalog.pg_statio_all_tables st
-              ON st.schemaname = c.table_schema AND st.relname = c.table_name
+            LEFT JOIN pg_catalog.pg_namespace ns
+              ON ns.nspname = c.table_schema
+            LEFT JOIN pg_catalog.pg_class rel
+              ON rel.relnamespace = ns.oid AND rel.relname = c.table_name
+            LEFT JOIN pg_catalog.pg_attribute attr
+              ON attr.attrelid = rel.oid AND attr.attname = c.column_name
+             AND attr.attnum > 0 AND NOT attr.attisdropped
             LEFT JOIN pg_catalog.pg_description pgd
-              ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position
+              ON pgd.objoid = rel.oid AND pgd.objsubid = attr.attnum
             LEFT JOIN (
                 SELECT kcu.table_schema, kcu.table_name, kcu.column_name
                 FROM information_schema.table_constraints tc
@@ -396,22 +404,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession {
                 + " LIMIT \(limit + 1) OFFSET \(offset)"
         )
         try Task.checkCancellation()
-        let columns = result.columns.enumerated().map { index, name in
-            let origin = (result.columnOrigins.indices.contains(index)
-                ? result.columnOrigins[index]
-                : nil).map {
-                    WorkspaceDatabaseDataColumn.Origin(
-                        schemaName: $0.schemaName,
-                        tableName: $0.tableName,
-                        columnName: $0.columnName
-                    )
-                }
-            return WorkspaceDatabaseDataColumn(
-                id: index,
-                name: name,
-                origin: origin
-            )
-        }
+        let columns = result.workspaceColumns
         let rows = result.rows.prefix(limit).enumerated().map { index, row in
             WorkspaceDatabaseDataRow(
                 id: offset + index,
@@ -716,9 +709,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession {
     ) async throws -> WorkspaceQueryExecutionResult {
         let result = try await requireClient().query(sql)
         try Task.checkCancellation()
-        let columns = result.columns.enumerated().map {
-            WorkspaceDatabaseDataColumn(id: $0.offset, name: $0.element)
-        }
+        let columns = result.workspaceColumns
         let rows = result.rows.enumerated().map { index, row in
             WorkspaceDatabaseDataRow(
                 id: index,

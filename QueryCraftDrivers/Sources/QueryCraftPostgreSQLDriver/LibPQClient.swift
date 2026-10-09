@@ -174,30 +174,9 @@ final class LibPQClient: @unchecked Sendable {
             string(from: PQfname(result, Int32(index)))
                 ?? "column_\(index)"
         }
-        let originMetadata = columnOriginMetadata(
-            for: Set((0..<columnCount).map {
-                PQftable(result, Int32($0))
-            }.filter { $0 != 0 }),
-            connection: connection
-        )
-        let columnOrigins = (0..<columnCount).map { index in
-            let tableOID = PQftable(result, Int32(index))
-            let tableColumn = PQftablecol(result, Int32(index))
-            guard
-                tableOID != 0,
-                tableColumn > 0,
-                let metadata = originMetadata[
-                    ColumnOriginKey(tableOID: tableOID, columnNumber: tableColumn)
-                ]
-            else {
-                return PostgreSQLCQueryResult.ColumnOrigin?.none
-            }
-            return PostgreSQLCQueryResult.ColumnOrigin(
-                schemaName: metadata.schema,
-                tableName: metadata.table,
-                columnName: metadata.column
-            )
-        }
+        let metadata = columnMetadata(from: result, connection: connection)
+        let columnTypes = (0..<columnCount).map { metadata[$0]?.type }
+        let columnOrigins = (0..<columnCount).map { metadata[$0]?.origin }
 
         var rows: [[String?]] = []
         rows.reserveCapacity(rowCount)
@@ -221,63 +200,63 @@ final class LibPQClient: @unchecked Sendable {
         }
         return PostgreSQLCQueryResult(
             columns: columns,
+            columnTypes: columnTypes,
             columnOrigins: columnOrigins,
             rows: rows
         )
     }
 
-    private struct ColumnOriginKey: Hashable {
-        let tableOID: UInt32
-        let columnNumber: Int32
+    private struct ColumnMetadata {
+        let type: String?
+        let origin: PostgreSQLCQueryResult.ColumnOrigin?
     }
 
-    private func columnOriginMetadata(
-        for objectIDs: Set<UInt32>,
+    private func columnMetadata(
+        from queryResult: OpaquePointer,
         connection: OpaquePointer
-    ) -> [ColumnOriginKey: (schema: String, table: String, column: String)] {
-        guard !objectIDs.isEmpty else { return [:] }
-        let identifiers = objectIDs.sorted().map(String.init).joined(separator: ",")
+    ) -> [Int: ColumnMetadata] {
+        let count = Int(PQnfields(queryResult))
+        guard count > 0 else { return [:] }
+        // Numeric protocol metadata identifies aliases and expressions without parsing SQL.
+        let values: String = (0..<count).map { index -> String in
+            let field = Int32(index)
+            return "(\(index), \(PQftype(queryResult, field))::oid, \(PQfmod(queryResult, field)), \(PQftable(queryResult, field))::oid, \(PQftablecol(queryResult, field)))"
+        }.joined(separator: ",")
         let sql = """
             SELECT
-                c.oid::text,
-                a.attnum::text,
+                i.column_index::text,
+                pg_catalog.format_type(i.type_oid, i.type_modifier)::text,
                 n.nspname::text,
                 c.relname::text,
                 a.attname::text
-            FROM pg_catalog.pg_class c
-            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-            JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
-            WHERE c.oid IN (\(identifiers))
-              AND a.attnum > 0
-              AND NOT a.attisdropped
+            FROM (VALUES \(values)) AS i(column_index, type_oid, type_modifier, table_oid, column_number)
+            LEFT JOIN pg_catalog.pg_class c ON c.oid = i.table_oid
+            LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            LEFT JOIN pg_catalog.pg_attribute a
+              ON a.attrelid = c.oid AND a.attnum = i.column_number
+             AND a.attnum > 0 AND NOT a.attisdropped
             """
         guard let metadata = sql.withCString({ PQexec(connection, $0) }) else {
             return [:]
         }
         defer { PQclear(metadata) }
         guard PQresultStatus(metadata) == PGRES_TUPLES_OK else { return [:] }
-        var result: [
-            ColumnOriginKey: (schema: String, table: String, column: String)
-        ] = [:]
+        var result: [Int: ColumnMetadata] = [:]
         for row in 0..<Int(PQntuples(metadata)) {
-            guard
-                let oidText = PQgetvalue(metadata, Int32(row), 0),
-                let oid = UInt32(String(cString: oidText)),
-                let columnNumberText = PQgetvalue(metadata, Int32(row), 1),
-                let columnNumber = Int32(String(cString: columnNumberText)),
-                let schema = PQgetvalue(metadata, Int32(row), 2),
-                let table = PQgetvalue(metadata, Int32(row), 3),
-                let column = PQgetvalue(metadata, Int32(row), 4)
-            else {
-                continue
+            let rowIndex = Int32(row)
+            guard let indexText = string(from: PQgetvalue(metadata, rowIndex, 0)),
+                  let index = Int(indexText) else { continue }
+            func value(_ column: Int32) -> String? {
+                guard PQgetisnull(metadata, rowIndex, column) == 0 else { return nil }
+                return string(from: PQgetvalue(metadata, rowIndex, column))
             }
-            result[
-                ColumnOriginKey(tableOID: oid, columnNumber: columnNumber)
-            ] = (
-                String(cString: schema),
-                String(cString: table),
-                String(cString: column)
-            )
+            let origin: PostgreSQLCQueryResult.ColumnOrigin?
+            if let schema = value(2), let table = value(3), let column = value(4) {
+                origin = .init(schemaName: schema, tableName: table, columnName: column)
+            } else {
+                origin = nil
+            }
+            result[index] = ColumnMetadata(type: value(1), origin: origin)
         }
         return result
     }

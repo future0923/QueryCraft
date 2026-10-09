@@ -446,6 +446,20 @@ struct SettingsCopy {
             "使用深浅交替的背景，便于横向查看宽表。", "Use alternating backgrounds to make wide rows easier to follow."
         )
     }
+    var showsSQLColumnComments: String { text("表头显示字段注释", "Show column comments in headers") }
+    var showsSQLColumnCommentsDescription: String {
+        text("在 SQL 数据表格的字段名下方独立显示注释。", "Show comments on a separate line below column names in SQL data grids.")
+    }
+    var showsSQLInspectorColumnComments: String {
+        text("检查器显示字段注释", "Show column comments in the inspector")
+    }
+    var showsSQLInspectorColumnCommentsDescription: String {
+        text("在右侧字段名和字段值之间显示注释，与表头的显示开关独立。", "Show comments between column names and values in the inspector, independently of the header setting.")
+    }
+    var showsSQLColumnTypes: String { text("表头显示字段类型", "Show column types in headers") }
+    var showsSQLColumnTypesDescription: String {
+        text("在 SQL 数据表格的表头中独立显示字段类型。", "Show column types on a separate line in SQL data grid headers.")
+    }
     var formatsTimestamps: String {
         text("时间戳显示为日期时间", "Display timestamps as date and time")
     }

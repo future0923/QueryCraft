@@ -215,6 +215,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
                         WorkspaceKafkaProducerWindowController.show(topic: reference.topic, workspace: model, copying: reference)
                     }
                 ) : nil,
+                sqlHeaderScope: selection.id,
                 canEditSchema: model.schemaEditingDescriptor.canEdit
                     && selection.kind == .table
                     && !isSubmittingPendingChanges,

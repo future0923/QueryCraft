@@ -7,6 +7,7 @@ struct WorkspaceQueryResultView: View {
     let elapsedSeconds: Double
     let currentDatabase: String?
     let databaseType: DatabaseType
+    let supportsDataEditing: Bool
     let safetyLock: WorkspaceSafetyLock
     let contentID: WorkspaceContentTabID
     let pendingChangesRegistry: WorkspacePendingChangesRegistry
@@ -204,7 +205,7 @@ struct WorkspaceQueryResultView: View {
         .onChange(of: isCommittingChanges) { _, _ in
             publishPendingChangesActions()
         }
-        .task(id: displayedState.page?.revision) {
+        .task(id: displayedState.page?.store.id) {
             await preloadEditableDetails()
         }
         .alert(
@@ -457,6 +458,7 @@ struct WorkspaceQueryResultView: View {
                 preferences.tableEmptyStringDisplayStyle.displayText,
             copyIncludesColumnNames: preferences.copyIncludesColumnNames,
             formatsTimestamps: preferences.formatsTimestamps,
+            sqlHeaderConfiguration: sqlHeaderConfiguration(for: page),
             cellFont: preferences.dataGridFont(),
             exportController: exportController,
             searchController: searchController,
@@ -613,6 +615,9 @@ struct WorkspaceQueryResultView: View {
         page: WorkspaceQueryResultPage
     ) {
         inspectorContext = context
+        let context = context.withColumnDetails(
+            sqlHeaderConfiguration(for: page)?.columnDetails ?? [:]
+        )
         guard let selection = editableSelection(for: page),
               let details = detailsBySelection[selection] else {
             updateInspectorContext(context)
@@ -792,27 +797,59 @@ struct WorkspaceQueryResultView: View {
         }
     }
 
+    private func sqlHeaderConfiguration(
+        for page: WorkspaceQueryResultPage
+    ) -> WorkspaceSQLGridHeaderConfiguration? {
+        guard databaseType == .mysql || databaseType == .postgresql || databaseType == .doris else {
+            return nil
+        }
+        let details = page.columns.compactMap { column -> (Int, WorkspaceDatabaseColumn)? in
+            guard let origin = column.origin,
+                  let selection = WorkspaceQueryResultEditing.selection(
+                    for: origin, currentDatabase: currentDatabase
+                  ),
+                  let detail = detailsBySelection[selection]?.columns.first(where: {
+                      $0.name == origin.columnName
+                  }) else { return nil }
+            return (column.id, detail)
+        }
+        return WorkspaceSQLGridHeaderConfiguration(
+            showsComments: preferences.showsSQLColumnComments,
+            showsTypes: preferences.showsSQLColumnTypes,
+            columnDetails: Dictionary(uniqueKeysWithValues: details)
+        )
+    }
+
     private func preloadEditableDetails() async {
-        guard let page = displayedState.page,
-              let selection = editableSelection(for: page),
-              detailsBySelection[selection] == nil else { return }
-        do {
-            let details = try await fetchDetails(selection)
-            try Task.checkCancellation()
-            detailsBySelection[selection] = details
-            detailsErrorBySelection[selection] = nil
-            publishInspectorContext(inspectorContext, page: page)
-        } catch is CancellationError {
-            return
-        } catch {
-            detailsErrorBySelection[selection] = error.localizedDescription
+        guard let page = displayedState.page else { return }
+        // Resolve each source separately so aliases and joins show the correct comment.
+        let selections = Set(page.columns.compactMap { column in
+            column.origin.flatMap {
+                WorkspaceQueryResultEditing.selection(for: $0, currentDatabase: currentDatabase)
+            }
+        })
+        for selection in selections.sorted(by: { $0.id < $1.id }) {
+            guard !Task.isCancelled else { return }
+            guard detailsBySelection[selection] == nil else { continue }
+            do {
+                let details = try await fetchDetails(selection)
+                try Task.checkCancellation()
+                detailsBySelection[selection] = details
+                detailsErrorBySelection[selection] = nil
+                publishInspectorContext(inspectorContext, page: page)
+            } catch is CancellationError {
+                return
+            } catch {
+                detailsErrorBySelection[selection] = error.localizedDescription
+            }
         }
     }
 
     private func editableSelection(
         for page: WorkspaceQueryResultPage
     ) -> WorkspaceDatabaseObjectSelection? {
-        WorkspaceQueryResultEditing.selection(
+        guard supportsDataEditing else { return nil }
+        return WorkspaceQueryResultEditing.selection(
             for: page,
             currentDatabase: currentDatabase
         )

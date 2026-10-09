@@ -43,6 +43,7 @@ struct WorkspaceDatabaseDataView: Equatable, View {
     let pasteRows: WorkspaceGridPasteRowsAction?
     let selectRowsForActions: @MainActor (IndexSet) -> Void
     var kafkaCopyAction: WorkspaceKafkaMessageCopyAction? = nil
+    var sqlHeaderScope: String? = nil
     @State private var preferences = ApplicationPreferences.shared
 
     nonisolated static func == (
@@ -58,6 +59,7 @@ struct WorkspaceDatabaseDataView: Equatable, View {
             && lhs.selectedDataRowIndexes == rhs.selectedDataRowIndexes
             && lhs.rowActionKind == rhs.rowActionKind
             && lhs.kafkaCopyAction?.topic == rhs.kafkaCopyAction?.topic
+            && lhs.sqlHeaderScope == rhs.sqlHeaderScope
             && statesRenderEqually(lhs.state, rhs.state)
     }
 
@@ -180,6 +182,7 @@ struct WorkspaceDatabaseDataView: Equatable, View {
             copyIncludesColumnNames:
                 preferences.copyIncludesColumnNames,
             formatsTimestamps: preferences.formatsTimestamps,
+            sqlHeaderConfiguration: sqlHeaderConfiguration(for: page),
             cellFont: preferences.dataGridFont(),
             exportController: exportController,
             searchController: searchController,
@@ -204,6 +207,25 @@ struct WorkspaceDatabaseDataView: Equatable, View {
             pasteRows: pasteRows,
             selectRowsForActions: selectRowsForActions,
             kafkaCopyAction: kafkaCopyAction
+        )
+    }
+
+    private func sqlHeaderConfiguration(
+        for page: WorkspaceDatabaseDataPage
+    ) -> WorkspaceSQLGridHeaderConfiguration? {
+        guard rowActionKind == .tableRow, kafkaCopyAction == nil else { return nil }
+        let detailsByName = Dictionary(uniqueKeysWithValues: databaseColumns.map { ($0.name, $0) })
+        let hasLoadedDetails: Bool
+        if case .loaded = detailsStateForDataFilter { hasLoadedDetails = true } else { hasLoadedDetails = false }
+        return WorkspaceSQLGridHeaderConfiguration(
+            showsComments: preferences.showsSQLColumnComments,
+            showsTypes: preferences.showsSQLColumnTypes,
+            columnDetails: Dictionary(uniqueKeysWithValues: page.columns.compactMap { column in
+                detailsByName[column.sourceColumnName].map { (column.id, $0) }
+            }),
+            scope: (sqlHeaderScope ?? exportFileName) + "\0"
+                + page.columns.map(\.sourceColumnName).joined(separator: "\0"),
+            retainsMissingDetails: !hasLoadedDetails
         )
     }
 

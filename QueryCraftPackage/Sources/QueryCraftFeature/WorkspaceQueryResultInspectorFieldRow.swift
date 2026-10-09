@@ -3,6 +3,7 @@ import SwiftUI
 
 struct WorkspaceQueryResultInspectorFieldRow: View {
     let field: WorkspaceQueryResultInspectorField
+    var showsColumnComments = true
 
     @State private var formattedJSON: String?
 
@@ -26,6 +27,10 @@ struct WorkspaceQueryResultInspectorFieldRow: View {
                         .background(.quaternary, in: Capsule())
                         .help(field.type)
                 }
+            }
+
+            if showsColumnComments {
+                WorkspaceInspectorColumnComment(comment: field.comment)
             }
 
             valueContent

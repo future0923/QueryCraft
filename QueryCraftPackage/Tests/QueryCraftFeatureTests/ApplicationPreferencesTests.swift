@@ -36,6 +36,9 @@ struct ApplicationPreferencesTests {
         #expect(preferences.confirmsDangerousSQL)
         #expect(preferences.tableDataPageSize == 200)
         #expect(preferences.usesAlternatingTableRows)
+        #expect(preferences.showsSQLColumnComments)
+        #expect(preferences.showsSQLInspectorColumnComments)
+        #expect(preferences.showsSQLColumnTypes)
         #expect(preferences.formatsTimestamps)
         #expect(preferences.tableNullDisplayStyle == .uppercase)
         #expect(preferences.tableEmptyStringDisplayStyle == .uppercase)
@@ -69,6 +72,9 @@ struct ApplicationPreferencesTests {
         preferences.confirmsDangerousSQL = false
         preferences.tableDataPageSize = 500
         preferences.usesAlternatingTableRows = false
+        preferences.showsSQLColumnComments = false
+        preferences.showsSQLInspectorColumnComments = false
+        preferences.showsSQLColumnTypes = false
         preferences.formatsTimestamps = false
         preferences.tableNullDisplayStyle = .empty
         preferences.tableEmptyStringDisplayStyle = .lowercase
@@ -95,6 +101,9 @@ struct ApplicationPreferencesTests {
         #expect(!restored.confirmsDangerousSQL)
         #expect(restored.tableDataPageSize == 500)
         #expect(!restored.usesAlternatingTableRows)
+        #expect(restored.showsSQLColumnComments == false)
+        #expect(restored.showsSQLInspectorColumnComments == false)
+        #expect(restored.showsSQLColumnTypes == false)
         #expect(!restored.formatsTimestamps)
         #expect(restored.tableNullDisplayStyle == .empty)
         #expect(restored.tableEmptyStringDisplayStyle == .lowercase)
@@ -262,12 +271,21 @@ struct ApplicationPreferencesTests {
         let preferences = ApplicationPreferences(userDefaults: defaults)
         preferences.automaticallyResolvesVisibleRedisKeyTypes = false
         preferences.redisVisibleKeyTypeBatchSize = 500
+        preferences.showsSQLColumnComments = false
+        preferences.showsSQLInspectorColumnComments = false
+        preferences.showsSQLColumnTypes = false
         preferences.formatsTimestamps = false
 
         preferences.resetData()
 
         #expect(preferences.formatsTimestamps)
         #expect(ApplicationPreferences(userDefaults: defaults).formatsTimestamps)
+        #expect(preferences.showsSQLColumnComments)
+        #expect(preferences.showsSQLInspectorColumnComments)
+        #expect(preferences.showsSQLColumnTypes)
+        #expect(ApplicationPreferences(userDefaults: defaults).showsSQLColumnComments)
+        #expect(ApplicationPreferences(userDefaults: defaults).showsSQLInspectorColumnComments)
+        #expect(ApplicationPreferences(userDefaults: defaults).showsSQLColumnTypes)
         #expect(preferences.automaticallyResolvesVisibleRedisKeyTypes)
         #expect(preferences.redisVisibleKeyTypeBatchSize == 50)
 

@@ -215,6 +215,21 @@ struct WorkspaceQueryDocumentTests {
         await document.close()
     }
 
+    @Test(arguments: [WorkspaceSessionCapabilities.standard, .dorisReadOnly])
+    func queryResultsHonorSessionEditingCapabilities(capabilities: WorkspaceSessionCapabilities) async throws {
+        let document = WorkspaceQueryDocumentModel(
+            title: "Metadata Test", configuration: makeConfiguration(database: "app_database"),
+            sessionFactory: SingleQuerySessionFactory(session: FailingBatchQuerySession(
+                failingStatementIndex: 100, capabilities: capabilities
+            ))
+        )
+        #expect(!document.supportsResultDataEditing)
+        await document.execute(try executionTarget(for: "SELECT 1"))
+        #expect(document.supportsResultDataEditing == capabilities.supportsDataEditing)
+        await document.close()
+        #expect(!document.supportsResultDataEditing)
+    }
+
     @Test
     func dismissingACompletedResultReturnsTheDocumentToIdle() async throws {
         let document = WorkspaceQueryDocumentModel(
@@ -1196,7 +1211,8 @@ private struct SingleQuerySessionFactory: WorkspaceSessionFactory {
     }
 }
 
-private actor FailingBatchQuerySession: WorkspaceSession {
+private actor FailingBatchQuerySession: WorkspaceSession, WorkspaceSessionCapabilityProviding {
+    nonisolated let capabilities: WorkspaceSessionCapabilities
     private let failingStatementIndex: Int
     private let resultBatches: [[WorkspaceDatabaseDataRow]]?
     private let commandAffectedRows: Int?
@@ -1210,11 +1226,13 @@ private actor FailingBatchQuerySession: WorkspaceSession {
     init(
         failingStatementIndex: Int,
         resultBatches: [[WorkspaceDatabaseDataRow]]? = nil,
-        commandAffectedRows: Int? = nil
+        commandAffectedRows: Int? = nil,
+        capabilities: WorkspaceSessionCapabilities = .standard
     ) {
         self.failingStatementIndex = failingStatementIndex
         self.resultBatches = resultBatches
         self.commandAffectedRows = commandAffectedRows
+        self.capabilities = capabilities
     }
 
     func connect() async throws {

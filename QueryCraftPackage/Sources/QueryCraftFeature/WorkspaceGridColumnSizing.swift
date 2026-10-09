@@ -42,7 +42,8 @@ enum WorkspaceGridColumnSizing {
         emptyStringDisplayText: String = "",
         cellFont: NSFont = WorkspaceGridMetrics.cellFont,
         timestampDisplayModes: [Int: WorkspaceTimestampDisplayMode] = [:],
-        formatsTimestamps: Bool = true
+        formatsTimestamps: Bool = true,
+        sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration? = nil
     ) -> [Int: CGFloat] {
         let consideredRowCount = maximumConsideredRows.map {
             min(rowCount, $0)
@@ -59,6 +60,23 @@ enum WorkspaceGridColumnSizing {
                 font: WorkspaceGridMetrics.headerFont
             )
                 + headerHorizontalPadding
+            if let configuration = sqlHeaderConfiguration {
+                // Keep the name clear of the sort arrow. Cap metadata so long
+                // comments do not turn otherwise compact columns into wide ones.
+                width += 22
+                let details = configuration.columnDetails[column.id]
+                if configuration.showsComments, let comment = details?.comment {
+                    width = max(width, min(180, measuredWidth(
+                        measurementText(comment), font: .systemFont(ofSize: 11)
+                    ) + 12))
+                }
+                if configuration.showsTypes {
+                    width = max(width, min(180, measuredWidth(
+                        measurementText(details?.type ?? column.type ?? ""),
+                        font: .monospacedSystemFont(ofSize: 11, weight: .regular)
+                    ) + 12))
+                }
+            }
             let mode = timestampDisplayModes[column.id] ?? .automatic
             if formatsTimestamps, mode == .seconds || mode == .milliseconds
                 || (mode == .automatic && WorkspaceTimestampDisplayFormatter.hasTimestampHint(column)) {

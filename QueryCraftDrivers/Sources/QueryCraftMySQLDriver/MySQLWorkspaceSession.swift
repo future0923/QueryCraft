@@ -433,9 +433,7 @@ actor MySQLWorkspaceSession: WorkspaceSession {
         )
         try Task.checkCancellation()
 
-        let columns = result.columns.enumerated().map {
-            WorkspaceDatabaseDataColumn(id: $0.offset, name: $0.element)
-        }
+        let columns = result.workspaceColumns
         let rows = result.rows.prefix(limit).enumerated().map { index, row in
             WorkspaceDatabaseDataRow(
                 id: offset + index,
@@ -747,22 +745,7 @@ actor MySQLWorkspaceSession: WorkspaceSession {
             if maximumRows != nil {
                 _ = try await client.query("SET SESSION SQL_SELECT_LIMIT = DEFAULT")
             }
-            let columns = result.columns.enumerated().map { index, name in
-                let origin = (result.columnOrigins.indices.contains(index)
-                    ? result.columnOrigins[index]
-                    : nil).map {
-                    WorkspaceDatabaseDataColumn.Origin(
-                        databaseName: $0.databaseName,
-                        tableName: $0.tableName,
-                        columnName: $0.columnName
-                    )
-                }
-                return WorkspaceDatabaseDataColumn(
-                    id: index,
-                    name: name,
-                    origin: origin
-                )
-            }
+            let columns = result.workspaceColumns
             let rows = result.rows.enumerated().map { index, row in
                 WorkspaceDatabaseDataRow(
                     id: index,

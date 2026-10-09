@@ -197,6 +197,9 @@ package final class MariaDBClient: @unchecked Sendable {
         let columns = (0..<columnCount).map { index in
             fields.map { String(cString: $0[index].name) } ?? "column_\(index)"
         }
+        let columnTypes = (0..<columnCount).map { index in
+            fields.flatMap { MariaDBColumnType.name(for: $0[index]) }
+        }
         let columnOrigins = (0..<columnCount).map { index in
             guard
                 let field = fields?[index],
@@ -256,6 +259,7 @@ package final class MariaDBClient: @unchecked Sendable {
 
         return CDatabaseQueryResult(
             columns: columns,
+            columnTypes: columnTypes,
             columnOrigins: columnOrigins,
             rows: rows
         )

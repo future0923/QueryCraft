@@ -35,6 +35,19 @@ struct WorkspaceQueryResultPendingDelete: Equatable, Sendable {
 
 enum WorkspaceQueryResultEditing {
     static func selection(
+        for origin: WorkspaceDatabaseDataColumn.Origin,
+        currentDatabase: String?
+    ) -> WorkspaceDatabaseObjectSelection? {
+        guard let databaseName = origin.databaseName ?? currentDatabase,
+              !databaseName.isEmpty else { return nil }
+        return WorkspaceDatabaseObjectSelection(
+            databaseName: databaseName,
+            objectName: origin.schemaName.map { "\($0).\(origin.tableName)" } ?? origin.tableName,
+            kind: .table
+        )
+    }
+
+    static func selection(
         for page: WorkspaceQueryResultPage,
         currentDatabase: String?
     ) -> WorkspaceDatabaseObjectSelection? {

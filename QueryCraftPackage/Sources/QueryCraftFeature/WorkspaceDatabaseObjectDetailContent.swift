@@ -47,6 +47,7 @@ struct WorkspaceDatabaseObjectDetailContent: View {
     let pasteRows: WorkspaceGridPasteRowsAction?
     let selectRowsForActions: @MainActor (IndexSet) -> Void
     var kafkaCopyAction: WorkspaceKafkaMessageCopyAction? = nil
+    var sqlHeaderScope: String? = nil
     let canEditSchema: Bool
     let schemaEditingDescriptor: WorkspaceDatabaseSchemaEditingDescriptor
     let schemaEditor: WorkspaceDatabaseSchemaEditorState
@@ -108,6 +109,7 @@ struct WorkspaceDatabaseObjectDetailContent: View {
             pasteRows: pasteRows,
             selectRowsForActions: selectRowsForActions,
             kafkaCopyAction: kafkaCopyAction,
+            sqlHeaderScope: sqlHeaderScope,
             canEditSchema: canEditSchema,
             schemaEditingDescriptor: schemaEditingDescriptor,
             schemaEditor: schemaEditor,

@@ -3,6 +3,30 @@ import Testing
 @testable import QueryCraftFeature
 
 struct WorkspaceDatabaseInspectorFieldTests {
+    @Test @MainActor
+    func selectedRowsReceiveColumnCommentsFromTableMetadata() throws {
+        let column = WorkspaceDatabaseColumn(
+            name: "user_nick", type: "varchar(20)", collation: nil,
+            isNullable: true, key: "PRI", defaultValue: nil, extra: "",
+            comment: "昵称（员工名称）"
+        )
+        let context = WorkspaceDatabaseInspectorContext(
+            selection: .init(databaseName: "test", objectName: "users", kind: .table),
+            detailsState: .loaded(.init(columns: [column], ddl: "")),
+            page: .init(columns: [.init(id: 0, name: "user_nick")],
+                        rows: [.init(id: 0, values: [.text("Alice")])],
+                        offset: 0, limit: 200, hasNextPage: false),
+            selectedRowIndexes: IndexSet(integer: 0), rowInsertEditor: .init(),
+            pendingLoadedUpdates: [], schemaInspector: nil, isUpdatingLoadedValue: false,
+            loadDetails: {}, updateLoadedValue: { _, _, _ in }, updateDraftValue: { _, _, _ in }
+        )
+        let field = try #require(context.fields?.first)
+        #expect(field.comment == "昵称（员工名称）")
+        #expect(field.type == "varchar(20)")
+        #expect(field.editableText == "Alice")
+        #expect(field.isEditable)
+    }
+
     @Test
     func databaseTypeLabelPreservesAuthoritativeMySQLType() {
         let field = makeField(type: "  bigint unsigned  ")

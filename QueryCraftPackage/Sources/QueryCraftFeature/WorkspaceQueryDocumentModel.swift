@@ -48,6 +48,10 @@ final class WorkspaceQueryDocumentModel: Identifiable {
         configuration.databaseType
     }
 
+    var supportsResultDataEditing: Bool {
+        session?.resolvedCapabilities.supportsDataEditing ?? false
+    }
+
     var currentConnectionConfiguration: DatabaseConnectionConfiguration {
         configuration.selecting(database: databaseName)
     }

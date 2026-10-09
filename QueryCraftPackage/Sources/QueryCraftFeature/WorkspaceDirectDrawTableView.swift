@@ -1545,6 +1545,7 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
     private var dragStartLocationInWindow: NSPoint?
     private var dragColumnIdentifier: NSUserInterfaceItemIdentifier?
     var resetColumnWidths: (() -> Void)?
+    var sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration?
     /// Called when a data column header receives a plain click
     /// (not a resize, reorder, or drag). Receives the table column
     /// index and whether shift was held.
@@ -1674,8 +1675,12 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        drawHeaderBackground(in: dirtyRect)
+        if sqlHeaderConfiguration != nil {
+            drawSQLHeader(in: dirtyRect)
+        } else {
+            super.draw(dirtyRect)
+            drawHeaderBackground(in: dirtyRect)
+        }
         drawBottomSeparator(in: dirtyRect)
         guard
             draggedColumn >= 0,
@@ -1690,6 +1695,22 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
             currentLocationInWindow: currentLocationInWindow,
             requiresNativeDragState: true
         )
+    }
+
+    private func drawSQLHeader(in dirtyRect: NSRect) {
+        // The native header background has a fixed single-line separator.
+        // Paint one continuous header while retaining native hit testing.
+        NSColor.controlBackgroundColor.setFill()
+        dirtyRect.fill()
+        drawHeaderBackground(in: dirtyRect)
+        guard let tableView else { return }
+        for (index, column) in tableView.tableColumns.enumerated() {
+            let rect = headerRect(ofColumn: index)
+            guard rect.intersects(dirtyRect) else { continue }
+            column.headerCell.drawInterior(withFrame: rect, in: self)
+            NSColor.separatorColor.setFill()
+            NSRect(x: rect.maxX - 1, y: rect.minY, width: 1, height: rect.height).fill()
+        }
     }
 
     private func drawHeaderBackground(in dirtyRect: NSRect) {
@@ -1764,6 +1785,11 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
             tableView.tableColumns[clickedColumn].identifier
                 != tableView.rowNumberIdentifier
         else {
+            if sqlHeaderConfiguration != nil {
+                let menu = NSMenu()
+                appendSQLHeaderOptions(to: menu)
+                return menu
+            }
             return super.menu(for: event)
         }
 
@@ -1797,7 +1823,37 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
             menu.addItem(.separator())
             menu.addItem(formatItem)
         }
+        if sqlHeaderConfiguration != nil {
+            menu.addItem(.separator())
+            appendSQLHeaderOptions(to: menu)
+        }
         return menu
+    }
+
+    private func appendSQLHeaderOptions(to menu: NSMenu) {
+        let copy = SettingsCopy(language: .activeInterfaceLanguage)
+        let commentsItem = NSMenuItem(
+            title: copy.showsSQLColumnComments,
+            action: #selector(toggleSQLColumnComments(_:)), keyEquivalent: ""
+        )
+        commentsItem.target = self
+        commentsItem.state = ApplicationPreferences.shared.showsSQLColumnComments ? .on : .off
+        menu.addItem(commentsItem)
+        let typesItem = NSMenuItem(
+            title: copy.showsSQLColumnTypes,
+            action: #selector(toggleSQLColumnTypes(_:)), keyEquivalent: ""
+        )
+        typesItem.target = self
+        typesItem.state = ApplicationPreferences.shared.showsSQLColumnTypes ? .on : .off
+        menu.addItem(typesItem)
+    }
+
+    @objc private func toggleSQLColumnComments(_ sender: NSMenuItem) {
+        ApplicationPreferences.shared.showsSQLColumnComments.toggle()
+    }
+
+    @objc private func toggleSQLColumnTypes(_ sender: NSMenuItem) {
+        ApplicationPreferences.shared.showsSQLColumnTypes.toggle()
     }
 }
 

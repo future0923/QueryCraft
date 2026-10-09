@@ -4,6 +4,8 @@ struct WorkspaceQueryResultInspectorView: View {
     let context: WorkspaceQueryResultInspectorContext
     let searchText: String
 
+    @State private var preferences = ApplicationPreferences.shared
+
     var body: some View {
         if context.isLoading {
             ProgressView(
@@ -50,6 +52,7 @@ struct WorkspaceQueryResultInspectorView: View {
             : fields.filter {
                 $0.name.localizedStandardContains(searchText)
                     || $0.type.localizedStandardContains(searchText)
+                    || $0.comment.localizedStandardContains(searchText)
                     || $0.searchPreview.localizedStandardContains(searchText)
             }
 
@@ -68,7 +71,10 @@ struct WorkspaceQueryResultInspectorView: View {
                     .listRowSeparator(.hidden)
                 } else {
                     ForEach(filteredFields) { field in
-                        WorkspaceQueryResultInspectorFieldRow(field: field)
+                        WorkspaceQueryResultInspectorFieldRow(
+                            field: field,
+                            showsColumnComments: preferences.showsSQLInspectorColumnComments
+                        )
                             .listRowSeparator(.hidden)
                     }
                 }

@@ -18,6 +18,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
     private var emptyStringDisplayText: String
     private var copyIncludesColumnNames: Bool
     private var formatsTimestamps: Bool
+    private var sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration?
     private var cellFont: NSFont
     private let exportController: WorkspaceDataExportController
     private let searchController: WorkspaceGridSearchController
@@ -96,6 +97,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         emptyStringDisplayText: String = "",
         copyIncludesColumnNames: Bool = false,
         formatsTimestamps: Bool = true,
+        sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration? = nil,
         cellFont: NSFont = WorkspaceGridMetrics.cellFont,
         exportController: WorkspaceDataExportController =
             WorkspaceDataExportController(),
@@ -143,6 +145,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         self.emptyStringDisplayText = emptyStringDisplayText
         self.copyIncludesColumnNames = copyIncludesColumnNames
         self.formatsTimestamps = formatsTimestamps
+        self.sqlHeaderConfiguration = sqlHeaderConfiguration
         self.cellFont = cellFont
         self.exportController = exportController
         self.searchController = searchController
@@ -244,6 +247,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         emptyStringDisplayText: String = "",
         copyIncludesColumnNames: Bool = false,
         formatsTimestamps: Bool = true,
+        sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration? = nil,
         cellFont: NSFont = WorkspaceGridMetrics.cellFont,
         exportAllRowsProvider: WorkspaceDataExportAllRowsProvider? = nil,
         exportFileName: String = "table-data",
@@ -279,6 +283,16 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         ) -> Void)? = nil,
         selectRowsForActions: @escaping (IndexSet) -> Void = { _ in }
     ) {
+        let headerChanged = sqlHeaderConfiguration != self.sqlHeaderConfiguration
+            || page.columns != self.page.columns
+        defer {
+            if headerChanged, let tableView {
+                WorkspaceSQLGridHeader.configure(
+                    in: tableView, columns: self.page.columns,
+                    configuration: self.sqlHeaderConfiguration
+                )
+            }
+        }
         self.isFetching = isFetching
         if isFetching { mappingOptionPresenter?.close() }
         self.sortData = sortData
@@ -362,6 +376,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         self.emptyStringDisplayText = emptyStringDisplayText
         self.copyIncludesColumnNames = copyIncludesColumnNames
         self.formatsTimestamps = formatsTimestamps
+        self.sqlHeaderConfiguration = sqlHeaderConfiguration
         self.cellFont = cellFont
         if let tableView {
             tableView.usesAlternatingRowBackgroundColors = usesAlternatingRows
@@ -502,6 +517,10 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             tableView.addTableColumn(tableColumn)
         }
         applyAutomaticColumnWidths(in: tableView)
+        WorkspaceSQLGridHeader.configure(
+            in: tableView, columns: page.columns,
+            configuration: sqlHeaderConfiguration
+        )
         tableView.headerView?.needsLayout = true
         if let lastActiveDataColumnIdentifier,
            !tableView.tableColumns.contains(where: {
@@ -528,7 +547,8 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             emptyStringDisplayText: emptyStringDisplayText,
             cellFont: cellFont,
             timestampDisplayModes: (tableView as? WorkspaceDirectDrawTableView)?.timestampDisplayModes ?? [:],
-            formatsTimestamps: formatsTimestamps && mappingActions == nil
+            formatsTimestamps: formatsTimestamps && mappingActions == nil,
+            sqlHeaderConfiguration: sqlHeaderConfiguration
         )
         isApplyingAutomaticColumnWidths = true
         for tableColumn in tableView.tableColumns {

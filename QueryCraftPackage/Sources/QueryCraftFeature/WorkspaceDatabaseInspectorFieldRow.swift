@@ -4,6 +4,7 @@ import SwiftUI
 struct WorkspaceDatabaseInspectorFieldRow: View {
     let field: WorkspaceDatabaseInspectorField
     let isBusy: Bool
+    let showsColumnComments: Bool
     let applyMutation: @MainActor (
         WorkspaceDatabaseInspectorMutation
     ) -> Void
@@ -15,12 +16,14 @@ struct WorkspaceDatabaseInspectorFieldRow: View {
     init(
         field: WorkspaceDatabaseInspectorField,
         isBusy: Bool,
+        showsColumnComments: Bool = true,
         applyMutation: @escaping @MainActor (
             WorkspaceDatabaseInspectorMutation
         ) -> Void
     ) {
         self.field = field
         self.isBusy = isBusy
+        self.showsColumnComments = showsColumnComments
         self.applyMutation = applyMutation
         _editText = State(initialValue: field.editableText)
     }
@@ -60,6 +63,10 @@ struct WorkspaceDatabaseInspectorFieldRow: View {
                 }
             }
             .textSelection(.enabled)
+
+            if showsColumnComments {
+                WorkspaceInspectorColumnComment(comment: field.comment)
+            }
 
             if showsReadOnlyTextView {
                 WorkspaceReadOnlyTextView(

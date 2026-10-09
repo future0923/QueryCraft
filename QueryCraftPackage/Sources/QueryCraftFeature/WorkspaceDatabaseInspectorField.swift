@@ -20,6 +20,7 @@ struct WorkspaceDatabaseInspectorField: Equatable, Identifiable, Sendable {
     let id: String
     let name: String
     let type: String
+    var comment: String = ""
     let value: Value
     let originalValue: Value
     let hasMultipleValues: Bool

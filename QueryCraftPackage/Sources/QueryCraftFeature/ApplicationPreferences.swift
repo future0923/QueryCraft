@@ -159,6 +159,18 @@ public final class ApplicationPreferences {
         }
     }
 
+    var showsSQLColumnComments: Bool {
+        didSet { defaults.set(showsSQLColumnComments, forKey: Key.showsSQLColumnComments) }
+    }
+
+    var showsSQLInspectorColumnComments: Bool {
+        didSet { defaults.set(showsSQLInspectorColumnComments, forKey: Key.showsSQLInspectorColumnComments) }
+    }
+
+    var showsSQLColumnTypes: Bool {
+        didSet { defaults.set(showsSQLColumnTypes, forKey: Key.showsSQLColumnTypes) }
+    }
+
     var formatsTimestamps: Bool {
         didSet {
             defaults.set(formatsTimestamps, forKey: Key.formatsTimestamps)
@@ -325,6 +337,9 @@ public final class ApplicationPreferences {
             userDefaults.object(
                 forKey: Key.usesAlternatingTableRows
             ) as? Bool ?? true
+        showsSQLColumnComments = userDefaults.object(forKey: Key.showsSQLColumnComments) as? Bool ?? true
+        showsSQLInspectorColumnComments = userDefaults.object(forKey: Key.showsSQLInspectorColumnComments) as? Bool ?? true
+        showsSQLColumnTypes = userDefaults.object(forKey: Key.showsSQLColumnTypes) as? Bool ?? true
         formatsTimestamps = userDefaults.object(forKey: Key.formatsTimestamps) as? Bool ?? true
         tableNullDisplayStyle = Self.value(
             TableNullDisplayStyle.self,
@@ -435,6 +450,9 @@ public final class ApplicationPreferences {
     func resetData() {
         tableDataPageSize = 200
         usesAlternatingTableRows = true
+        showsSQLColumnComments = true
+        showsSQLInspectorColumnComments = true
+        showsSQLColumnTypes = true
         formatsTimestamps = true
         tableNullDisplayStyle = .uppercase
         tableEmptyStringDisplayStyle = .uppercase
@@ -502,6 +520,9 @@ public final class ApplicationPreferences {
             "preferences.data.usesAlternatingRows"
         static let tableNullDisplayStyle =
             "preferences.data.nullDisplayStyle"
+        static let showsSQLColumnComments = "preferences.data.showsSQLColumnComments"
+        static let showsSQLInspectorColumnComments = "preferences.data.showsSQLInspectorColumnComments"
+        static let showsSQLColumnTypes = "preferences.data.showsSQLColumnTypes"
         static let formatsTimestamps = "preferences.data.formatsTimestamps"
         static let tableEmptyStringDisplayStyle =
             "preferences.data.emptyStringDisplayStyle"

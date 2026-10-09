@@ -193,6 +193,28 @@ change. Several AppKit editor and window suites own process-global state and
 must be run in isolation; their constraints are documented alongside the test
 sources.
 
+After building the MySQL and PostgreSQL dynamic driver schemes, verify native
+SQL query metadata with `python3 scripts/test-sql-query-metadata.py`. It runs
+libpq and MariaDB Connector/C against temporary localhost protocol fixtures,
+covering aliases, cross-schema/database origins, expression types, empty
+results, and PostgreSQL metadata failure. Doris uses the same MariaDB transport.
+This does not use saved connections and does not replace real-server integration
+testing. Driver conversion regressions also run in the three SQL driver test
+schemes, including `QueryCraftDorisDriverTests`.
+
+For real-server checks, start the existing Docker containers
+`querycraft-mysql56-test`, `querycraft-postgres16-test`, and
+`querycraft-postgres17-test`, then run
+`python3 scripts/test-sql-docker-metadata.py`. It loads the installed Dev drivers
+and checks table/query headers and inspectors, full types, comments (including
+PostgreSQL view columns), duplicate aliases, cross-schema/database joins,
+expressions, and empty results. It creates uniquely named fixtures, removes
+them after each check, and leaves the containers running. Credentials stay in
+memory. Offscreen light/dark previews are saved under `.build/previews`.
+Set `CHECK_DRIVER_DIRECTORY` to test freshly packaged drivers before installing
+them, or `CHECK_FEATURE_FRAMEWORKS` to use a different Feature framework build.
+These Docker fixtures do not cover a real Doris server.
+
 Kafka regression tests can use an ephemeral localhost broker implemented by
 librdkafka's mock cluster API (requires `librdkafka`, `pkg-config`, and XcodeBuildMCP):
 

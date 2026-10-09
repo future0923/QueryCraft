@@ -9,6 +9,7 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
     let emptyStringDisplayText: String
     let copyIncludesColumnNames: Bool
     var formatsTimestamps: Bool = true
+    var sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration? = nil
     let cellFont: NSFont
     let exportController: WorkspaceDataExportController
     let searchController: WorkspaceGridSearchController
@@ -53,6 +54,7 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
             emptyStringDisplayText: emptyStringDisplayText,
             copyIncludesColumnNames: copyIncludesColumnNames,
             formatsTimestamps: formatsTimestamps,
+            sqlHeaderConfiguration: sqlHeaderConfiguration,
             cellFont: cellFont,
             exportController: exportController,
             searchController: searchController,
@@ -101,6 +103,7 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
             emptyStringDisplayText: emptyStringDisplayText,
             copyIncludesColumnNames: copyIncludesColumnNames,
             formatsTimestamps: formatsTimestamps,
+            sqlHeaderConfiguration: sqlHeaderConfiguration,
             cellFont: cellFont,
             exportAllRowsProvider: exportAllRowsProvider,
             exportFileName: exportFileName,

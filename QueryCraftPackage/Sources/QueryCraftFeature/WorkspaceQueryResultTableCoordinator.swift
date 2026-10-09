@@ -18,6 +18,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
     private var emptyStringDisplayText: String
     private var copyIncludesColumnNames: Bool
     private var formatsTimestamps: Bool
+    private var sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration?
     private var cellFont: NSFont
     private let exportController: WorkspaceDataExportController
     private let searchController: WorkspaceGridSearchController
@@ -50,6 +51,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         emptyStringDisplayText: String = "",
         copyIncludesColumnNames: Bool = false,
         formatsTimestamps: Bool = true,
+        sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration? = nil,
         cellFont: NSFont = WorkspaceGridMetrics.cellFont,
         exportController: WorkspaceDataExportController =
             WorkspaceDataExportController(),
@@ -79,6 +81,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         self.emptyStringDisplayText = emptyStringDisplayText
         self.copyIncludesColumnNames = copyIncludesColumnNames
         self.formatsTimestamps = formatsTimestamps
+        self.sqlHeaderConfiguration = sqlHeaderConfiguration
         self.cellFont = cellFont
         self.exportController = exportController
         self.searchController = searchController
@@ -168,6 +171,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         emptyStringDisplayText: String = "",
         copyIncludesColumnNames: Bool = false,
         formatsTimestamps: Bool = true,
+        sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration? = nil,
         cellFont: NSFont = WorkspaceGridMetrics.cellFont,
         pendingUpdates: [WorkspaceDatabaseInspectorPendingUpdate] = [],
         cellEditRequest: ((WorkspaceDatabaseDataCellEditTarget) ->
@@ -186,6 +190,16 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         updateInspectorContext:
             (@MainActor (WorkspaceQueryResultInspectorContext) -> Void)? = nil
     ) {
+        let headerChanged = sqlHeaderConfiguration != self.sqlHeaderConfiguration
+            || page.columns != self.page.columns
+        defer {
+            if headerChanged, let tableView {
+                WorkspaceSQLGridHeader.configure(
+                    in: tableView, columns: self.page.columns,
+                    configuration: self.sqlHeaderConfiguration
+                )
+            }
+        }
         let previousPendingUpdates = self.pendingUpdates
         self.pendingUpdates = pendingUpdates
         self.cellEditRequest = cellEditRequest
@@ -205,6 +219,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         self.emptyStringDisplayText = emptyStringDisplayText
         self.copyIncludesColumnNames = copyIncludesColumnNames
         self.formatsTimestamps = formatsTimestamps
+        self.sqlHeaderConfiguration = sqlHeaderConfiguration
         self.cellFont = cellFont
         if let updateInspectorContext {
             self.updateInspectorContext = updateInspectorContext
@@ -320,6 +335,10 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
             tableView.addTableColumn(tableColumn)
         }
         applyAutomaticColumnWidths(in: tableView)
+        WorkspaceSQLGridHeader.configure(
+            in: tableView, columns: page.columns,
+            configuration: sqlHeaderConfiguration
+        )
         tableView.headerView?.needsLayout = true
     }
 
@@ -338,7 +357,8 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
             emptyStringDisplayText: emptyStringDisplayText,
             cellFont: cellFont,
             timestampDisplayModes: (tableView as? WorkspaceDirectDrawTableView)?.timestampDisplayModes ?? [:],
-            formatsTimestamps: formatsTimestamps
+            formatsTimestamps: formatsTimestamps,
+            sqlHeaderConfiguration: sqlHeaderConfiguration
         )
         isApplyingAutomaticColumnWidths = true
         for tableColumn in tableView.tableColumns {

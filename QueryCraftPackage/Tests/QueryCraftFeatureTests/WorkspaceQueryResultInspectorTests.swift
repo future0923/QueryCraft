@@ -6,6 +6,43 @@ import Testing
 
 struct WorkspaceQueryResultInspectorTests {
     @Test
+    func queryCommentsFollowSourceColumnsAndLeaveExpressionsEmpty() throws {
+        let source = WorkspaceDatabaseColumn(
+            name: "user_nick", type: "varchar(20)", collation: nil,
+            isNullable: true, key: "PRI", defaultValue: nil, extra: "",
+            comment: "昵称（员工名称）"
+        )
+        let page = WorkspaceQueryResultPage(
+            columns: [
+                .init(id: 0, name: "display_name", type: "varchar",
+                      origin: .init(databaseName: "test", tableName: "users", columnName: "user_nick")),
+                .init(id: 1, name: "user_nick", type: "bigint"),
+            ],
+            store: try WorkspaceQueryResultStore(temporary: false), rowCount: 1
+        )
+        let context = WorkspaceQueryResultInspectorContext(
+            page: page, selectedRowIndex: 0,
+            row: .init(id: 0, values: [.text("Alice"), .text("computed")])
+        )
+        let withMetadata = context.withColumnDetails([0: source])
+        #expect(context != withMetadata)
+        #expect(withMetadata.fields?[0].comment == "昵称（员工名称）")
+        #expect(withMetadata.fields?[0].type == "varchar(20)")
+        #expect(withMetadata.fields?[1].comment.isEmpty == true)
+        #expect(withMetadata.withColumnDetails([:]).fields?[0].comment.isEmpty == true)
+
+        let editable = withMetadata.withDataEditing(
+            details: .init(columns: [source], ddl: ""),
+            selection: .init(databaseName: "test", objectName: "users", kind: .table),
+            pendingUpdates: [], isUpdatingValue: false, applyMutation: { _, _ in }
+        )
+        #expect(editable.dataFields?[0].comment == "昵称（员工名称）")
+        #expect(editable.dataFields?[1].comment.isEmpty == true)
+        #expect(editable.dataFields?[1].type == "bigint")
+        #expect(editable.dataFields?[1].isEditable == false)
+    }
+
+    @Test
     func selectedRowMapsEveryColumnWithoutCollapsingValueKinds() async throws {
         let store = try WorkspaceQueryResultStore(temporary: false)
         let page = WorkspaceQueryResultPage(

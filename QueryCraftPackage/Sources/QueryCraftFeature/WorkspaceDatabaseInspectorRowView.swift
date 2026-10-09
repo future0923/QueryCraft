@@ -9,12 +9,15 @@ struct WorkspaceDatabaseInspectorRowView: View {
         WorkspaceDatabaseInspectorMutation
     ) -> Void
 
+    @State private var preferences = ApplicationPreferences.shared
+
     var body: some View {
         let filteredFields = searchText.isEmpty
             ? fields
             : fields.filter {
                 $0.name.localizedStandardContains(searchText)
                     || $0.type.localizedStandardContains(searchText)
+                    || $0.comment.localizedStandardContains(searchText)
                     || $0.searchableValue.localizedStandardContains(searchText)
             }
 
@@ -36,6 +39,7 @@ struct WorkspaceDatabaseInspectorRowView: View {
                         WorkspaceDatabaseInspectorFieldRow(
                             field: field,
                             isBusy: isUpdatingLoadedValue,
+                            showsColumnComments: preferences.showsSQLInspectorColumnComments,
                             applyMutation: { mutation in
                                 applyMutation(field, mutation)
                             }

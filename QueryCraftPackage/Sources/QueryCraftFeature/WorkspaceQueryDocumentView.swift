@@ -89,6 +89,7 @@ struct WorkspaceQueryDocumentView: View {
                             elapsedSeconds: document.elapsedSeconds,
                             currentDatabase: document.databaseName,
                             databaseType: document.databaseType,
+                            supportsDataEditing: document.supportsResultDataEditing,
                             safetyLock: safetyLock,
                             contentID: contentID,
                             pendingChangesRegistry: pendingChangesRegistry,

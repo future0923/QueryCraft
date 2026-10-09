@@ -80,7 +80,7 @@ struct WorkspaceDatabaseInspectorContext: Equatable {
         )
 
         return page.columns.map { dataColumn in
-            let column = detailsByName[dataColumn.name]
+            let column = detailsByName[dataColumn.sourceColumnName]
             let originalValues = rows.map {
                 Self.value(for: $0.value(at: dataColumn.id))
             }
@@ -104,7 +104,8 @@ struct WorkspaceDatabaseInspectorContext: Equatable {
             return WorkspaceDatabaseInspectorField(
                 id: "loaded:\(selectionID):\(dataColumn.name)",
                 name: dataColumn.name,
-                type: column?.type ?? "",
+                type: column?.type ?? dataColumn.type ?? "",
+                comment: column?.comment ?? "",
                 value: commonValue ?? .text(""),
                 originalValue: commonOriginalValue ?? .text(""),
                 hasMultipleValues: commonValue == nil,
@@ -130,7 +131,7 @@ struct WorkspaceDatabaseInspectorContext: Equatable {
         let selectionID = rowIDs.map(\.uuidString).joined(separator: ",")
 
         return page.columns.map { dataColumn in
-            let column = detailsByName[dataColumn.name]
+            let column = detailsByName[dataColumn.sourceColumnName]
             let insertColumn = rowInsertEditor.column(named: dataColumn.name)
             let originalDraft = insertColumn?.initialDraft
                 ?? WorkspaceDatabaseDataRowInsertDraft(
@@ -151,6 +152,7 @@ struct WorkspaceDatabaseInspectorContext: Equatable {
                 id: "draft:\(selectionID):\(dataColumn.name)",
                 name: dataColumn.name,
                 type: column?.type ?? insertColumn?.column.type ?? "",
+                comment: column?.comment ?? insertColumn?.column.comment ?? "",
                 value: commonValue ?? .text(""),
                 originalValue: Self.value(for: originalDraft),
                 hasMultipleValues: commonValue == nil,

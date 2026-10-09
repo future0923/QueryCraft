@@ -4,6 +4,7 @@ struct WorkspaceQueryResultInspectorContext: Equatable {
     let resultID: UUID?
     let pageRevision: UUID?
     let columns: [WorkspaceDatabaseDataColumn]
+    var columnDetails: [Int: WorkspaceDatabaseColumn] = [:]
     let selectedRowIndex: Int?
     let row: WorkspaceDatabaseDataRow?
     let isLoading: Bool
@@ -72,11 +73,18 @@ struct WorkspaceQueryResultInspectorContext: Equatable {
         lhs.resultID == rhs.resultID
             && lhs.pageRevision == rhs.pageRevision
             && lhs.columns == rhs.columns
+            && lhs.columnDetails == rhs.columnDetails
             && lhs.selectedRowIndex == rhs.selectedRowIndex
             && lhs.row == rhs.row
             && lhs.isLoading == rhs.isLoading
             && lhs.dataFields == rhs.dataFields
             && lhs.isUpdatingValue == rhs.isUpdatingValue
+    }
+
+    func withColumnDetails(_ details: [Int: WorkspaceDatabaseColumn]) -> Self {
+        var context = self
+        context.columnDetails = details
+        return context
     }
 
     func withDataEditing(
@@ -97,7 +105,7 @@ struct WorkspaceQueryResultInspectorContext: Equatable {
             $0.key.uppercased() == "PRI"
         }
         let fields = columns.map { dataColumn in
-            let column = detailsByName[dataColumn.sourceColumnName]
+            let column = dataColumn.origin.flatMap { detailsByName[$0.columnName] }
             let pending = pendingUpdates.last {
                 $0.applies(
                     to: row,
@@ -121,6 +129,7 @@ struct WorkspaceQueryResultInspectorContext: Equatable {
                 id: "query:\(resultID?.uuidString ?? "result"):\(selectedRowIndex):\(dataColumn.id)",
                 name: dataColumn.name,
                 type: column?.type ?? dataColumn.type ?? "",
+                comment: column?.comment ?? "",
                 value: effective,
                 originalValue: original,
                 hasMultipleValues: false,
@@ -141,7 +150,7 @@ struct WorkspaceQueryResultInspectorContext: Equatable {
                 isPrimaryKey: column?.key.uppercased() == "PRI"
             )
         }
-        return Self(
+        var context = Self(
             resultID: resultID,
             pageRevision: pageRevision,
             columns: columns,
@@ -152,6 +161,8 @@ struct WorkspaceQueryResultInspectorContext: Equatable {
             isUpdatingValue: isUpdatingValue,
             applyMutation: applyMutation
         )
+        context.columnDetails = columnDetails
+        return context
     }
 
     var fields: [WorkspaceQueryResultInspectorField]? {
@@ -160,7 +171,8 @@ struct WorkspaceQueryResultInspectorContext: Equatable {
             WorkspaceQueryResultInspectorField(
                 id: "\(resultID?.uuidString ?? "result"):\(selectedRowIndex):\(column.id)",
                 name: column.name,
-                type: column.type ?? "",
+                type: columnDetails[column.id]?.type ?? column.type ?? "",
+                comment: columnDetails[column.id]?.comment ?? "",
                 value: row.value(at: column.id)
             )
         }

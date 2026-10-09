@@ -7,6 +7,7 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
     let emptyStringDisplayText: String
     let copyIncludesColumnNames: Bool
     var formatsTimestamps: Bool = true
+    var sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration? = nil
     let cellFont: NSFont
     let exportController: WorkspaceDataExportController
     let searchController: WorkspaceGridSearchController
@@ -32,6 +33,7 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
         emptyStringDisplayText: String,
         copyIncludesColumnNames: Bool,
         formatsTimestamps: Bool = true,
+        sqlHeaderConfiguration: WorkspaceSQLGridHeaderConfiguration? = nil,
         cellFont: NSFont,
         exportController: WorkspaceDataExportController,
         searchController: WorkspaceGridSearchController,
@@ -60,6 +62,7 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
         self.emptyStringDisplayText = emptyStringDisplayText
         self.copyIncludesColumnNames = copyIncludesColumnNames
         self.formatsTimestamps = formatsTimestamps
+        self.sqlHeaderConfiguration = sqlHeaderConfiguration
         self.cellFont = cellFont
         self.exportController = exportController
         self.searchController = searchController
@@ -80,6 +83,7 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
             emptyStringDisplayText: emptyStringDisplayText,
             copyIncludesColumnNames: copyIncludesColumnNames,
             formatsTimestamps: formatsTimestamps,
+            sqlHeaderConfiguration: sqlHeaderConfiguration,
             cellFont: cellFont,
             exportController: exportController,
             searchController: searchController,
@@ -108,6 +112,7 @@ struct WorkspaceQueryResultTable: NSViewRepresentable {
             emptyStringDisplayText: emptyStringDisplayText,
             copyIncludesColumnNames: copyIncludesColumnNames,
             formatsTimestamps: formatsTimestamps,
+            sqlHeaderConfiguration: sqlHeaderConfiguration,
             cellFont: cellFont,
             pendingUpdates: pendingUpdates,
             cellEditRequest: cellEditRequest,

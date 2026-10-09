@@ -5,6 +5,7 @@ struct WorkspaceQueryResultInspectorField: Equatable, Identifiable, Sendable {
     let id: String
     let name: String
     let type: String
+    var comment: String = ""
     let value: WorkspaceDatabaseDataCell
 
     var searchPreview: String {

@@ -34,6 +34,30 @@ struct DataSettingsPane: View {
                     )
                 }
 
+                Toggle(isOn: $preferences.showsSQLColumnComments) {
+                    SettingsControlLabel(
+                        title: copy.showsSQLColumnComments,
+                        description: copy.showsSQLColumnCommentsDescription
+                    )
+                }
+                .accessibilityIdentifier("settings.data.showsSQLColumnComments")
+
+                Toggle(isOn: $preferences.showsSQLColumnTypes) {
+                    SettingsControlLabel(
+                        title: copy.showsSQLColumnTypes,
+                        description: copy.showsSQLColumnTypesDescription
+                    )
+                }
+                .accessibilityIdentifier("settings.data.showsSQLColumnTypes")
+
+                Toggle(isOn: $preferences.showsSQLInspectorColumnComments) {
+                    SettingsControlLabel(
+                        title: copy.showsSQLInspectorColumnComments,
+                        description: copy.showsSQLInspectorColumnCommentsDescription
+                    )
+                }
+                .accessibilityIdentifier("settings.data.showsSQLInspectorColumnComments")
+
                 Toggle(isOn: $preferences.formatsTimestamps) {
                     SettingsControlLabel(
                         title: copy.formatsTimestamps,
