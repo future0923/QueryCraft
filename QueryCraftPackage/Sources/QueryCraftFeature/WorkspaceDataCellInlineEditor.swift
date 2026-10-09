@@ -9,6 +9,7 @@ final class WorkspaceDataCellInlineEditor: NSObject, NSTextFieldDelegate {
     private var text = ""
     private var initialText = ""
     private var isEnding = false
+    private var dateAccessory: WorkspaceDataCellDateAccessory?
     private var update: ((WorkspaceDatabaseDataCellInlineEditContext,
         WorkspaceDatabaseInspectorMutation) -> Void)?
     private var canEdit: ((Int, Int) -> Bool)?
@@ -97,6 +98,13 @@ final class WorkspaceDataCellInlineEditor: NSObject, NSTextFieldDelegate {
         text = editor.stringValue
         initialText = context.initialText
         tableView.addSubview(editor, positioned: .above, relativeTo: nil)
+        if let type = WorkspaceSQLDateType(context.columnType) {
+            dateAccessory = WorkspaceDataCellDateAccessory(
+                editor: editor, type: type, isNullable: context.isNullable,
+                apply: { [weak self] mutation in self?.applyDateMutation(mutation) },
+                endEditing: { [weak self] in self?.finish(commit: true, restoresTableFocus: false) }
+            )
+        }
         layout()
 
         if let replacement {
@@ -125,6 +133,27 @@ final class WorkspaceDataCellInlineEditor: NSObject, NSTextFieldDelegate {
             atColumn: tableColumnIndex,
             row: context.rowIndex
         ).insetBy(dx: 1, dy: 1)
+        dateAccessory?.layout(in: editor.frame)
+    }
+
+    private func applyDateMutation(_ mutation: WorkspaceDatabaseInspectorMutation) {
+        guard let editor, let context else { return }
+        switch mutation {
+        case let .value(value):
+            text = value
+            editor.stringValue = value
+            editor.currentEditor()?.string = value
+            update?(context, mutation)
+        case .null:
+            // Do not turn NULL into an empty string when the text editor ends.
+            text = ""
+            initialText = ""
+            editor.stringValue = ""
+            editor.currentEditor()?.string = ""
+            update?(context, .null)
+            finish(commit: true)
+        case .useDefault: break
+        }
     }
 
     func finish(
@@ -134,6 +163,8 @@ final class WorkspaceDataCellInlineEditor: NSObject, NSTextFieldDelegate {
     ) {
         guard !isEnding, let editor, let context else { return }
         isEnding = true
+        dateAccessory?.remove()
+        dateAccessory = nil
         let currentColumn = tableColumnIndex
         if commit {
             text = editor.currentEditor()?.string ?? editor.stringValue
@@ -165,6 +196,14 @@ final class WorkspaceDataCellInlineEditor: NSObject, NSTextFieldDelegate {
     }
 
     func cancel() { finish(commit: false) }
+
+    func invalidate() {
+        // The page owns already-staged edits. Never apply or roll them back
+        // through a callback belonging to a replaced result/page.
+        update = nil
+        redraw = nil
+        finish(commit: false, restoresTableFocus: false)
+    }
 
     private func moveVertically(by offset: Int) {
         guard offset != 0, let context, let column = tableColumnIndex,
@@ -214,6 +253,12 @@ final class WorkspaceDataCellInlineEditor: NSObject, NSTextFieldDelegate {
         doCommandBy commandSelector: Selector
     ) -> Bool {
         MainActor.assumeIsolated {
+            if NSApp.currentEvent?.keyCode == 125,
+               NSApp.currentEvent?.modifierFlags.contains(.option) == true,
+               let dateAccessory {
+                dateAccessory.showPicker()
+                return true
+            }
             switch commandSelector {
             case #selector(NSResponder.cancelOperation(_:)):
                 finish(commit: false)
@@ -243,6 +288,7 @@ final class WorkspaceDataCellInlineEditor: NSObject, NSTextFieldDelegate {
 
     nonisolated func controlTextDidEndEditing(_ notification: Notification) {
         MainActor.assumeIsolated {
+            guard dateAccessory?.isPresented != true else { return }
             finish(commit: true, restoresTableFocus: false)
         }
     }

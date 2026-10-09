@@ -63,6 +63,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
     private var isApplyingAutomaticColumnWidths = false
     private let loadedCellInlineEditor = WorkspaceDataCellInlineEditor()
     private weak var inlineEditor: NSTextField?
+    private var draftDateAccessory: WorkspaceDataCellDateAccessory?
     private var inlineEditingLoadedContext:
         WorkspaceDatabaseDataCellInlineEditContext?
     private var inlineEditingDraftRowID: UUID?
@@ -81,6 +82,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
     private var cellEditPreparationID: UUID?
 
     isolated deinit {
+        draftDateAccessory?.remove()
         mappingOptionPresenter?.close()
         if let inlineEditorKeyMonitor {
             NSEvent.removeMonitor(inlineEditorKeyMonitor)
@@ -291,6 +293,12 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
                     in: tableView, columns: self.page.columns,
                     configuration: self.sqlHeaderConfiguration
                 )
+            }
+        }
+        if isFetching || page.rowStore !== self.page.rowStore || page.columns != self.page.columns {
+            loadedCellInlineEditor.invalidate()
+            if inlineEditor != nil {
+                finishInlineEditing(commit: true, restoresTableFocus: false)
             }
         }
         self.isFetching = isFetching
@@ -1245,6 +1253,36 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             editor,
             selectsAll: false
         )
+        if rowActionKind != .elasticsearchDocument,
+           let column = rowInsertEditor.request?.columns.first(where: { $0.column.name == dataColumn.name })?.column,
+           let type = WorkspaceSQLDateType(column.type) {
+            draftDateAccessory = WorkspaceDataCellDateAccessory(
+                editor: editor, type: type, isNullable: column.isNullable,
+                apply: { [weak self] mutation in self?.applyDraftDateMutation(mutation) },
+                endEditing: { [weak self] in self?.finishInlineEditing(commit: true, restoresTableFocus: false) }
+            )
+            layoutInlineEditor()
+        }
+    }
+
+    private func applyDraftDateMutation(_ mutation: WorkspaceDatabaseInspectorMutation) {
+        guard let editor = inlineEditor,
+              let rowID = inlineEditingDraftRowID,
+              let columnName = inlineEditingColumnName else { return }
+        switch mutation {
+        case let .value(value):
+            inlineEditingText = value
+            editor.stringValue = value
+            editor.currentEditor()?.string = value
+        case .null:
+            let draft = WorkspaceDatabaseDataRowInsertDraft(mode: .null, text: "")
+            inlineEditingText = ""
+            inlineEditingInitialText = ""
+            rowInsertEditor.update(rowID: rowID, columnName: columnName, draft: draft)
+            updateRowInsertDraft(rowID, columnName, draft)
+            finishInlineEditing(commit: true)
+        case .useDefault: break
+        }
     }
 
     private func makeInlineEditor(
@@ -1320,14 +1358,16 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             atColumn: tableColumnIndex,
             row: tableRowIndex
         ).insetBy(dx: 1, dy: 1)
+        draftDateAccessory?.layout(in: inlineEditor.frame)
     }
 
     private func finishInlineEditing(
         commit: Bool,
-        movingBy offset: Int? = nil
+        movingBy offset: Int? = nil,
+        restoresTableFocus: Bool = true
     ) {
         if inlineEditor == nil, loadedCellInlineEditor.isEditing {
-            loadedCellInlineEditor.finish(commit: commit, movingBy: offset)
+            loadedCellInlineEditor.finish(commit: commit, movingBy: offset, restoresTableFocus: restoresTableFocus)
             return
         }
         guard
@@ -1342,6 +1382,8 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         let tableRowIndex = loadedContext?.rowIndex
             ?? draftRowID.flatMap(tableRowIndex(forDraftRowID:))
         isEndingInlineEdit = true
+        draftDateAccessory?.remove()
+        draftDateAccessory = nil
         removeInlineEditorKeyMonitor()
         let currentColumnIndex = inlineEditingTableColumnIndex
         if let loadedContext {
@@ -1383,7 +1425,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         inlineEditingTableColumnIndex = nil
         inlineEditingText = ""
         inlineEditingInitialText = ""
-        tableView?.window?.makeFirstResponder(tableView)
+        if restoresTableFocus { tableView?.window?.makeFirstResponder(tableView) }
         isEndingInlineEdit = false
         if let draftRowID {
             redrawDraftRow(draftRowID)
@@ -2476,6 +2518,12 @@ extension WorkspaceDatabaseDataTableCoordinator: NSTextFieldDelegate {
         doCommandBy commandSelector: Selector
     ) -> Bool {
         MainActor.assumeIsolated {
+            if NSApp.currentEvent?.keyCode == 125,
+               NSApp.currentEvent?.modifierFlags.contains(.option) == true,
+               let draftDateAccessory {
+                draftDateAccessory.showPicker()
+                return true
+            }
             switch commandSelector {
             case #selector(NSResponder.cancelOperation(_:)):
                 finishInlineEditing(commit: false)
@@ -2513,6 +2561,7 @@ extension WorkspaceDatabaseDataTableCoordinator: NSTextFieldDelegate {
 
     nonisolated func controlTextDidEndEditing(_ notification: Notification) {
         MainActor.assumeIsolated {
+            guard draftDateAccessory?.isPresented != true else { return }
             finishInlineEditing(commit: true)
         }
     }

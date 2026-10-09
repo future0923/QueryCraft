@@ -201,6 +201,9 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
             }
         }
         let previousPendingUpdates = self.pendingUpdates
+        if page.store.id != self.page.store.id || page.columns != self.page.columns {
+            inlineEditor.invalidate()
+        }
         self.pendingUpdates = pendingUpdates
         self.cellEditRequest = cellEditRequest
         self.prepareCellEdit = prepareCellEdit

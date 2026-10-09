@@ -5,7 +5,7 @@ enum WorkspaceLoadedDataCellEditing {
         details: WorkspaceDatabaseObjectDetails,
         pendingUpdates: [WorkspaceDatabaseInspectorPendingUpdate]
     ) throws -> WorkspaceDatabaseDataCellInlineEditContext {
-        _ = try WorkspaceDatabaseDataCellEditRequest.make(
+        let request = try WorkspaceDatabaseDataCellEditRequest.make(
             selection: selection,
             target: target,
             details: details
@@ -24,7 +24,9 @@ enum WorkspaceLoadedDataCellEditing {
             dataColumnIndex: target.dataColumnIndex,
             columnName: target.column?.name ?? "",
             initialText: text(for: initialMutation),
-            initialMutation: initialMutation
+            initialMutation: initialMutation,
+            columnType: request.column.type,
+            isNullable: request.column.isNullable
         )
     }
 
