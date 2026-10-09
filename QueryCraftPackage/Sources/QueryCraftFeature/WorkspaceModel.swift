@@ -3786,6 +3786,30 @@ final class WorkspaceModel {
         }
     }
 
+    func fetchSQLObjectOverview(in databaseName: String) async throws -> [WorkspaceSQLObjectOverviewEntry] {
+        guard let activeSession = session, connectionState == .connected,
+              databaseContextName == databaseName else { throw WorkspaceSessionError.notConnected }
+        let generation = nextObjectRequestGeneration(for: databaseName)
+        let entries = try await sessionOperationGate.run {
+            if let provider = activeSession as? any WorkspaceSQLObjectOverviewProviding {
+                return try await provider.fetchSQLObjectOverview(in: databaseName)
+            }
+            return try await activeSession.fetchObjects(in: databaseName).map {
+                WorkspaceSQLObjectOverviewEntry(object: $0)
+            }
+        }
+        try Task.checkCancellation()
+        guard session === activeSession, connectionState == .connected,
+              databaseContextName == databaseName else { throw CancellationError() }
+        if objectRequestGenerations[databaseName] == generation,
+           let index = databases.firstIndex(where: { $0.name == databaseName }) {
+            let objects = entries.map(\.object)
+            databases[index].objectsState = .loaded(objects)
+            mergeAvailableSchemas(from: objects)
+        }
+        return entries
+    }
+
     @discardableResult
     func refreshObjects(in databaseName: String) async -> Bool {
         guard

@@ -58,6 +58,7 @@ struct WorkspaceToolbarPendingControls: View {
                     action: model.toggleInspector
                 )
                 .labelStyle(.iconOnly)
+                .disabled(model.isShowingSQLObjectOverview)
                 .keyboardShortcut("i", modifiers: [.command, .option])
                 .help(inspectorHelp)
                 .accessibilityIdentifier("workspaceInspectorToggleButton")

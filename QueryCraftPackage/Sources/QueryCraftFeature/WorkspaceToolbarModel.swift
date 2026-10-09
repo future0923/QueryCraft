@@ -38,11 +38,17 @@ final class WorkspaceToolbarModel {
             && model.databaseType != .kafka
     }
 
+    var isShowingSQLObjectOverview: Bool {
+        model.databaseType.supportsSQLObjectOverview
+            && model.databaseContextName != nil && selectedContentID == nil
+    }
+
     var showsInspector: Bool {
-        presentation.showsInspector
+        presentation.showsInspector && !isShowingSQLObjectOverview
     }
 
     var selectedContentUsesContextualRefresh: Bool {
+        if isShowingSQLObjectOverview { return true }
         guard let item = presentation.context.tabsModel.selectedContentItem
         else { return false }
         switch item {
@@ -56,6 +62,7 @@ final class WorkspaceToolbarModel {
 
     var selectedContentRefreshActions: WorkspaceContentRefreshActions? {
         guard selectedContentUsesContextualRefresh else { return nil }
+        if isShowingSQLObjectOverview { return presentation.context.contentRefreshRegistry.overviewActions }
         return presentation.context.contentRefreshRegistry.actions(
             for: selectedContentID
         )

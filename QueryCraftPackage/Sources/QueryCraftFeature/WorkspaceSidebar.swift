@@ -21,6 +21,7 @@ struct WorkspaceSidebar: View {
     ) -> Void
     let createTable: @MainActor (String) -> Void
     let createRedisKey: @MainActor (RedisKeyType) -> Void
+    let showDatabaseOverview: @MainActor () -> Void
     let showDatabasePicker: @MainActor () -> Void
 
     @State private var tableEditor: WorkspaceDatabaseTableEditor?
@@ -288,6 +289,13 @@ struct WorkspaceSidebar: View {
 
                     case .connected:
                         if let database = model.currentDatabase {
+                            if model.databaseType.supportsSQLObjectOverview {
+                                Button(action: showDatabaseOverview) {
+                                    Label(AppCopy.current.text("表、视图与查询", "Tables, Views & Queries"), systemImage: "list.bullet.rectangle")
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.vertical, 4)
+                            }
                             WorkspaceDatabaseItems(
                                 database: database,
                                 model: model,

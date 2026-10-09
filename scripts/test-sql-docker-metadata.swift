@@ -33,6 +33,10 @@ struct DockerSQLMetadataCheck {
             throw MetadataCheckFailure(description: "Driver entry unavailable")
         }
         try await entry.init().activate()
+        if env["CHECK_LOAD_ONLY"] == "1" {
+            print("PASS \(type.rawValue): packaged driver loaded and activated")
+            return
+        }
         let database = env["CHECK_DATABASE"]!
         let first = env["CHECK_FIRST"]!
         let second = env["CHECK_SECOND"]!
@@ -56,6 +60,19 @@ struct DockerSQLMetadataCheck {
             if !condition { throw MetadataCheckFailure(description: message) }
         }
         let isPG = type == .postgresql
+        guard let overviewProvider = session as? any WorkspaceSQLObjectOverviewProviding else {
+            throw MetadataCheckFailure(description: "Packaged driver missing overview capability")
+        }
+        let overview = try await overviewProvider.fetchSQLObjectOverview(in: isPG ? database : first)
+        let users = overview.first { $0.object.name == (isPG ? "\(first).users" : "users") }
+        try check(users?.comment == "员工资料总表，保存员工基础信息与历史记录，这是一段用于验证单行省略的长表注释", "Overview comment missing")
+        try check(users?.engine == (isPG ? nil : "InnoDB") && users?.collation == (isPG ? nil : "utf8mb4_bin"), "Overview engine/collation incorrect")
+        try check(users?.estimatedRowCount != nil && (users?.storageByteCount ?? 0) > 0, "Overview table statistics missing")
+        let viewEntry = overview.first { $0.object.name == (isPG ? "\(first).user_view" : "user_view") }
+        try check(viewEntry?.object.kind == .view, "Overview view identity missing")
+        try check(viewEntry?.engine == nil && viewEntry?.collation == nil, "View engine/collation must be unavailable")
+        try check(viewEntry?.estimatedRowCount == nil && viewEntry?.storageByteCount == nil, "View statistics must be unavailable")
+        try check(viewEntry?.comment == (isPG ? "员工昵称视图" : ""), "View comment incorrect")
         // Register PostgreSQL schema-qualified identities as the sidebar does.
         _ = try await session.fetchObjects(in: database)
         let object = WorkspaceDatabaseObject(name: isPG ? "\(first).users" : "users", kind: .table)
@@ -81,6 +98,7 @@ struct DockerSQLMetadataCheck {
         try verifyHeader(columns: page.columns, details: Dictionary(uniqueKeysWithValues: page.columns.compactMap { col in details.columns.first { $0.name == col.sourceColumnName }.map { (col.id, $0) } }))
         if let preview = ProcessInfo.processInfo.environment["CHECK_PREVIEW_PATH"] {
             try await render(context: context, details: details, page: page, path: preview)
+            try await renderOverview(type: type, database: isPG ? database : first, schema: isPG ? first : nil, path: preview)
         }
 
         let expression = isPG ? "42::bigint" : "CAST(42 AS UNSIGNED)"
@@ -110,7 +128,84 @@ struct DockerSQLMetadataCheck {
                 try check(inspector.fields?[0].comment == nickname.comment && inspector.fields?[1].comment == "归档编号" && inspector.fields?[2].comment == "", "Query inspector source comments mismatch")
             }
         }
-        print("PASS \(type.rawValue): packaged driver, table/query headers and inspectors, comments, complete types, duplicate aliases, cross-schema/database join, expression and empty result")
+        print("PASS \(type.rawValue): packaged driver, bulk overview metadata, table/query headers and inspectors, comments, complete types, duplicate aliases, cross-schema/database join, expression and empty result")
+    }
+
+    @MainActor static func renderOverview(type: DatabaseType, database: String, schema: String?, path: String) async throws {
+        let env = ProcessInfo.processInfo.environment
+        let profile = ConnectionProfile(id: UUID(), name: "Overview fixture", groupID: nil, databaseType: type,
+            host: "127.0.0.1", port: Int(env["CHECK_PORT"]!)!, username: env["CHECK_USER"]!,
+            defaultDatabase: database, tlsMode: .disabled, storesCredential: false, createdAt: .now)
+        let query = SavedQuery(id: UUID(), connectionProfileID: profile.id, defaultDatabase: database,
+                              name: "admin_user report", sql: "SELECT * FROM admin_user",
+                              createdAt: .now, updatedAt: .now)
+        let model = WorkspaceModel(profileID: profile.id,
+            repository: InMemoryConnectionProfileRepository(profiles: [profile]),
+            savedQueryRepository: InMemorySavedQueryRepository(queries: [query]),
+            credentialStore: InMemoryCredentialStore(), workspacePassword: env["CHECK_PASSWORD"],
+            sessionFactory: DefaultWorkspaceSessionFactory())
+        guard await model.connect() != nil else { throw MetadataCheckFailure(description: "Overview model connection failed") }
+        if let schema { model.selectSchema(schema) }
+        for dark in [false, true] {
+            let registry = WorkspaceContentRefreshRegistry()
+            let hosting = NSHostingView(rootView: WorkspaceSQLObjectOverviewView(model: model, database: database,
+                refreshRegistry: registry, openObject: { _ in }, openSavedQuery: { _ in },
+                refreshSavedQueries: { _ = await model.refreshSavedQueriesFromRepository() })
+                .environment(\.colorScheme, dark ? .dark : .light))
+            let window = NSWindow(contentRect: .init(x: -10000, y: -10000, width: 960, height: 500),
+                styleMask: [.borderless], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.contentView = hosting
+            hosting.frame = .init(x: 0, y: 0, width: 960, height: 500)
+            func tables(_ view: NSView) -> [NSTableView] {
+                (view as? NSTableView).map { [$0] } ?? view.subviews.flatMap(tables)
+            }
+            var table: NSTableView?
+            for _ in 0..<60 {
+                try await Task.sleep(for: .milliseconds(50))
+                hosting.layoutSubtreeIfNeeded()
+                table = tables(hosting).first
+                if table?.numberOfRows == 3 { break }
+            }
+            let expectedColumns = model.databaseType == .postgresql ? 4 : 6
+            guard let table, table.numberOfRows == 3, table.tableColumns.count == expectedColumns else {
+                throw MetadataCheckFailure(description: "Overview native table failed to load expected columns/two objects/one saved query")
+            }
+            func searchFields(_ view: NSView) -> [NSSearchField] {
+                (view as? NSSearchField).map { [$0] } ?? view.subviews.flatMap(searchFields)
+            }
+            guard let searchField = searchFields(hosting).first else {
+                throw MetadataCheckFailure(description: "Overview search field unavailable")
+            }
+            // Exercise the native field's delegate without sending keyboard or mouse input.
+            for (text, count) in [("dmus", 1), ("", 3)] {
+                searchField.stringValue = text
+                searchField.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification,
+                                                                         object: searchField))
+                for _ in 0..<20 {
+                    try await Task.sleep(for: .milliseconds(25))
+                    hosting.layoutSubtreeIfNeeded()
+                    if table.numberOfRows == count { break }
+                }
+                guard table.numberOfRows == count else {
+                    throw MetadataCheckFailure(description: "Overview fuzzy search failed to find/restore saved query")
+                }
+            }
+            // Select through the table API; the offscreen window never receives desktop input.
+            table.selectRowIndexes(IndexSet(integer: 2), byExtendingSelection: false)
+            try await Task.sleep(for: .milliseconds(100))
+            hosting.layoutSubtreeIfNeeded()
+            guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+                throw MetadataCheckFailure(description: "Overview preview unavailable")
+            }
+            hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+            guard let png = bitmap.representation(using: .png, properties: [:]) else {
+                throw MetadataCheckFailure(description: "Overview PNG unavailable")
+            }
+            try png.write(to: URL(fileURLWithPath: path + (dark ? "-overview-dark.png" : "-overview-light.png")))
+            window.contentView = nil
+        }
+        await model.disconnect()
     }
 
     @MainActor static func render(context: WorkspaceDatabaseInspectorContext, details: WorkspaceDatabaseObjectDetails, page: WorkspaceDatabaseDataPage, path: String) async throws {

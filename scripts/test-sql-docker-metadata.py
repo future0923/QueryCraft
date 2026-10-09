@@ -39,6 +39,13 @@ subprocess.run(args, check=True)
 
 comment = '昵称（员工名称），这是一段较长的字段注释，用于验证单行省略与完整提示'
 driver_dir = Path(os.environ.get('CHECK_DRIVER_DIRECTORY', Path.home() / 'Library/Application Support/QueryCraftDev/DriverAPI-4/Drivers'))
+if os.environ.get('CHECK_ALL_DRIVER_LOADS') == '1':
+    for driver, bundle_name in [('mysql', 'MySQL'), ('postgresql', 'PostgreSQL'), ('doris', 'Doris'),
+                               ('redis', 'Redis'), ('elasticsearch', 'Elasticsearch'), ('kafka', 'Kafka')]:
+        env = dict(os.environ, CHECK_DRIVER=driver, CHECK_LOAD_ONLY='1',
+                   CHECK_BUNDLE=str(driver_dir / f'{bundle_name}-{platform.machine()}.querycraftdriver'),
+                   DYLD_FRAMEWORK_PATH=os.environ.get('CHECK_FEATURE_FRAMEWORKS', '/Applications/QueryCraftDev.app/Contents/Frameworks'))
+        subprocess.run([str(binary)], env=env, check=True, timeout=30)
 failures = []
 for container, driver in [('querycraft-mysql56-test', 'mysql'),
                           ('querycraft-postgres16-test', 'postgresql'),
@@ -68,16 +75,20 @@ for container, driver in [('querycraft-mysql56-test', 'mysql'),
         if is_pg:
             sql(f"""CREATE SCHEMA {first}; CREATE SCHEMA {second};
                 CREATE TABLE {first}.users (id integer PRIMARY KEY, user_nick varchar(20), amount numeric(12,2), tags integer[]);
+                COMMENT ON TABLE {first}.users IS '员工资料总表，保存员工基础信息与历史记录，这是一段用于验证单行省略的长表注释';
                 COMMENT ON COLUMN {first}.users.user_nick IS '{comment}';
                 CREATE TABLE {second}.users (id integer PRIMARY KEY);
                 COMMENT ON COLUMN {second}.users.id IS '归档编号';
                 INSERT INTO {first}.users VALUES (1, '张三', 12.34, ARRAY[1,2]);
                 INSERT INTO {second}.users VALUES (1);
                 CREATE VIEW {first}.user_view AS SELECT user_nick FROM {first}.users;
+                COMMENT ON VIEW {first}.user_view IS '员工昵称视图';
+                ANALYZE {first}.users;
                 COMMENT ON COLUMN {first}.user_view.user_nick IS '视图昵称';""")
         else:
             sql(f"""CREATE DATABASE {first} CHARACTER SET utf8mb4; CREATE DATABASE {second} CHARACTER SET utf8mb4;
-                CREATE TABLE {first}.users (id integer PRIMARY KEY, user_nick varchar(20) COMMENT '{comment}', amount decimal(12,2), unsigned_id bigint unsigned);
+                CREATE TABLE {first}.users (id integer PRIMARY KEY, user_nick varchar(20) COMMENT '{comment}', amount decimal(12,2), unsigned_id bigint unsigned) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='员工资料总表，保存员工基础信息与历史记录，这是一段用于验证单行省略的长表注释';
+                CREATE VIEW {first}.user_view AS SELECT user_nick FROM {first}.users;
                 CREATE TABLE {second}.users (id integer PRIMARY KEY COMMENT '归档编号');
                 INSERT INTO {first}.users VALUES (1, '张三', 12.34, 18446744073709551615);
                 INSERT INTO {second}.users VALUES (1);""")

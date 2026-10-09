@@ -1,7 +1,7 @@
 import Foundation
 import QueryCraftFeature
 
-actor PostgreSQLWorkspaceSession: WorkspaceSession {
+actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding {
     private struct ObjectIdentity: Sendable {
         let schema: String
         let name: String
@@ -188,6 +188,43 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession {
                 name: name
             )
             return WorkspaceDatabaseObject(name: displayName, kind: kind)
+        }
+    }
+
+    func fetchSQLObjectOverview(in database: String) async throws -> [WorkspaceSQLObjectOverviewEntry] {
+        try requireCurrentDatabase(database)
+        let rows = try await requireClient().query(
+            """
+            SELECT n.nspname::text AS schema_name, c.relname::text AS object_name,
+                   c.relkind::text AS object_kind,
+                   obj_description(c.oid, 'pg_class') AS object_comment,
+                   CASE WHEN c.relkind IN ('r', 'm') AND c.reltuples >= 0
+                        THEN c.reltuples::bigint::text END AS row_count,
+                   CASE WHEN c.relkind IN ('r', 'm')
+                        THEN pg_total_relation_size(c.oid)::text END AS storage_bytes
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
+              AND n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+              AND n.nspname <> 'information_schema'
+              AND has_schema_privilege(current_user, n.oid, 'USAGE')
+            ORDER BY n.nspname, c.relname
+            """
+        ).dictionaryRows
+        try Task.checkCancellation()
+        objectIdentities.removeAll(keepingCapacity: true)
+        return rows.compactMap { row in
+            guard let schema = row["schema_name"] ?? nil,
+                  let name = row["object_name"] ?? nil,
+                  let rawKind = row["object_kind"] ?? nil else { return nil }
+            let displayName = "\(schema).\(name)"
+            objectIdentities[displayName] = ObjectIdentity(schema: schema, name: name)
+            return WorkspaceSQLObjectOverviewEntry(
+                object: WorkspaceDatabaseObject(name: displayName, kind: rawKind == "v" || rawKind == "m" ? .view : .table),
+                comment: (row["object_comment"] ?? nil) ?? "",
+                estimatedRowCount: (row["row_count"] ?? nil).flatMap(Int64.init),
+                storageByteCount: (row["storage_bytes"] ?? nil).flatMap(Int64.init)
+            )
         }
     }
 

@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 
 struct WorkspaceContentRefreshActions: Equatable {
@@ -19,6 +20,20 @@ struct WorkspaceContentRefreshActions: Equatable {
 @MainActor
 @Observable
 final class WorkspaceContentRefreshRegistry {
+    private(set) var overviewActions: WorkspaceContentRefreshActions?
+    private var overviewOwner: UUID?
+
+    func updateOverview(_ actions: WorkspaceContentRefreshActions, owner: UUID) {
+        overviewOwner = owner
+        overviewActions = actions
+    }
+
+    func removeOverview(owner: UUID) {
+        guard overviewOwner == owner else { return }
+        overviewActions = nil
+        overviewOwner = nil
+    }
+
     private var actionsByContentID: [
         WorkspaceContentTabID: WorkspaceContentRefreshActions
     ] = [:]

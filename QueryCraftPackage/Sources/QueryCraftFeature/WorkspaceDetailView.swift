@@ -10,6 +10,9 @@ struct WorkspaceDetailView: View {
     let redisKeyActionRegistry: WorkspaceRedisKeyActionRegistry
     let hostController: WorkspaceRetainedContentHostController
     let retainedHostControllers: [WorkspaceRetainedContentHostController]
+    let openDatabaseObject: @MainActor (WorkspaceDatabaseObjectSelection) -> Void
+    let openSavedQuery: @MainActor (SavedQuery.ID) -> Void
+    let refreshSavedQueries: @MainActor () async -> Void
     let selectContent: @MainActor (WorkspaceContentTabID) -> Void
     let performContentTabAction: @MainActor (
         WorkspaceContentTabAction
@@ -30,6 +33,9 @@ struct WorkspaceDetailView: View {
                 redisKeyActionRegistry: redisKeyActionRegistry,
                 hostController: hostController,
                 retainedHostControllers: retainedHostControllers,
+                openDatabaseObject: openDatabaseObject,
+                openSavedQuery: openSavedQuery,
+                refreshSavedQueries: refreshSavedQueries,
                 selectContent: selectContent,
                 performContentTabAction: performContentTabAction
             )

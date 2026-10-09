@@ -176,6 +176,25 @@ struct WorkspaceWindowToolbarTests {
         #expect(workspaceRefreshCount == 0)
     }
 
+    @Test
+    func sqlOverviewUsesItsOwnRefreshAndTemporarilyHidesTheInspector() async {
+        var refreshCount = 0
+        let toolbar = makeToolbarModel()
+        _ = await toolbar.model.connect()
+        _ = await toolbar.model.adoptDatabaseContext("app")
+        toolbar.toggleInspector()
+        #expect(toolbar.isShowingSQLObjectOverview && !toolbar.showsInspector)
+        toolbar.presentation.context.contentRefreshRegistry.updateOverview(
+            .init(title: "Overview", isStopping: false, didComplete: false, perform: { refreshCount += 1 }),
+            owner: UUID()
+        )
+        #expect(!toolbar.isRefreshActionDisabled && toolbar.refreshActionTitle == "Overview")
+        toolbar.performRefreshAction()
+        #expect(refreshCount == 1)
+        toolbar.presentation.context.tabsModel.open(.init(databaseName: "app", objectName: "users", kind: .table))
+        #expect(!toolbar.isShowingSQLObjectOverview && toolbar.showsInspector)
+    }
+
     private func makeToolbar() -> WorkspaceWindowToolbar {
         WorkspaceWindowToolbar(model: makeToolbarModel())
     }

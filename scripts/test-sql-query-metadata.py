@@ -23,6 +23,20 @@ for p in [dd/'SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modu
 for p in [root/'ThirdParty/CodeEditLanguages/Sources/TreeSitterJSON/include',root/'ThirdParty/CodeEditLanguages/Sources/TreeSitterSQL/include',dd/'SourcePackages/checkouts/tree-sitter/lib/include',dd/'SourcePackages/checkouts/TextStory/Sources/Internal',root/'ThirdParty/CodeEditTextView/Sources/CodeEditTextViewObjC/include']:
  args+=['-Xcc','-I'+str(p)]
 subprocess.run(args,check=True)
+doris_args = []
+index = 0
+while index < len(args):
+ if args[index] == '-framework' and args[index+1] in ('QueryCraftPostgreSQLDriver', 'QueryCraftMySQLDriver'):
+  index += 2
+  continue
+ if args[index] == '-o':
+  doris_args += ['-o', str(root / '.build/test-doris-overview')]
+  index += 2
+  continue
+ doris_args.append(args[index])
+ index += 1
+doris_args += ['-D', 'DORIS_OVERVIEW_FIXTURE', '-framework', 'QueryCraftDorisDriver']
+subprocess.run(doris_args,check=True)
 errors=[]
 def read(c,n):
  data=b''
@@ -83,7 +97,18 @@ def mysql_read(c):
  h=read(c,4); return read(c,int.from_bytes(h[:3],'little'))
 def le(s):
  b=s.encode(); assert len(b)<251; return bytes([len(b)])+b
-def mysql_server(listener):
+def mysql_result(c, names, rows):
+ seq=1; mysql_send(c,bytes([len(names)]),seq); seq+=1
+ for name in names:
+  field=b''.join(le(x) for x in ['def','','','',name,''])+b'\x0c'+struct.pack('<HIBHBH',45,255,253,0,0,0)
+  mysql_send(c,field,seq); seq+=1
+ eof=b'\xfe'+struct.pack('<HH',0,2)
+ mysql_send(c,eof,seq); seq+=1
+ for row in rows:
+  mysql_send(c,b''.join(b'\xfb' if v is None else le(v) for v in row),seq); seq+=1
+ mysql_send(c,eof,seq)
+
+def mysql_server(listener, overview=False):
  try:
   with listener.accept()[0] as c:
    c.settimeout(30)
@@ -96,6 +121,18 @@ def mysql_server(listener):
     if p[0]==1: break
     if p[0]!=3: mysql_send(c,ok,1); continue
     q=p[1:].decode()
+    if overview and 'FROM information_schema.TABLES t' in q:
+     assert 'information_schema.COLUMNS' not in q and 'field_count' not in q
+     if "'legacy'" in q or ("'partial'" in q and 't.TABLE_ROWS' in q) or ("'no_properties'" in q and 't.ENGINE' in q):
+      mysql_send(c,b'\xff'+struct.pack('<H',1054)+b'#42S22fixture metadata unavailable',1)
+      continue
+     mysql_result(c, ['object_name','object_kind','object_comment','row_count','storage_bytes','engine','collation'],
+                  [['users','BASE TABLE','员工资料',None if "'partial'" in q else '123456789',None if "'partial'" in q else '4294967296', 'OLAP' if 't.ENGINE' in q else None, 'utf8mb4_bin' if 't.TABLE_COLLATION' in q else None],
+                   ['user_view','VIEW','昵称视图',None,None,None,None]])
+     continue
+    if overview and q.startswith('SHOW FULL TABLES'):
+     mysql_result(c, ['Tables_in_legacy','Table_type'], [['users','BASE TABLE'],['user_view','VIEW']])
+     continue
     if q not in ('SELECT_FIXTURE','EMPTY_FIXTURE'):
      mysql_send(c,ok,1); continue
     seq=1; mysql_send(c,b'\x03',seq); seq+=1
@@ -111,11 +148,13 @@ def mysql_server(listener):
  finally: listener.close()
 
 listeners=[]; threads=[]
-for worker in (pg_server,mysql_server):
+for worker in (pg_server,mysql_server,lambda listener: mysql_server(listener, overview=True)):
  s=socket.socket(); s.bind(('127.0.0.1',0)); s.listen(1); s.settimeout(30)
  listeners.append(s); t=threading.Thread(target=worker,args=(s,),daemon=True); t.start(); threads.append(t)
 ports=[str(s.getsockname()[1]) for s in listeners]
-try: subprocess.run([str(root/'.build/test-sql-query-metadata'),*ports],check=True,timeout=30)
+try:
+ subprocess.run([str(root/'.build/test-sql-query-metadata'),*ports[:2]],check=True,timeout=30)
+ subprocess.run([str(root/'.build/test-doris-overview'),ports[2]],check=True,timeout=30)
 finally:
  for s in listeners: s.close()
  for t in threads: t.join(timeout=2)

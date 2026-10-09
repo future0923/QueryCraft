@@ -2,7 +2,7 @@ import Foundation
 import QueryCraftFeature
 import QueryCraftMariaDBTransport
 
-actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProviding {
+actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProviding, WorkspaceSQLObjectOverviewProviding {
     nonisolated let capabilities = WorkspaceSessionCapabilities.dorisReadOnly
 
     private struct FilterPredicate: Sendable {
@@ -102,6 +102,53 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
             default:
                 return nil
             }
+        }
+    }
+
+    func fetchSQLObjectOverview(in database: String) async throws -> [WorkspaceSQLObjectOverviewEntry] {
+        // Doris versions differ in which TABLES metadata columns they expose.
+        // Preserve comments and supported statistics if table properties are absent.
+        for (statistics, properties) in [(true, true), (false, true), (true, false), (false, false)] {
+            do {
+                return try await fetchOverviewMetadata(in: database, includesStatistics: statistics,
+                                                       includesTableProperties: properties)
+            } catch {
+                try Task.checkCancellation()
+            }
+        }
+        return try await fetchObjects(in: database).map { WorkspaceSQLObjectOverviewEntry(object: $0) }
+    }
+
+    private func fetchOverviewMetadata(in database: String, includesStatistics: Bool,
+                                       includesTableProperties: Bool) async throws -> [WorkspaceSQLObjectOverviewEntry] {
+        let statistics = includesStatistics
+            ? "t.TABLE_ROWS AS row_count, t.DATA_LENGTH + t.INDEX_LENGTH AS storage_bytes,"
+            : "NULL AS row_count, NULL AS storage_bytes,"
+        let properties = includesTableProperties
+            ? "t.ENGINE AS engine, t.TABLE_COLLATION AS collation"
+            : "NULL AS engine, NULL AS collation"
+        let rows = try await requireClient().query(
+            """
+            SELECT t.TABLE_NAME AS object_name, t.TABLE_TYPE AS object_kind,
+                   t.TABLE_COMMENT AS object_comment, \(statistics) \(properties)
+            FROM information_schema.TABLES t
+            WHERE t.TABLE_SCHEMA = ?
+            ORDER BY t.TABLE_NAME
+            """, bindings: [.text(database)]
+        ).dictionaryRows
+        try Task.checkCancellation()
+        return rows.compactMap { row in
+            guard let name = row["object_name"] ?? nil,
+                  let rawKind = row["object_kind"] ?? nil else { return nil }
+            let isView = rawKind.uppercased() == "VIEW"
+            return WorkspaceSQLObjectOverviewEntry(
+                object: WorkspaceDatabaseObject(name: name, kind: isView ? .view : .table),
+                comment: isView && row["object_comment"] == "VIEW" ? "" : (row["object_comment"] ?? nil) ?? "",
+                estimatedRowCount: isView ? nil : (row["row_count"] ?? nil).flatMap(Int64.init),
+                storageByteCount: isView ? nil : (row["storage_bytes"] ?? nil).flatMap(Int64.init),
+                engine: isView ? nil : row["engine"] ?? nil,
+                collation: isView ? nil : row["collation"] ?? nil
+            )
         }
     }
 

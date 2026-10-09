@@ -10,6 +10,9 @@ struct WorkspaceContentTabsView: View {
     let redisKeyActionRegistry: WorkspaceRedisKeyActionRegistry
     let hostController: WorkspaceRetainedContentHostController
     let retainedHostControllers: [WorkspaceRetainedContentHostController]
+    let openDatabaseObject: @MainActor (WorkspaceDatabaseObjectSelection) -> Void
+    let openSavedQuery: @MainActor (SavedQuery.ID) -> Void
+    let refreshSavedQueries: @MainActor () async -> Void
     let selectContent: @MainActor (WorkspaceContentTabID) -> Void
     let performContentTabAction: @MainActor (
         WorkspaceContentTabAction
@@ -76,7 +79,18 @@ struct WorkspaceContentTabsView: View {
                     retainedHostControllers: retainedHostControllers
                 )
 
-                if contentItems.isEmpty {
+                if model.databaseType.supportsSQLObjectOverview,
+                   let database = model.databaseContextName,
+                   tabsModel.selectedContentID == nil {
+                    WorkspaceSQLObjectOverviewView(
+                        model: model, database: database,
+                        refreshRegistry: contentRefreshRegistry,
+                        openObject: openDatabaseObject,
+                        openSavedQuery: openSavedQuery,
+                        refreshSavedQueries: refreshSavedQueries
+                    )
+                    .id("\(model.workspaceID):\(database)")
+                } else if contentItems.isEmpty {
                     ContentUnavailableView(
                         AppCopy.current.text("未选择内容", "No Selection"),
                         systemImage: model.databaseType == .redis

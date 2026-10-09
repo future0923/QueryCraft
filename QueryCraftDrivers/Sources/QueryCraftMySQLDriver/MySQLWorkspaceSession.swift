@@ -2,7 +2,7 @@ import Foundation
 import QueryCraftFeature
 import QueryCraftMariaDBTransport
 
-actor MySQLWorkspaceSession: WorkspaceSession {
+actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding {
     private struct FilterPredicate: Sendable {
         let sql: String
         let bindings: [WorkspaceDatabaseDataCell]
@@ -170,6 +170,34 @@ actor MySQLWorkspaceSession: WorkspaceSession {
             default:
                 return nil
             }
+        }
+    }
+
+    func fetchSQLObjectOverview(in database: String) async throws -> [WorkspaceSQLObjectOverviewEntry] {
+        let rows = try await requireClient().query(
+            """
+            SELECT t.TABLE_NAME AS object_name, t.TABLE_TYPE AS object_kind,
+                   t.TABLE_COMMENT AS object_comment, t.TABLE_ROWS AS row_count,
+                   t.DATA_LENGTH + t.INDEX_LENGTH AS storage_bytes,
+                   t.ENGINE AS engine, t.TABLE_COLLATION AS collation
+            FROM information_schema.TABLES t
+            WHERE t.TABLE_SCHEMA = \(hexStringLiteral(database))
+            ORDER BY t.TABLE_NAME
+            """
+        ).dictionaryRows
+        try Task.checkCancellation()
+        return rows.compactMap { row in
+            guard let name = row["object_name"] ?? nil,
+                  let rawKind = row["object_kind"] ?? nil else { return nil }
+            let isView = rawKind.uppercased() == "VIEW"
+            return WorkspaceSQLObjectOverviewEntry(
+                object: WorkspaceDatabaseObject(name: name, kind: isView ? .view : .table),
+                comment: isView && row["object_comment"] == "VIEW" ? "" : (row["object_comment"] ?? nil) ?? "",
+                estimatedRowCount: isView ? nil : (row["row_count"] ?? nil).flatMap(Int64.init),
+                storageByteCount: isView ? nil : (row["storage_bytes"] ?? nil).flatMap(Int64.init),
+                engine: isView ? nil : row["engine"] ?? nil,
+                collation: isView ? nil : row["collation"] ?? nil
+            )
         }
     }
 

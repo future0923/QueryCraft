@@ -185,6 +185,10 @@ final class WorkspaceContentTabsModel {
         return contentItems.indices.contains(source + offset)
     }
 
+    func showDatabaseOverview() {
+        selectedContentID = nil
+    }
+
     func select(at index: Int) {
         guard contentItems.indices.contains(index) else { return }
         select(contentItems[index].id)

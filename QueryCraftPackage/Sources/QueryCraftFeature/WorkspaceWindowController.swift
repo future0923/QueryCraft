@@ -198,6 +198,9 @@ final class WorkspaceWindowController: NSWindowController,
                 )
             },
             savedQueryActions: makeSavedQueryActions(),
+            refreshSavedQueries: { [weak self] in
+                await self?.workspaceGroup?.refreshActiveSavedQueries()
+            },
             openDatabaseObject: { [weak self] selection in
                 self?.workspaceGroup?.openDatabaseObject(selection)
             },

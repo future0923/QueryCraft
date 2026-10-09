@@ -19,6 +19,7 @@ public struct WorkspaceView: View {
     private let moveDatabaseContextToNewWindow: @MainActor (UUID) -> Void
     @State private var preferences = ApplicationPreferences.shared
     private let savedQueryActions: WorkspaceSavedQueryActions
+    private let refreshSavedQueries: @MainActor () async -> Void
     private let openDatabaseObject: @MainActor (
         WorkspaceDatabaseObjectSelection
     ) -> Void
@@ -103,6 +104,10 @@ public struct WorkspaceView: View {
                         tableDidDelete: tableDidDelete,
                         createTable: createTable,
                         createRedisKey: createRedisKey,
+                        showDatabaseOverview: {
+                            tabsModel.showDatabaseOverview()
+                            model.sidebarSelection = nil
+                        },
                         showDatabasePicker: {
                             guard toolbarModel.showsDatabaseSelection else {
                                 return
@@ -128,6 +133,9 @@ public struct WorkspaceView: View {
                     retainedHostControllers: presentation.retainedContexts.map(
                         \.contentHostController
                     ),
+                    openDatabaseObject: openDatabaseObject,
+                    openSavedQuery: savedQueryActions.open,
+                    refreshSavedQueries: refreshSavedQueries,
                     selectContent: selectContent,
                     performContentTabAction: performContentTabAction,
                     retryConnection: retryConnection
@@ -309,6 +317,7 @@ public struct WorkspaceView: View {
         closeOtherDatabaseContexts: @escaping @MainActor (UUID) -> Void = { _ in },
         moveDatabaseContextToNewWindow: @escaping @MainActor (UUID) -> Void = { _ in },
         savedQueryActions: WorkspaceSavedQueryActions,
+        refreshSavedQueries: @escaping @MainActor () async -> Void = {},
         openDatabaseObject: @escaping @MainActor (
             WorkspaceDatabaseObjectSelection
         ) -> Void,
@@ -348,6 +357,7 @@ public struct WorkspaceView: View {
         self.closeOtherDatabaseContexts = closeOtherDatabaseContexts
         self.moveDatabaseContextToNewWindow = moveDatabaseContextToNewWindow
         self.savedQueryActions = savedQueryActions
+        self.refreshSavedQueries = refreshSavedQueries
         self.openDatabaseObject = openDatabaseObject
         self.openRedisKey = openRedisKey
         self.tableDidRename = tableDidRename
