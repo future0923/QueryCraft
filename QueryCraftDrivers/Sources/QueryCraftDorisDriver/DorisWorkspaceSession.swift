@@ -50,12 +50,46 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
         var databases: [WorkspaceSchemaDatabase] = []
         for database in try await fetchDatabases() {
             try Task.checkCancellation()
-            let objects = try await fetchObjects(in: database).map {
-                WorkspaceSchemaObject(name: $0.name, kind: $0.kind, columns: [])
-            }
+            let objects = try await fetchCatalogObjects(in: database)
             databases.append(WorkspaceSchemaDatabase(name: database, objects: objects))
         }
         return databases
+    }
+
+    private func fetchCatalogObjects(in database: String) async throws -> [WorkspaceSchemaObject] {
+        // Older Doris versions may not expose TABLE_COMMENT here; fall back to
+        // the comment-less SHOW FULL TABLES listing like the overview path.
+        do {
+            let rows = try await requireClient().query(
+                """
+                SELECT t.TABLE_NAME AS object_name, t.TABLE_TYPE AS object_kind,
+                       t.TABLE_COMMENT AS object_comment
+                FROM information_schema.TABLES t
+                WHERE t.TABLE_SCHEMA = ?
+                ORDER BY t.TABLE_NAME
+                """, bindings: [.text(database)]
+            ).dictionaryRows
+            try Task.checkCancellation()
+            return rows.compactMap { row in
+                guard let name = row["object_name"] ?? nil,
+                      let rawKind = row["object_kind"] ?? nil else { return nil }
+                let isView = rawKind.uppercased() == "VIEW"
+                let comment = isView && row["object_comment"] == "VIEW"
+                    ? ""
+                    : (row["object_comment"] ?? nil) ?? ""
+                return WorkspaceSchemaObject(
+                    name: name,
+                    kind: isView ? .view : .table,
+                    columns: [],
+                    comment: comment
+                )
+            }
+        } catch {
+            try Task.checkCancellation()
+            return try await fetchObjects(in: database).map {
+                WorkspaceSchemaObject(name: $0.name, kind: $0.kind, columns: [])
+            }
+        }
     }
 
     func fetchSchemaColumns(
@@ -76,7 +110,8 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
                 return WorkspaceSchemaColumn(
                     name: name,
                     type: type,
-                    ordinalPosition: index + 1
+                    ordinalPosition: index + 1,
+                    comment: value(in: row, keys: ["Comment", "comment"]) ?? ""
                 )
             }
             output.append(

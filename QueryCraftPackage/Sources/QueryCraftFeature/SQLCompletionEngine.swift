@@ -1535,7 +1535,8 @@ enum SQLCompletionEngine {
                 detail: columnDetail(
                     type: column.type,
                     qualifier: qualifier,
-                    objectName: binding.objectName
+                    objectName: binding.objectName,
+                    comment: column.comment
                 ),
                 kind: .column,
                 rankingGroup: rankingGroup,
@@ -1549,12 +1550,14 @@ enum SQLCompletionEngine {
     private static func columnDetail(
         type: String,
         qualifier: String,
-        objectName: String
+        objectName: String,
+        comment: String
     ) -> String {
-        if qualifier.caseInsensitiveCompare(objectName) == .orderedSame {
-            return "\(type) · \(objectName)"
-        }
-        return "\(type) · \(qualifier) · \(objectName)"
+        let base = qualifier.caseInsensitiveCompare(objectName) == .orderedSame
+            ? "\(type) · \(objectName)"
+            : "\(type) · \(qualifier) · \(objectName)"
+        let comment = inlineComment(comment)
+        return comment.isEmpty ? base : "\(comment) · \(base)"
     }
 
     private static func objectCandidates(
@@ -1568,10 +1571,11 @@ enum SQLCompletionEngine {
         for (index, object) in database.objects.enumerated() {
             try checkCancellation(at: index)
             let name = qualified ? "\(database.name).\(object.name)" : object.name
+            let comment = inlineComment(object.comment)
             candidates.append(SQLCompletionCandidate(
                 label: name,
                 insertionText: name,
-                detail: database.name,
+                detail: comment.isEmpty ? database.name : "\(comment) · \(database.name)",
                 kind: object.kind == .table ? .table : .view,
                 rankingGroup: rankingGroup,
                 contextPriority: priority,
@@ -1579,6 +1583,17 @@ enum SQLCompletionEngine {
             ))
         }
         return candidates
+    }
+
+    private static let inlineCommentLimit = 24
+
+    private static func inlineComment(_ comment: String) -> String {
+        let collapsed = comment
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard collapsed.count > inlineCommentLimit else { return collapsed }
+        return collapsed.prefix(inlineCommentLimit) + "…"
     }
 
     private static func checkCancellation(at index: Int) throws {

@@ -56,7 +56,8 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
             SELECT
                 TABLE_SCHEMA AS database_name,
                 TABLE_NAME AS object_name,
-                TABLE_TYPE AS object_type
+                TABLE_TYPE AS object_type,
+                TABLE_COMMENT AS object_comment
             FROM information_schema.TABLES
             ORDER BY TABLE_SCHEMA, TABLE_NAME
             """
@@ -77,8 +78,16 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
             case "VIEW": kind = .view
             default: continue
             }
+            let comment = kind == .view && row["object_comment"] == "VIEW"
+                ? ""
+                : (row["object_comment"] ?? nil) ?? ""
             objectsByDatabase[databaseName, default: []].append(
-                WorkspaceSchemaObject(name: objectName, kind: kind, columns: [])
+                WorkspaceSchemaObject(
+                    name: objectName,
+                    kind: kind,
+                    columns: [],
+                    comment: comment
+                )
             )
         }
 
@@ -106,7 +115,8 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
                 c.TABLE_NAME AS object_name,
                 c.COLUMN_NAME AS column_name,
                 c.COLUMN_TYPE AS column_type,
-                c.ORDINAL_POSITION AS ordinal_position
+                c.ORDINAL_POSITION AS ordinal_position,
+                c.COLUMN_COMMENT AS column_comment
             FROM information_schema.COLUMNS AS c
             WHERE \(objectPredicates)
             ORDER BY
@@ -135,7 +145,8 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
                 WorkspaceSchemaColumn(
                     name: columnName,
                     type: columnType,
-                    ordinalPosition: ordinalPosition
+                    ordinalPosition: ordinalPosition,
+                    comment: (row["column_comment"] ?? nil) ?? ""
                 )
             )
         }

@@ -571,6 +571,63 @@ struct SQLCompletionEngineTests {
     }
 
     @Test
+    func showsColumnCommentsInline() async throws {
+        let result = try await completions(
+            for: "SELECT * FROM users WHERE na",
+            cursorToken: "na",
+            catalog: Self.commentCatalog(columnComment: "用户姓名"),
+            defaultDatabase: "app"
+        )
+
+        #expect(result.items.first?.label == "name")
+        #expect(result.items.first?.detail == "用户姓名 · varchar(255) · users")
+    }
+
+    @Test
+    func collapsesWhitespaceInInlineComments() async throws {
+        let result = try await completions(
+            for: "SELECT * FROM users WHERE na",
+            cursorToken: "na",
+            catalog: Self.commentCatalog(columnComment: "  门店\n摊销\t成本部门 "),
+            defaultDatabase: "app"
+        )
+
+        #expect(
+            result.items.first?.detail == "门店 摊销 成本部门 · varchar(255) · users"
+        )
+    }
+
+    @Test
+    func truncatesLongCommentsInline() async throws {
+        let result = try await completions(
+            for: "SELECT * FROM users WHERE na",
+            cursorToken: "na",
+            catalog: Self.commentCatalog(
+                columnComment: String(repeating: "x", count: 30)
+            ),
+            defaultDatabase: "app"
+        )
+
+        #expect(
+            result.items.first?.detail
+                == "\(String(repeating: "x", count: 24))… · varchar(255) · users"
+        )
+    }
+
+    @Test
+    func showsTableCommentsInline() async throws {
+        let result = try await completions(
+            for: "SELECT * FROM us",
+            catalog: Self.commentCatalog(tableComment: "系统用户"),
+            defaultDatabase: "app"
+        )
+
+        #expect(result.items.first?.label == "users")
+        #expect(result.items.first?.kind == .table)
+        #expect(result.items.first?.detail == "系统用户 · app")
+    }
+
+    @Test
     func prefixKeywordRanksBeforeFuzzyColumnMatches() async throws {
         let catalog = WorkspaceSchemaCatalogSnapshot(
             revision: 1,
@@ -1383,6 +1440,35 @@ struct SQLCompletionEngineTests {
             parseSnapshot: snapshot,
             schemaCatalog: catalog,
             defaultDatabase: defaultDatabase
+        )
+    }
+
+    private static func commentCatalog(
+        tableComment: String = "",
+        columnComment: String = ""
+    ) -> WorkspaceSchemaCatalogSnapshot {
+        WorkspaceSchemaCatalogSnapshot(
+            revision: 1,
+            databases: [
+                WorkspaceSchemaDatabase(
+                    name: "app",
+                    objects: [
+                        WorkspaceSchemaObject(
+                            name: "users",
+                            kind: .table,
+                            columns: [
+                                WorkspaceSchemaColumn(
+                                    name: "name",
+                                    type: "varchar(255)",
+                                    ordinalPosition: 1,
+                                    comment: columnComment
+                                )
+                            ],
+                            comment: tableComment
+                        )
+                    ]
+                )
+            ]
         )
     }
 

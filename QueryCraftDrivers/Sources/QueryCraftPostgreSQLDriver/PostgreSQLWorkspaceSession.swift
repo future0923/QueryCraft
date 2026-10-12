@@ -90,17 +90,44 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
     }
 
     func fetchSchemaObjectCatalog() async throws -> [WorkspaceSchemaDatabase] {
-        let objects = try await fetchObjects(in: currentDatabase)
+        try requireCurrentDatabase(currentDatabase)
+        let rows = try await requireClient().query(
+            """
+            SELECT
+                n.nspname::text AS schema_name,
+                c.relname::text AS object_name,
+                c.relkind::text AS object_kind,
+                COALESCE(obj_description(c.oid, 'pg_class'), '')::text AS object_comment
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
+              AND n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
+              AND n.nspname <> 'information_schema'
+              AND has_schema_privilege(current_user, n.oid, 'USAGE')
+            ORDER BY n.nspname, c.relname
+            """
+        ).dictionaryRows
+        try Task.checkCancellation()
+        objectIdentities.removeAll(keepingCapacity: true)
+        let objects = rows.compactMap { row -> WorkspaceSchemaObject? in
+            guard
+                let schema = row["schema_name"] ?? nil,
+                let name = row["object_name"] ?? nil,
+                let rawKind = row["object_kind"] ?? nil
+            else { return nil }
+            let displayName = "\(schema).\(name)"
+            objectIdentities[displayName] = ObjectIdentity(schema: schema, name: name)
+            return WorkspaceSchemaObject(
+                name: displayName,
+                kind: rawKind == "v" || rawKind == "m" ? .view : .table,
+                columns: [],
+                comment: (row["object_comment"] ?? nil) ?? ""
+            )
+        }
         return [
             WorkspaceSchemaDatabase(
                 name: currentDatabase,
-                objects: objects.map {
-                    WorkspaceSchemaObject(
-                        name: $0.name,
-                        kind: $0.kind,
-                        columns: []
-                    )
-                }
+                objects: objects
             ),
         ]
     }
@@ -116,16 +143,26 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
             let rows = try await requireClient().query(
                 """
                 SELECT
-                    column_name::text AS column_name,
-                    (data_type || CASE
-                        WHEN udt_name <> data_type THEN ' (' || udt_name || ')'
+                    c.column_name::text AS column_name,
+                    (c.data_type || CASE
+                        WHEN c.udt_name <> c.data_type THEN ' (' || c.udt_name || ')'
                         ELSE ''
                     END)::text AS column_type,
-                    ordinal_position::text AS ordinal_position
-                FROM information_schema.columns
-                WHERE table_schema = \(Self.literal(identity.schema))
-                  AND table_name = \(Self.literal(identity.name))
-                ORDER BY ordinal_position
+                    c.ordinal_position::text AS ordinal_position,
+                    COALESCE(pgd.description, '')::text AS column_comment
+                FROM information_schema.columns c
+                LEFT JOIN pg_catalog.pg_namespace ns
+                  ON ns.nspname = c.table_schema
+                LEFT JOIN pg_catalog.pg_class rel
+                  ON rel.relnamespace = ns.oid AND rel.relname = c.table_name
+                LEFT JOIN pg_catalog.pg_attribute attr
+                  ON attr.attrelid = rel.oid AND attr.attname = c.column_name
+                 AND attr.attnum > 0 AND NOT attr.attisdropped
+                LEFT JOIN pg_catalog.pg_description pgd
+                  ON pgd.objoid = rel.oid AND pgd.objsubid = attr.attnum
+                WHERE c.table_schema = \(Self.literal(identity.schema))
+                  AND c.table_name = \(Self.literal(identity.name))
+                ORDER BY c.ordinal_position
                 """
             ).dictionaryRows
             let columns = rows.compactMap {
@@ -139,7 +176,8 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
                 return WorkspaceSchemaColumn(
                     name: name,
                     type: type,
-                    ordinalPosition: ordinal
+                    ordinalPosition: ordinal,
+                    comment: (row["column_comment"] ?? nil) ?? ""
                 )
             }
             result.append(

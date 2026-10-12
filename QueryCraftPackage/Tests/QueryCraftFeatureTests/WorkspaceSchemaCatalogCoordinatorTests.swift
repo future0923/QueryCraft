@@ -9,14 +9,24 @@ struct WorkspaceSchemaCatalogCoordinatorTests {
     ) async throws {
         let reference = WorkspaceSchemaObjectReference(databaseName: "app", objectName: "users")
         let columns = emptyResult ? [] : [
-            WorkspaceSchemaColumn(name: "name", type: "varchar(255)", ordinalPosition: 1),
+            WorkspaceSchemaColumn(
+                name: "name",
+                type: "varchar(255)",
+                ordinalPosition: 1,
+                comment: "用户姓名"
+            ),
         ]
         let recorder = CatalogRequestRecorder()
         await recorder.failNextColumnLoad()
         let coordinator = WorkspaceSchemaCatalogCoordinator(sessionFactory: PhasedCatalogSessionFactory(
             databases: ["app"],
             objectCatalog: [WorkspaceSchemaDatabase(name: "app", objects: [
-                WorkspaceSchemaObject(name: "users", kind: .table, columns: []),
+                WorkspaceSchemaObject(
+                    name: "users",
+                    kind: .table,
+                    columns: [],
+                    comment: "系统用户表"
+                ),
             ])],
             columnsByObject: [reference: columns],
             columnGate: nil,
@@ -37,6 +47,7 @@ struct WorkspaceSchemaCatalogCoordinatorTests {
         let retried = await coordinator.prepareColumns(for: [reference])
         #expect(retried.hasLoadedColumns(for: reference))
         #expect(retried.database(named: "app")?.object(named: "users")?.columns == columns)
+        #expect(retried.database(named: "app")?.object(named: "users")?.comment == "系统用户表")
         #expect(await recorder.requests() == [[reference], [reference]])
 
         _ = await coordinator.prepareColumns(for: [reference])

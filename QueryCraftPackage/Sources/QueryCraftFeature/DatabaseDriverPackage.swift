@@ -72,7 +72,9 @@ enum DatabaseDriverArchitecture: String, Codable, Hashable, Sendable {
 struct DatabaseDriverCompatibilityValidator: Sendable {
     // API 3 predates the public-client LicenseAccessGate layout. Its drivers
     // can dispatch through a removed actor vtable slot and crash before I/O.
-    static let currentDriverAPIVersion = 4
+    // API 4 predates the commented schema-catalog structs, whose initializers
+    // no longer match; its drivers fail to load or construct stale layouts.
+    static let currentDriverAPIVersion = 5
 
     let appVersion: String
     let driverAPIVersion: Int

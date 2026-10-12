@@ -85,15 +85,18 @@ public struct WorkspaceSchemaObject: Equatable, Identifiable, Sendable {
     public let name: String
     public let kind: WorkspaceDatabaseObjectKind
     public let columns: [WorkspaceSchemaColumn]
+    public let comment: String
 
     public init(
         name: String,
         kind: WorkspaceDatabaseObjectKind,
-        columns: [WorkspaceSchemaColumn]
+        columns: [WorkspaceSchemaColumn],
+        comment: String = ""
     ) {
         self.name = name
         self.kind = kind
         self.columns = columns
+        self.comment = comment
     }
 
     public var id: String { "\(kind.rawValue):\(name)" }
@@ -103,11 +106,18 @@ public struct WorkspaceSchemaColumn: Equatable, Identifiable, Sendable {
     public let name: String
     public let type: String
     public let ordinalPosition: Int
+    public let comment: String
 
-    public init(name: String, type: String, ordinalPosition: Int) {
+    public init(
+        name: String,
+        type: String,
+        ordinalPosition: Int,
+        comment: String = ""
+    ) {
         self.name = name
         self.type = type
         self.ordinalPosition = ordinalPosition
+        self.comment = comment
     }
 
     public var id: String { name }

@@ -6,7 +6,7 @@ project_root="${0:A:h:h}"
 source "$project_root/scripts/driver-package-common.sh"
 configuration="${CONFIGURATION:-Debug}"
 driver_version="${DRIVER_VERSION:-1.0.1}"
-driver_build="${DRIVER_BUILD:-1}"
+driver_build="${DRIVER_BUILD:-2}"
 driver_arch="${DRIVER_ARCH:-$(uname -m)}"
 if [[ "$driver_arch" != "x86_64" && "$driver_arch" != "arm64" ]]; then
     print -u2 "Unsupported driver architecture: $driver_arch"

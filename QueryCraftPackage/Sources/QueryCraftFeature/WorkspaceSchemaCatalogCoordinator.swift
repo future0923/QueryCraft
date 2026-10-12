@@ -242,7 +242,8 @@ final class WorkspaceSchemaCatalogCoordinator {
                         return WorkspaceSchemaObject(
                             name: object.name,
                             kind: object.kind,
-                            columns: activeRelationColumns[reference] ?? []
+                            columns: activeRelationColumns[reference] ?? [],
+                            comment: object.comment
                         )
                     }
                 )
