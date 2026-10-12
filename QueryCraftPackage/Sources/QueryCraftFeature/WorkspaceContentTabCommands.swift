@@ -32,7 +32,10 @@ public struct WorkspaceContentTabCommands: Commands {
                 ) {
                     actions?.selectAtIndex(number - 1)
                 }
-                .keyboardShortcut(KeyEquivalent(Character(String(number))))
+                .keyboardShortcut(
+                    KeyEquivalent(Character(String(number))),
+                    modifiers: .control
+                )
                 .disabled(actions?.hasContentTabs != true)
             }
 

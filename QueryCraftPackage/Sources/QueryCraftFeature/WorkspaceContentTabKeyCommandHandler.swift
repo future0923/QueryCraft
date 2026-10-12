@@ -59,7 +59,7 @@ struct WorkspaceContentTabKeyCommandHandler: NSViewRepresentable {
                 actions.closeSelected()
                 return true
             }
-            if modifiers == .command,
+            if modifiers == .control,
                let index = Self.numberKeyCodes.firstIndex(of: event.keyCode)
             {
                 actions.selectAtIndex(index)

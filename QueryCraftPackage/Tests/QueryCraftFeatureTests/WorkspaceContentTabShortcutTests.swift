@@ -26,11 +26,22 @@ struct WorkspaceContentTabShortcutTests {
             actions: recorder.actions
         )
 
-        #expect(coordinator.handle(try event(keyCode: 20, modifiers: .command)))
+        #expect(coordinator.handle(try event(keyCode: 20, modifiers: .control)))
         #expect(coordinator.handle(try event(keyCode: 30, modifiers: [.command, .shift])))
         #expect(coordinator.handle(try event(keyCode: 33, modifiers: [.command, .shift])))
         #expect(recorder.selectedIndex == 2)
         #expect(recorder.relativeSelections == [1, -1])
+    }
+
+    @Test
+    func commandNumbersStayAvailableForObjectDetailTabs() throws {
+        let recorder = WorkspaceContentTabActionRecorder()
+        let coordinator = WorkspaceContentTabKeyCommandHandler.Coordinator(
+            actions: recorder.actions
+        )
+
+        #expect(!coordinator.handle(try event(keyCode: 18, modifiers: .command)))
+        #expect(recorder.selectedIndex == nil)
     }
 
     private func event(

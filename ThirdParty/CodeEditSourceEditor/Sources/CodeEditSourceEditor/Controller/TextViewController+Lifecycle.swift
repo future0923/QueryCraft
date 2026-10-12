@@ -302,6 +302,10 @@ extension TextViewController {
             _ = self.textView.resignFirstResponder()
             self.findViewController?.showFindPanel()
             return nil
+        case (commandKey, "d"):
+            guard isEditable, !textView.hasMarkedText() else { return event }
+            textView.duplicateSelectionOrLine()
+            return nil
         case (.init(rawValue: 0), "\u{1b}"): // Escape key
             if findViewController?.viewModel.isShowingFindPanel == true {
                 self.findViewController?.hideFindPanel()

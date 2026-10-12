@@ -1445,6 +1445,157 @@ struct WorkspaceCodeEditQueryEditorTests {
         #expect(textView.string == "selni")
     }
 
+    @Test
+    func commandDDuplicatesTheLineAtTheCaretAndUndoRestoresIt() throws {
+        let sql = "SELECT 1;\nSELECT 2;\nSELECT 3;"
+        let mountedEditor = mountEditor(
+            text: sql,
+            selectedRange: NSRange(location: 3, length: 0)
+        )
+        defer { mountedEditor.window.orderOut(nil) }
+        let textView = try #require(
+            findCodeEditTextView(in: mountedEditor.hostingView)
+        )
+        let controller = try #require(textViewController(for: textView))
+        let duplicated = "SELECT 1;\nSELECT 1;\nSELECT 2;\nSELECT 3;"
+
+        #expect(try routeCommandD(on: controller) == nil)
+
+        #expect(textView.string == duplicated)
+        #expect(textView.selectedRange() == NSRange(location: 13, length: 0))
+
+        let undoManager = try #require(textView.undoManager)
+        undoManager.undo()
+        #expect(textView.string == sql)
+        undoManager.redo()
+        #expect(textView.string == duplicated)
+    }
+
+    @Test
+    func commandDDuplicatesSelectedLinesAndKeepsTheSelectionOnTheCopy() throws {
+        let mountedEditor = mountEditor(
+            text: "a\nb\nc\n",
+            selectedRange: NSRange(location: 2, length: 3)
+        )
+        defer { mountedEditor.window.orderOut(nil) }
+        let textView = try #require(
+            findCodeEditTextView(in: mountedEditor.hostingView)
+        )
+        let controller = try #require(textViewController(for: textView))
+
+        #expect(try routeCommandD(on: controller) == nil)
+
+        #expect(textView.string == "a\nb\nc\nb\nc\n")
+        #expect(textView.selectedRange() == NSRange(location: 6, length: 3))
+    }
+
+    @Test
+    func commandDDuplicatesTheFinalLineWithoutATrailingNewline() throws {
+        let mountedEditor = mountEditor(
+            text: "a\nb",
+            selectedRange: NSRange(location: 3, length: 0)
+        )
+        defer { mountedEditor.window.orderOut(nil) }
+        let textView = try #require(
+            findCodeEditTextView(in: mountedEditor.hostingView)
+        )
+        let controller = try #require(textViewController(for: textView))
+
+        #expect(try routeCommandD(on: controller) == nil)
+
+        #expect(textView.string == "a\nb\nb")
+        #expect(textView.selectedRange() == NSRange(location: 5, length: 0))
+    }
+
+    @Test
+    func commandDDuplicatesTheLinesOfEveryCursor() throws {
+        let mountedEditor = mountEditor(
+            text: "one\ntwo\nthree\n",
+            selectedRange: NSRange(location: 1, length: 0)
+        )
+        defer { mountedEditor.window.orderOut(nil) }
+        let textView = try #require(
+            findCodeEditTextView(in: mountedEditor.hostingView)
+        )
+        let controller = try #require(textViewController(for: textView))
+        textView.selectionManager.setSelectedRanges([
+            NSRange(location: 1, length: 0),
+            NSRange(location: 9, length: 0),
+        ])
+
+        #expect(try routeCommandD(on: controller) == nil)
+
+        #expect(textView.string == "one\none\ntwo\nthree\nthree\n")
+        let ranges = textView.selectionManager.textSelections
+            .map(\.range)
+            .sorted { $0.location < $1.location }
+        #expect(ranges == [
+            NSRange(location: 5, length: 0),
+            NSRange(location: 19, length: 0),
+        ])
+    }
+
+    @Test
+    func commandDDoesNotDuplicateDuringMarkedTextComposition() throws {
+        let sql = "SELECT 1;"
+        let mountedEditor = mountEditor(
+            text: sql,
+            selectedRange: NSRange(location: 3, length: 0)
+        )
+        defer { mountedEditor.window.orderOut(nil) }
+        let textView = try #require(
+            findCodeEditTextView(in: mountedEditor.hostingView)
+        )
+        let controller = try #require(textViewController(for: textView))
+        textView.setMarkedText(
+            "ni" as NSString,
+            selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        let composing = textView.string
+
+        #expect(try routeCommandD(on: controller) != nil)
+
+        #expect(textView.string == composing)
+    }
+
+    @Test
+    func commandDLeavesReadOnlyEditorsUntouched() throws {
+        let sql = "SELECT 1;\nSELECT 2;"
+        let mountedEditor = mountEditor(
+            text: sql,
+            selectedRange: NSRange(location: 3, length: 0)
+        )
+        defer { mountedEditor.window.orderOut(nil) }
+        let textView = try #require(
+            findCodeEditTextView(in: mountedEditor.hostingView)
+        )
+        let controller = try #require(textViewController(for: textView))
+        var configuration = controller.configuration
+        configuration.behavior.isEditable = false
+        controller.configuration = configuration
+
+        #expect(try routeCommandD(on: controller) != nil)
+
+        #expect(textView.string == sql)
+    }
+
+    private func routeCommandD(on controller: TextViewController) throws -> NSEvent? {
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: controller.view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "d",
+            charactersIgnoringModifiers: "d",
+            isARepeat: false,
+            keyCode: 2
+        ))
+        return controller.handleEvent(event: event)
+    }
+
     private func mountEditor(
         text: String,
         selectedRange: NSRange,
