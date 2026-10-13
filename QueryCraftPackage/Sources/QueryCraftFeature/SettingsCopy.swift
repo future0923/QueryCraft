@@ -22,6 +22,8 @@ struct SettingsCopy {
             text("外观", "Appearance")
         case .editor:
             text("编辑器", "Editor")
+        case .snippets:
+            text("代码片段", "Snippets")
         case .query:
             text("查询", "Query")
         case .data:
@@ -363,6 +365,66 @@ struct SettingsCopy {
     }
 
     var restoreEditorDefaults: String { text("恢复编辑器默认值", "Restore Editor Defaults") }
+
+    var snippetsDescription: String {
+        text(
+            "自定义编辑器中触发的 SQL 代码片段模板。内容中的 ${名称} 为占位符，插入后会被选中。",
+            "Customize SQL snippet templates triggered in the editor. ${name} marks a placeholder that is selected after inserting."
+        )
+    }
+    var addSnippet: String { text("添加片段", "Add Snippet") }
+    var snippetColumnName: String { text("显示名", "Name") }
+    var snippetColumnTrigger: String { text("触发键", "Trigger") }
+    var snippetColumnStatus: String { text("状态", "Status") }
+    var snippetColumnContent: String { text("SQL 内容", "Content") }
+    var snippetEnabled: String { text("已启用", "Enabled") }
+    var snippetDisabled: String { text("已停用", "Disabled") }
+    var editSnippet: String { text("编辑片段", "Edit Snippet") }
+    var newSnippet: String { text("新建片段", "New Snippet") }
+    var snippetNameField: String { text("显示名", "Display name") }
+    var snippetTriggerField: String { text("触发键", "Trigger") }
+    var snippetContentField: String { text("SQL 内容", "SQL content") }
+    var snippetEnabledField: String { text("启用", "Enabled") }
+    var snippetPlaceholderHint: String {
+        text(
+            "使用 ${名称} 标记占位符，插入后第一个占位符会被选中，可直接输入替换；Tab 跳到下一个占位符，Esc 结束。",
+            "Mark placeholders with ${name}. After inserting, the first placeholder is selected so you can type over it. Tab jumps to the next placeholder, Esc ends the session."
+        )
+    }
+    var snippetValidationNameRequired: String {
+        text("请输入显示名。", "Enter a display name.")
+    }
+    var snippetValidationTriggerRequired: String {
+        text("请输入触发键。", "Enter a trigger.")
+    }
+    var snippetValidationTriggerInvalid: String {
+        text(
+            "触发键不能包含空格或换行。",
+            "The trigger cannot contain spaces or line breaks."
+        )
+    }
+    var snippetValidationTriggerDuplicate: String {
+        text(
+            "触发键已被其他片段使用。",
+            "Another snippet already uses this trigger."
+        )
+    }
+    var snippetValidationContentRequired: String {
+        text("请输入 SQL 内容。", "Enter SQL content.")
+    }
+    var save: String { text("保存", "Save") }
+    var edit: String { text("编辑", "Edit") }
+    var delete: String { text("删除", "Delete") }
+    var restoreSnippetDefaults: String {
+        text("恢复默认片段", "Restore Default Snippets")
+    }
+    var snippetEmptyTitle: String { text("还没有代码片段", "No snippets yet") }
+    var snippetEmptyDescription: String {
+        text(
+            "点击“添加片段”创建第一个片段。",
+            "Click “Add Snippet” to create your first snippet."
+        )
+    }
 
     var queryExecutionSection: String { text("执行", "Execution") }
     var queryTimeout: String { text("查询超时", "Query timeout") }

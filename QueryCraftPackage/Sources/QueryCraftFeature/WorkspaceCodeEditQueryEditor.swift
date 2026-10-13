@@ -112,7 +112,11 @@ enum WorkspaceEditorTheme {
             invisibles: .init(color: color(.tertiaryLabelColor)),
             background: color(.textBackgroundColor),
             lineHighlight: color(.tertiarySystemFill),
-            selection: color(.selectedTextBackgroundColor),
+            // CodeEdit preserves syntax foreground colors inside selections. Use a
+            // translucent selection so dark text remains readable in the light theme.
+            selection: color(.controlAccentColor).withAlphaComponent(
+                appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 0.45 : 0.28
+            ),
             keywords: .init(color: color(.systemPurple), bold: true),
             commands: .init(color: color(.systemTeal)),
             types: .init(color: color(.systemBlue)),

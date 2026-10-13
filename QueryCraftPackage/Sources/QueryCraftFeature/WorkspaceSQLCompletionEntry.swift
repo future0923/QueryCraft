@@ -29,6 +29,7 @@ struct WorkspaceSQLCompletionEntry: CodeSuggestionEntry {
         case .view: "eye"
         case .column: "rectangle.grid.1x2"
         case .queryOutput: "v.square"
+        case .snippet: "curlybraces"
         }
         return Image(systemName: systemName)
     }
@@ -41,6 +42,7 @@ struct WorkspaceSQLCompletionEntry: CodeSuggestionEntry {
         case .table, .view: .orange
         case .column: .indigo
         case .queryOutput: .orange
+        case .snippet: .pink
         }
     }
 }

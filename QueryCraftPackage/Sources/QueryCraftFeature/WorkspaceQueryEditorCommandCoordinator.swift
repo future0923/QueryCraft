@@ -4,12 +4,15 @@ import CodeEditTextView
 
 @MainActor
 final class WorkspaceQueryEditorCommandCoordinator: @preconcurrency TextViewCoordinator,
-    TextViewKeyCommandHandling
+    TextViewKeyCommandHandling,
+    TextViewKeyCommandClaiming,
+    @preconcurrency TextViewDelegate
 {
     private weak var document: WorkspaceQueryDocumentModel?
     private weak var languageService: WorkspaceSQLLanguageService?
     private weak var controller: TextViewController?
     private weak var textView: TextView?
+    private let snippetSession: SQLSnippetSession
     private var executionPlanHandler: (@MainActor (SQLExecutionBatchPlan) -> Void)?
     private var saveHandler: (@MainActor () -> Void)?
     private var needsInitialFocus = true
@@ -17,16 +20,19 @@ final class WorkspaceQueryEditorCommandCoordinator: @preconcurrency TextViewCoor
     init(
         document: WorkspaceQueryDocumentModel,
         languageService: WorkspaceSQLLanguageService,
+        snippetSession: SQLSnippetSession = SQLSnippetSession(),
         save: (@MainActor () -> Void)? = nil
     ) {
         self.document = document
         self.languageService = languageService
+        self.snippetSession = snippetSession
         saveHandler = save
     }
 
     func prepareCoordinator(controller: TextViewController) {
         self.controller = controller
         textView = controller.textView
+        snippetSession.endIfTextViewChanged(controller.textView)
         configureScrolling(in: controller)
     }
 
@@ -38,6 +44,7 @@ final class WorkspaceQueryEditorCommandCoordinator: @preconcurrency TextViewCoor
     }
 
     func destroy() {
+        snippetSession.end()
         // The context outlives transient SourceEditor controllers. Weak UI
         // references clear themselves when the final controller is released.
     }
@@ -55,6 +62,18 @@ final class WorkspaceQueryEditorCommandCoordinator: @preconcurrency TextViewCoor
         }
     }
 
+    func claimsTextViewKeyCommand(
+        _ command: TextViewKeyCommand,
+        textView: TextView
+    ) -> Bool {
+        switch command {
+        case .tab, .backtab:
+            return snippetSession.isActive && !textView.hasMarkedText()
+        default:
+            return false
+        }
+    }
+
     func handleTextViewKeyCommand(
         _ command: TextViewKeyCommand,
         textView: TextView
@@ -62,6 +81,14 @@ final class WorkspaceQueryEditorCommandCoordinator: @preconcurrency TextViewCoor
         guard let document else { return false }
 
         switch command {
+        case .tab:
+            guard !textView.hasMarkedText() else { return false }
+            return snippetSession.jumpToNextPlaceholder()
+
+        case .backtab:
+            guard !textView.hasMarkedText() else { return false }
+            return snippetSession.jumpToPreviousPlaceholder()
+
         case .commandReturn:
             guard !textView.hasMarkedText() else { return true }
             guard !document.executionState.isRunning else { return true }
@@ -92,12 +119,35 @@ final class WorkspaceQueryEditorCommandCoordinator: @preconcurrency TextViewCoor
 
         case .escape:
             guard !textView.hasMarkedText() else { return false }
+            if snippetSession.isActive {
+                snippetSession.end()
+                return true
+            }
             guard document.executionState.isRunning else { return false }
             Task {
                 await document.stop()
             }
             return true
         }
+    }
+
+    func textView(
+        _ textView: TextView,
+        didReplaceContentsIn range: NSRange,
+        with string: String
+    ) {
+        snippetSession.textDidChange(
+            in: range,
+            replacementLength: (string as NSString).length
+        )
+    }
+
+    func textViewDidChangeSelection(
+        controller: TextViewController,
+        newPositions: [CursorPosition]
+    ) {
+        guard let range = newPositions.first?.range else { return }
+        snippetSession.selectionDidChange(to: range)
     }
 
     func format(_ request: SQLFormattingRequest) {
@@ -117,6 +167,7 @@ final class WorkspaceQueryEditorCommandCoordinator: @preconcurrency TextViewCoor
 
     func replaceEditorTextIfNeeded(_ text: String) {
         guard let textView, textView.string != text else { return }
+        snippetSession.end()
 
         let previousSelection = textView.selectedRange()
         let textLength = (text as NSString).length

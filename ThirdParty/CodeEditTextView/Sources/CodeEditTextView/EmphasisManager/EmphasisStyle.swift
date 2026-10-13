@@ -15,6 +15,11 @@ public enum EmphasisStyle: Equatable {
     case underline(color: NSColor)
     /// Outline emphasis with a border color
     case outline(color: NSColor, fill: Bool = false)
+    /// Plain background fill with the given color.
+    ///
+    /// Unlike ``standard`` this never draws a duplicate text layer, never flashes or pops, and never draws
+    /// shadows. Useful for selection-like highlights.
+    case fill(color: NSColor, borderColor: NSColor? = nil)
 
     public static func == (lhs: EmphasisStyle, rhs: EmphasisStyle) -> Bool {
         switch (lhs, rhs) {
@@ -24,6 +29,8 @@ public enum EmphasisStyle: Equatable {
             return lhsColor == rhsColor
         case let (.outline(lhsColor, lhsFill), .outline(rhsColor, rhsFill)):
             return lhsColor == rhsColor && lhsFill == rhsFill
+        case let (.fill(lhsColor, lhsBorder), .fill(rhsColor, rhsBorder)):
+            return lhsColor == rhsColor && lhsBorder == rhsBorder
         default:
             return false
         }
@@ -35,7 +42,7 @@ public enum EmphasisStyle: Equatable {
             4
         case .underline:
             0
-        case .outline:
+        case .fill, .outline:
             2.5
         }
     }

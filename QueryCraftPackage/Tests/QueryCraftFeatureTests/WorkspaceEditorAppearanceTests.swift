@@ -24,6 +24,21 @@ struct WorkspaceEditorAppearanceTests {
         )
     }
 
+    @Test(arguments: [NSAppearance.Name.aqua, .darkAqua])
+    func selectedTextRemainsReadableWithSyntaxForegroundColors(appearance: NSAppearance.Name) throws {
+        let theme = WorkspaceEditorTheme.make(for: appearance)
+        let selection = try #require(theme.selection.usingColorSpace(.deviceRGB))
+        let background = try #require(theme.background.usingColorSpace(.deviceRGB))
+        let alpha = selection.alphaComponent
+        let composite = NSColor(
+            calibratedRed: selection.redComponent * alpha + background.redComponent * (1 - alpha),
+            green: selection.greenComponent * alpha + background.greenComponent * (1 - alpha),
+            blue: selection.blueComponent * alpha + background.blueComponent * (1 - alpha),
+            alpha: 1
+        )
+        #expect(contrastRatio(foreground: theme.text.color, background: composite) >= 4.5)
+    }
+
     private func contrastRatio(
         foreground: NSColor,
         background: NSColor

@@ -76,12 +76,14 @@ public struct CodeLanguage: Hashable {
 
     public func queryURL(for highlights: String) -> URL? {
         guard id == .sql || id == .json else { return nil }
-        return Bundle.module.resourceURL?
-            .appendingPathComponent(
-                id == .sql
-                    ? "Resources/tree-sitter-sql/\(highlights).scm"
-                    : "Resources/tree-sitter-json/\(highlights).scm"
-            )
+        let directory = id == .sql ? "tree-sitter-sql" : "tree-sitter-json"
+        // Xcode copies the Resources folder into a bundle's resource root;
+        // command-line SwiftPM can use that folder itself as resourceURL.
+        return Bundle.module.url(
+            forResource: highlights, withExtension: "scm", subdirectory: "Resources/\(directory)"
+        ) ?? Bundle.module.url(
+            forResource: highlights, withExtension: "scm", subdirectory: directory
+        )
     }
 
     public static func == (lhs: CodeLanguage, rhs: CodeLanguage) -> Bool {

@@ -120,10 +120,15 @@ class SuggestionViewController: NSViewController {
               let activeTextView = model?.activeTextView,
               let activeWindow = activeTextView.view.window,
               event.windowNumber == activeWindow.windowNumber,
-              activeWindow.firstResponder === activeTextView.textView
+              activeWindow.firstResponder === activeTextView.textView,
+              !activeTextView.textView.hasMarkedText()
         else {
             return event
         }
+
+        // Snippet navigation keeps the configured acceptance key unchanged. In
+        // particular, a Tab-only preference must not start accepting Return.
+        if activeTextView.coordinatorClaimsTabEvent(event) { return event }
 
         switch event.keyCode {
         case 53: // Escape

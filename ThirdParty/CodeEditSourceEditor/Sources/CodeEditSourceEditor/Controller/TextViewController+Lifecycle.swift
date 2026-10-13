@@ -345,17 +345,49 @@ extension TextViewController {
         return false
     }
 
+    /// 协调器是否会在无副作用的前提下接管该按键，供补全窗口让出按键前咨询。
+    func coordinatorClaimsKeyCommand(_ command: TextViewKeyCommand) -> Bool {
+        for coordinator in textCoordinators.values() {
+            if let claiming = coordinator as? any TextViewKeyCommandClaiming,
+               claiming.claimsTextViewKeyCommand(command, textView: textView)
+            {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// The completion monitor must let snippet navigation through regardless of monitor order.
+    func coordinatorClaimsTabEvent(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.shift, .control, .option, .command])
+        guard event.keyCode == 48, !textView.hasMarkedText(),
+              modifiers.isEmpty || modifiers == .shift else { return false }
+        return coordinatorClaimsKeyCommand(modifiers == .shift ? .backtab : .tab)
+    }
+
     /// Handles the tab key event.
     /// If the Shift key is pressed, it handles unindenting. If no modifier key is pressed, it checks if multiple lines
-    /// are highlighted and handles indenting accordingly.
+    /// are highlighted and handles indenting accordingly. Coordinators may claim the tab key first (for example to
+    /// jump between snippet placeholders) even while the completion window is visible; the window is closed when a
+    /// coordinator claims the key.
     ///
     /// - Returns: The original event if it should be passed on, or `nil` to indicate handling within the method.
     func handleTab(event: NSEvent, modifierFlags: UInt) -> NSEvent? {
-        let shiftKey = NSEvent.ModifierFlags.shift.rawValue
+        let modifiers = NSEvent.ModifierFlags(rawValue: modifierFlags)
+            .intersection([.shift, .control, .option, .command])
+        guard !textView.hasMarkedText(), modifiers.isEmpty || modifiers == .shift else { return event }
 
-        if modifierFlags == shiftKey {
+        if modifiers == .shift {
+            if routeKeyCommand(.backtab) {
+                SuggestionController.shared.close()
+                return nil
+            }
             handleIndent(inwards: true)
         } else {
+            if routeKeyCommand(.tab) {
+                SuggestionController.shared.close()
+                return nil
+            }
             // Only allow tab to work if multiple lines are selected
             guard multipleLinesHighlighted() else { return event }
             handleIndent()

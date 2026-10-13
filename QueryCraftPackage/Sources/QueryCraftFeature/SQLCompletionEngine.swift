@@ -8,6 +8,7 @@ enum SQLCompletionEngine {
         let schemaCatalog: WorkspaceSchemaCatalogSnapshot
         let defaultDatabase: String?
         let databaseType: DatabaseType
+        let snippets: [SQLSnippetCompletionSource]
 
         init(
             source: SQLSourceSnapshot,
@@ -15,7 +16,8 @@ enum SQLCompletionEngine {
             parseSnapshot: SQLParseSnapshot,
             schemaCatalog: WorkspaceSchemaCatalogSnapshot,
             defaultDatabase: String?,
-            databaseType: DatabaseType = .mysql
+            databaseType: DatabaseType = .mysql,
+            snippets: [SQLSnippetCompletionSource] = []
         ) {
             self.source = source
             self.cursorLocation = cursorLocation
@@ -23,6 +25,7 @@ enum SQLCompletionEngine {
             self.schemaCatalog = schemaCatalog
             self.defaultDatabase = defaultDatabase
             self.databaseType = databaseType
+            self.snippets = snippets
         }
     }
 
@@ -140,7 +143,8 @@ enum SQLCompletionEngine {
             projectedColumnNames: projectedColumnNames,
             catalog: request.schemaCatalog,
             defaultDatabase: request.defaultDatabase,
-            includeFallback: !prefix.isEmpty
+            includeFallback: !prefix.isEmpty,
+            snippets: request.snippets
         )
         let ranked = try SQLCompletionRanker.rank(
             candidates,
@@ -1160,9 +1164,14 @@ enum SQLCompletionEngine {
         projectedColumnNames: [String],
         catalog: WorkspaceSchemaCatalogSnapshot,
         defaultDatabase: String?,
-        includeFallback: Bool
+        includeFallback: Bool,
+        snippets: [SQLSnippetCompletionSource]
     ) throws -> [SQLCompletionCandidate] {
         try Task.checkCancellation()
+        // 片段只在输入了前缀时出现，且不进入「schema.」这类限定上下文。
+        let snippetGroup = includeFallback
+            ? snippetCandidates(snippets: snippets)
+            : []
         if context.kind == .qualified, let qualifier {
             if let syntheticRelation = syntheticRelations.first(where: {
                 identifiersEqual($0.alias ?? $0.name, qualifier)
@@ -1202,7 +1211,7 @@ enum SQLCompletionEngine {
                 defaultDatabase: defaultDatabase,
                 priority: 0,
                 rankingGroup: 0
-            )
+            ) + snippetGroup
         }
 
         let fallbackPriority = switch context.confidence {
@@ -1332,7 +1341,25 @@ enum SQLCompletionEngine {
             keywordCandidates(dialect.optimizerHints)
                 + aliasCandidates(for: bindings)
         }
-        return primary + fallback
+        return primary + fallback + snippetGroup
+    }
+
+    private static func snippetCandidates(
+        snippets: [SQLSnippetCompletionSource]
+    ) -> [SQLCompletionCandidate] {
+        snippets.map { snippet in
+            SQLCompletionCandidate(
+                label: snippet.name,
+                insertionText: snippet.insertionText,
+                detail: snippet.previewText,
+                kind: .snippet,
+                rankingGroup: -1,
+                contextPriority: 0,
+                cursorOffset: 0,
+                matchLabel: snippet.trigger,
+                selectionRanges: snippet.placeholderRanges
+            )
+        }
     }
 
     private static func projectedColumnCandidates(

@@ -9,6 +9,8 @@ struct SQLCompletionCandidate {
     let contextPriority: Int
     let cursorOffset: Int
     let allowsFuzzyMatch: Bool
+    let matchLabel: String?
+    let selectionRanges: [SQLSourceRange]
 
     init(
         label: String,
@@ -18,7 +20,9 @@ struct SQLCompletionCandidate {
         rankingGroup: Int,
         contextPriority: Int,
         cursorOffset: Int,
-        allowsFuzzyMatch: Bool = true
+        allowsFuzzyMatch: Bool = true,
+        matchLabel: String? = nil,
+        selectionRanges: [SQLSourceRange] = []
     ) {
         self.label = label
         self.insertionText = insertionText
@@ -28,6 +32,8 @@ struct SQLCompletionCandidate {
         self.contextPriority = contextPriority
         self.cursorOffset = cursorOffset
         self.allowsFuzzyMatch = allowsFuzzyMatch
+        self.matchLabel = matchLabel
+        self.selectionRanges = selectionRanges
     }
 }
 
@@ -46,11 +52,8 @@ enum SQLCompletionRanker {
             if index.isMultiple(of: 128) {
                 try Task.checkCancellation()
             }
-            guard let match = CompletionLabelMatcher.match(
-                label: candidate.label,
-                query: prefix,
-                allowsFuzzyMatch: candidate.allowsFuzzyMatch
-            ) else { continue }
+            guard let match = bestMatch(for: candidate, query: prefix)
+            else { continue }
             let key = "\(candidate.kind):\(candidate.insertionText.lowercased())"
             guard seen.insert(key).inserted else { continue }
             best.insert(
@@ -71,9 +74,26 @@ enum SQLCompletionRanker {
                 kind: ranked.candidate.kind,
                 replacementRange: replacementRange,
                 sourceRevision: revision,
-                cursorOffset: ranked.candidate.cursorOffset
+                cursorOffset: ranked.candidate.cursorOffset,
+                selectionRanges: ranked.candidate.selectionRanges.map {
+                    SQLSourceRange(
+                        location: replacementRange.location + $0.location,
+                        length: $0.length
+                    )
+                }
             )
         }
+    }
+
+    private static func bestMatch(
+        for candidate: SQLCompletionCandidate,
+        query: String
+    ) -> CompletionLabelMatch? {
+        CompletionLabelMatcher.match(
+            label: candidate.matchLabel ?? candidate.label,
+            query: query,
+            allowsFuzzyMatch: candidate.allowsFuzzyMatch
+        )
     }
 
     private struct RankedCandidate {

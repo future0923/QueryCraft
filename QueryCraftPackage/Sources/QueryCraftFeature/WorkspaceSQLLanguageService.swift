@@ -398,7 +398,8 @@ final class WorkspaceSQLLanguageService: HighlightProviding {
                     parseSnapshot: snapshot,
                     schemaCatalog: schemaCatalog,
                     defaultDatabase: defaultDatabase,
-                    databaseType: databaseType
+                    databaseType: databaseType,
+                    snippets: SQLSnippetStore.shared.completionSources
                 )
             )
         } catch {

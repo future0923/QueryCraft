@@ -19,6 +19,8 @@ struct SettingsDetailView: View {
                 AppearanceSettingsPane(preferences: preferences)
             case .editor:
                 EditorSettingsPane(preferences: preferences)
+            case .snippets:
+                SnippetsSettingsPane()
             case .query:
                 QuerySettingsPane(preferences: preferences)
             case .data:

@@ -196,7 +196,7 @@ public final class EmphasisManager {
 
     private func makeShapePath(forStyle emphasisStyle: EmphasisStyle, range: NSRange) -> NSBezierPath? {
         switch emphasisStyle {
-        case .standard, .outline:
+        case .standard, .outline, .fill:
             return textView?.layoutManager.roundedPathForRange(range, cornerRadius: emphasisStyle.shapeRadius)
         case .underline:
             guard let layoutManager = textView?.layoutManager else {
@@ -240,6 +240,12 @@ public final class EmphasisManager {
             layer.fillColor = shouldFill ? color.cgColor : nil
             layer.opacity = emphasis.flash ? 0.0 : 1.0
             layer.zPosition = 1
+        case let .fill(color, borderColor):
+            layer.fillColor = color.cgColor
+            layer.strokeColor = borderColor?.cgColor
+            layer.lineWidth = borderColor == nil ? 0 : 1
+            layer.opacity = 1.0
+            layer.zPosition = 0
         }
 
         if #available(macOS 14.0, *) {
@@ -259,6 +265,8 @@ public final class EmphasisManager {
     }
 
     private func createTextLayer(for emphasis: Emphasis) -> CATextLayer? {
+        // The fill style is background-only; drawing the text again would duplicate it.
+        if case .fill = emphasis.style { return nil }
         guard let textView = textView,
               let layoutManager = textView.layoutManager,
               let shapePath = layoutManager.roundedPathForRange(emphasis.range),

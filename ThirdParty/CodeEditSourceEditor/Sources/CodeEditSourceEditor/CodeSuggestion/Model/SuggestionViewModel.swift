@@ -74,6 +74,7 @@ final class SuggestionViewModel {
         itemsRequestTask = Task {
             defer { finishRequest(requestID) }
             do {
+                try Task.checkCancellation()
                 let completionItems = await delegate.completionSuggestionsRequested(
                     textView: textView,
                     cursorPosition: cursorPosition

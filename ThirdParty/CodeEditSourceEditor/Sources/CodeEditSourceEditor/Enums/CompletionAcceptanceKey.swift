@@ -1,4 +1,4 @@
-public enum CompletionAcceptanceKey: Equatable, Hashable {
+public enum CompletionAcceptanceKey: Equatable, Hashable, Sendable {
     case returnKey
     case tab
     case returnOrTab

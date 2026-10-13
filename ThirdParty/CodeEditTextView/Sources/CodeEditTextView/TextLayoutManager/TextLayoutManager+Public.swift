@@ -257,10 +257,12 @@ extension TextLayoutManager {
     ///   - cornerRadius: The radius of the edges when rounding. Defaults to four.
     /// - Returns: An `NSBezierPath` representing the visual shape for the text range, or `nil` if the range is invalid.
     public func roundedPathForRange(_ range: NSRange, cornerRadius: CGFloat = 4) -> NSBezierPath? {
-        // Ensure the range is within the bounds of the text storage
+        // Ensure the range is within the bounds of the text storage. Ranges that
+        // are stale or out of bounds must not reach the text storage APIs; they
+        // raise `NSInvalidArgumentException` for invalid indices.
         let validRange = NSRange(
-            location: range.lowerBound,
-            length: min(range.length, lineStorage.length - range.lowerBound)
+            location: min(range.lowerBound, lineStorage.length),
+            length: min(range.length, max(0, lineStorage.length - range.lowerBound))
         )
 
         guard validRange.length > 0 else { return rectForEndOffset().map { NSBezierPath(rect: $0) } }
@@ -268,7 +270,7 @@ extension TextLayoutManager {
         var rightSidePoints: [CGPoint] = [] // Points for Bottom-right → Top-right
         var leftSidePoints: [CGPoint] = []  // Points for Bottom-left → Top-left
 
-        for fragmentRect in rectsFor(range: range) {
+        for fragmentRect in rectsFor(range: validRange) {
             rightSidePoints.append(
                 contentsOf: [
                     CGPoint(x: fragmentRect.maxX, y: fragmentRect.minY), // Bottom-right

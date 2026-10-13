@@ -37,15 +37,21 @@ extension TextView: @retroactive TextInterface {
     ///
     /// If the mutation is empty it will be ignored.
     ///
+    /// Filter-applied mutations (pair insertions, whitespace edits) are real edits, so they notify the
+    /// delegate just like `replaceCharacters` does. Without this, coordinators tracking edits (snippet
+    /// placeholders, completions) would miss them and hold stale ranges.
+    ///
     /// - Parameter mutation: The mutation to apply.
     public func applyMutation(_ mutation: TextMutation) {
         guard !mutation.isEmpty else { return }
+        delegate?.textView(self, willReplaceContentsIn: mutation.range, with: mutation.string)
         _undoManager?.registerMutation(mutation)
         textStorage.replaceCharacters(in: mutation.range, with: mutation.string)
         selectionManager.didReplaceCharacters(
             in: mutation.range,
             replacementLength: (mutation.string as NSString).length
         )
+        delegate?.textView(self, didReplaceContentsIn: mutation.range, with: mutation.string)
         layoutManager.invalidateLayoutForRange(mutation.range)
     }
 }

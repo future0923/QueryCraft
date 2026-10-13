@@ -3,6 +3,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case license
     case appearance
     case editor
+    case snippets
     case query
     case data
     case plugins
@@ -23,6 +24,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
             "paintbrush"
         case .editor:
             "text.cursor"
+        case .snippets:
+            "curlybraces"
         case .query:
             "play.circle"
         case .data:

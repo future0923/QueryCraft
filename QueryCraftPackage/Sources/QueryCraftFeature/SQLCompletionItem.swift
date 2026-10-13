@@ -9,6 +9,7 @@ struct SQLCompletionItem: Equatable, Sendable {
         case view
         case column
         case queryOutput
+        case snippet
     }
 
     let label: String
@@ -18,6 +19,7 @@ struct SQLCompletionItem: Equatable, Sendable {
     let replacementRange: SQLSourceRange
     let sourceRevision: SQLSourceRevision
     let cursorOffset: Int
+    let selectionRanges: [SQLSourceRange]
 }
 
 struct SQLCompletionResult: Equatable, Sendable {

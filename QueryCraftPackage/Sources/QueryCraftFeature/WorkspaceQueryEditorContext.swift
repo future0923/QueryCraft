@@ -15,10 +15,12 @@ final class WorkspaceQueryEditorContext {
         save: (@MainActor () -> Void)? = nil
     ) {
         let languageService = WorkspaceSQLLanguageService()
+        let snippetSession = SQLSnippetSession()
         self.languageService = languageService
         commandCoordinator = WorkspaceQueryEditorCommandCoordinator(
             document: document,
             languageService: languageService,
+            snippetSession: snippetSession,
             save: save
         )
         completionService = WorkspaceSQLCompletionService(
@@ -26,7 +28,8 @@ final class WorkspaceQueryEditorContext {
             schemaCatalog: schemaCatalog,
             defaultDatabase: { document.databaseName },
             prepareCompletionColumns: prepareCompletionColumns,
-            databaseType: { document.databaseType }
+            databaseType: { document.databaseType },
+            snippetSession: snippetSession
         )
     }
 }

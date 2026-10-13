@@ -11,6 +11,7 @@ final class WorkspaceSQLCompletionService: CodeSuggestionDelegate {
     private let prepareCompletionColumns: @MainActor (
         [WorkspaceSchemaObjectReference]
     ) async -> WorkspaceSchemaCatalogSnapshot
+    private let snippetSession: SQLSnippetSession?
     private weak var activeTextView: TextViewController?
 
     init(
@@ -20,13 +21,15 @@ final class WorkspaceSQLCompletionService: CodeSuggestionDelegate {
         prepareCompletionColumns: @escaping @MainActor (
             [WorkspaceSchemaObjectReference]
         ) async -> WorkspaceSchemaCatalogSnapshot,
-        databaseType: @escaping @MainActor () -> DatabaseType = { .mysql }
+        databaseType: @escaping @MainActor () -> DatabaseType = { .mysql },
+        snippetSession: SQLSnippetSession? = nil
     ) {
         self.languageService = languageService
         self.schemaCatalog = schemaCatalog
         self.defaultDatabase = defaultDatabase
         self.prepareCompletionColumns = prepareCompletionColumns
         self.databaseType = databaseType
+        self.snippetSession = snippetSession
     }
 
     func updateSchemaCatalog(_ schemaCatalog: WorkspaceSchemaCatalogSnapshot) {
@@ -135,6 +138,15 @@ final class WorkspaceSQLCompletionService: CodeSuggestionDelegate {
             in: entry.item.replacementRange.nsRange,
             with: entry.item.insertionText
         )
+        if !entry.item.selectionRanges.isEmpty {
+            snippetSession?.start(
+                textView: textView.textView,
+                placeholderRanges: entry.item.selectionRanges,
+                exitLocation: entry.item.replacementRange.location
+                    + (entry.item.insertionText as NSString).length
+            )
+            return
+        }
         if entry.item.cursorOffset != 0 {
             let insertionEnd = entry.item.replacementRange.location
                 + (entry.item.insertionText as NSString).length

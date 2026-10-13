@@ -30,6 +30,7 @@ struct WorkspaceCodeEditQueryEditorTests {
                 backing: .buffered,
                 defer: false
             )
+            window.animationBehavior = .none
             window.appearance = NSAppearance(named: appearanceName)
             window.contentView = hostingView
             window.makeKeyAndOrderFront(nil)
@@ -935,6 +936,7 @@ struct WorkspaceCodeEditQueryEditorTests {
             backing: .buffered,
             defer: false
         )
+        window.animationBehavior = .none
         window.contentView = hostingView
         hostingView.layoutSubtreeIfNeeded()
         hostingView.displayIfNeeded()
@@ -1238,6 +1240,446 @@ struct WorkspaceCodeEditQueryEditorTests {
         #expect(textView.string == "SELECT")
         textView.undoManager?.undo()
         #expect(textView.string == "sel")
+    }
+
+    @Test
+    func applyingASnippetSelectsItsFirstPlaceholder() async throws {
+        let languageService = WorkspaceSQLLanguageService()
+        let snippetSession = SQLSnippetSession()
+        let completionService = WorkspaceSQLCompletionService(
+            languageService: languageService,
+            schemaCatalog: .empty,
+            defaultDatabase: { nil },
+            prepareCompletionColumns: { _ in .empty },
+            snippetSession: snippetSession
+        )
+        let mountedEditor = mountEditor(
+            text: "sel",
+            selectedRange: NSRange(location: 3, length: 0),
+            languageService: languageService,
+            completionService: completionService
+        )
+        defer { mountedEditor.window.close() }
+        let textView = try #require(findCodeEditTextView(in: mountedEditor.hostingView))
+        let controller = try #require(textViewController(for: textView))
+        try #require(mountedEditor.window.makeFirstResponder(textView))
+
+        let cursor = CursorPosition(range: NSRange(location: 3, length: 0))
+        let response = try #require(
+            await completionService.completionSuggestionsRequested(
+                textView: controller,
+                cursorPosition: cursor
+            )
+        )
+        let entry = try #require(
+            response.items
+                .compactMap { $0 as? WorkspaceSQLCompletionEntry }
+                .first { $0.item.kind == .snippet }
+        )
+        completionService.completionWindowApplyCompletion(
+            item: entry,
+            textView: controller,
+            cursorPosition: cursor
+        )
+
+        #expect(textView.string == "SELECT *\nFROM table\nLIMIT 100;")
+        #expect(textView.selectedRange() == NSRange(location: 14, length: 5))
+        #expect(snippetSession.isActive)
+
+        textView.undoManager?.undo()
+        #expect(textView.string == "sel")
+    }
+
+    @Test
+    func tabJumpsBetweenSnippetPlaceholders() async throws {
+        let languageService = WorkspaceSQLLanguageService()
+        let snippetSession = SQLSnippetSession()
+        let completionService = WorkspaceSQLCompletionService(
+            languageService: languageService,
+            schemaCatalog: .empty,
+            defaultDatabase: { nil },
+            prepareCompletionColumns: { _ in .empty },
+            snippetSession: snippetSession
+        )
+        let document = WorkspaceQueryDocumentModel(
+            title: "Query 1",
+            configuration: DatabaseConnectionConfiguration(
+                host: "127.0.0.1", port: 3306, username: "reader",
+                password: "", database: nil, tlsMode: .disabled
+            ),
+            sessionFactory: InMemoryWorkspaceSessionFactory(databases: [])
+        )
+        let coordinator = WorkspaceQueryEditorCommandCoordinator(
+            document: document,
+            languageService: languageService,
+            snippetSession: snippetSession
+        )
+        let mountedEditor = mountEditor(
+            text: "case",
+            selectedRange: NSRange(location: 4, length: 0),
+            languageService: languageService,
+            completionService: completionService,
+            windowStyleMask: [.titled],
+            commandCoordinator: coordinator
+        )
+        defer { mountedEditor.window.close() }
+        let textView = try #require(
+            findCodeEditTextView(in: mountedEditor.hostingView)
+        )
+        let controller = try #require(textViewController(for: textView))
+        try #require(mountedEditor.window.makeFirstResponder(textView))
+        coordinator.controllerDidAppear(controller: controller)
+
+        let cursor = CursorPosition(range: NSRange(location: 4, length: 0))
+        let response = try #require(
+            await completionService.completionSuggestionsRequested(
+                textView: controller,
+                cursorPosition: cursor
+            )
+        )
+        let entry = try #require(
+            response.items
+                .compactMap { $0 as? WorkspaceSQLCompletionEntry }
+                .first { $0.item.kind == .snippet }
+        )
+        completionService.completionWindowApplyCompletion(
+            item: entry,
+            textView: controller,
+            cursorPosition: cursor
+        )
+
+        #expect(textView.string == "CASE WHEN condition THEN value ELSE default END")
+        #expect(textView.selectedRange() == NSRange(location: 10, length: 9))
+        #expect(snippetSession.isActive)
+        #expect(controller.coordinatorClaimsKeyCommand(.tab))
+
+        // 导航优先由协调器接管，不改变用户配置的补全接受键。
+        #expect(controller.completionAcceptanceKey == controller.configuration.behavior.completionAcceptanceKey)
+
+        // Tab 跳到下一个占位符，⇧Tab 回到上一个占位符。
+        sendTabKey(to: controller)
+        #expect(textView.selectedRange() == NSRange(location: 25, length: 5))
+
+        sendTabKey(to: controller, modifiers: [.shift])
+        #expect(textView.selectedRange() == NSRange(location: 10, length: 9))
+        #expect(snippetSession.isActive)
+    }
+
+    @Test
+    func typingInTheRealEditorKeepsOtherPlaceholdersHighlighted() async throws {
+        let languageService = WorkspaceSQLLanguageService()
+        let snippetSession = SQLSnippetSession()
+        let completionService = WorkspaceSQLCompletionService(
+            languageService: languageService,
+            schemaCatalog: .empty,
+            defaultDatabase: { nil },
+            prepareCompletionColumns: { _ in .empty },
+            snippetSession: snippetSession
+        )
+        let document = WorkspaceQueryDocumentModel(
+            title: "Query 1",
+            configuration: DatabaseConnectionConfiguration(
+                host: "127.0.0.1", port: 3306, username: "reader",
+                password: "", database: nil, tlsMode: .disabled
+            ),
+            sessionFactory: InMemoryWorkspaceSessionFactory(databases: [])
+        )
+        let coordinator = WorkspaceQueryEditorCommandCoordinator(
+            document: document,
+            languageService: languageService,
+            snippetSession: snippetSession
+        )
+        let mountedEditor = mountEditor(
+            text: "case",
+            selectedRange: NSRange(location: 4, length: 0),
+            languageService: languageService,
+            completionService: completionService,
+            windowStyleMask: [.titled],
+            commandCoordinator: coordinator
+        )
+        defer { mountedEditor.window.close() }
+        let textView = try #require(
+            findCodeEditTextView(in: mountedEditor.hostingView)
+        )
+        let controller = try #require(textViewController(for: textView))
+        try #require(mountedEditor.window.makeFirstResponder(textView))
+        coordinator.controllerDidAppear(controller: controller)
+
+        let cursor = CursorPosition(range: NSRange(location: 4, length: 0))
+        let response = try #require(
+            await completionService.completionSuggestionsRequested(
+                textView: controller,
+                cursorPosition: cursor
+            )
+        )
+        let entry = try #require(
+            response.items
+                .compactMap { $0 as? WorkspaceSQLCompletionEntry }
+                .first { $0.item.kind == .snippet }
+        )
+        completionService.completionWindowApplyCompletion(
+            item: entry,
+            textView: controller,
+            cursorPosition: cursor
+        )
+
+        #expect(textView.string == "CASE WHEN condition THEN value ELSE default END")
+        #expect(
+            snippetSession.highlightedRanges == [
+                SQLSourceRange(location: 25, length: 5),
+                SQLSourceRange(location: 36, length: 7),
+            ]
+        )
+        #expect(
+            textView.emphasisManager?
+                .getEmphases(for: SQLSnippetSession.emphasisGroup).count == 2
+        )
+        // 直接走 NSTextInputClient 路径，与用户键入的替换链路一致。
+        textView.insertText(
+            "1",
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+
+        #expect(textView.string == "CASE WHEN 1 THEN value ELSE default END")
+        #expect(textView.selectedRange() == NSRange(location: 11, length: 0))
+        #expect(snippetSession.placeholderRanges == [
+            SQLSourceRange(location: 10, length: 1),
+            SQLSourceRange(location: 17, length: 5),
+            SQLSourceRange(location: 28, length: 7),
+        ])
+        #expect(
+            snippetSession.highlightedRanges == [
+                SQLSourceRange(location: 17, length: 5),
+                SQLSourceRange(location: 28, length: 7),
+            ]
+        )
+        #expect(
+            textView.emphasisManager?
+                .getEmphases(for: SQLSnippetSession.emphasisGroup).count == 2
+        )
+        sendTabKey(to: controller)
+        #expect(textView.selectedRange() == NSRange(location: 17, length: 5))
+        #expect(
+            snippetSession.highlightedRanges == [
+                SQLSourceRange(location: 28, length: 7),
+            ]
+        )
+
+        textView.insertText(
+            "2",
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+
+        #expect(textView.string == "CASE WHEN 1 THEN 2 ELSE default END")
+        #expect(
+            snippetSession.highlightedRanges == [
+                SQLSourceRange(location: 24, length: 7),
+            ]
+        )
+        #expect(
+            textView.emphasisManager?
+                .getEmphases(for: SQLSnippetSession.emphasisGroup).count == 1
+        )
+
+        sendTabKey(to: controller)
+        #expect(textView.selectedRange() == NSRange(location: 24, length: 7))
+        #expect(snippetSession.highlightedRanges.isEmpty)
+        #expect(
+            textView.emphasisManager?
+                .getEmphases(for: SQLSnippetSession.emphasisGroup).isEmpty
+                == true
+        )
+    }
+
+    @Test
+    func liveBindingsKeepSnippetPlaceholdersHighlightedWhileTyping() async throws {
+        let languageService = WorkspaceSQLLanguageService()
+        let snippetSession = SQLSnippetSession()
+        let completionService = WorkspaceSQLCompletionService(
+            languageService: languageService,
+            schemaCatalog: .empty,
+            defaultDatabase: { nil },
+            prepareCompletionColumns: { _ in .empty },
+            snippetSession: snippetSession
+        )
+        let document = WorkspaceQueryDocumentModel(
+            title: "Query 1",
+            configuration: DatabaseConnectionConfiguration(
+                host: "127.0.0.1", port: 3306, username: "reader",
+                password: "", database: nil, tlsMode: .disabled
+            ),
+            sessionFactory: InMemoryWorkspaceSessionFactory(databases: [])
+        )
+        document.sql = "case"
+        document.selectedRange = NSRange(location: 4, length: 0)
+        let coordinator = WorkspaceQueryEditorCommandCoordinator(
+            document: document,
+            languageService: languageService,
+            snippetSession: snippetSession
+        )
+        let harness = QueryEditorDocumentHarness(
+            document: document,
+            languageService: languageService,
+            commandCoordinator: coordinator,
+            completionService: completionService
+        )
+        let hostingView = NSHostingView(rootView: harness)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 800, height: 320)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        // 无头测试里窗口的开关动画没有需要展示的屏幕，反而会在释放动画块时崩溃。
+        window.animationBehavior = .none
+        window.contentView = hostingView
+        window.makeKeyAndOrderFront(nil)
+        hostingView.layoutSubtreeIfNeeded()
+        hostingView.displayIfNeeded()
+        defer { window.orderOut(nil) }
+
+        let textView = try #require(findCodeEditTextView(in: hostingView))
+        let controller = try #require(textViewController(for: textView))
+        try #require(window.makeFirstResponder(textView))
+        coordinator.controllerDidAppear(controller: controller)
+
+        let cursor = CursorPosition(range: NSRange(location: 4, length: 0))
+        let response = try #require(
+            await completionService.completionSuggestionsRequested(
+                textView: controller,
+                cursorPosition: cursor
+            )
+        )
+        let entry = try #require(
+            response.items
+                .compactMap { $0 as? WorkspaceSQLCompletionEntry }
+                .first { $0.item.kind == .snippet }
+        )
+        completionService.completionWindowApplyCompletion(
+            item: entry,
+            textView: controller,
+            cursorPosition: cursor
+        )
+        await settleSwiftUIRoundTrip()
+
+        let snippetSQL = "CASE WHEN condition THEN value ELSE default END"
+        #expect(textView.string == snippetSQL)
+        #expect(document.sql == snippetSQL)
+        // selectedRange 只经 SwiftUI 的 cursorPositions → onChange 路径回写，
+        // 断言它就证明绑定往返真实发生。
+        #expect(document.selectedRange == NSRange(location: 10, length: 9))
+        #expect(snippetSession.isActive)
+        #expect(
+            textView.emphasisManager?
+                .getEmphases(for: SQLSnippetSession.emphasisGroup).count == 2
+        )
+
+        textView.insertText(
+            "1",
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        await settleSwiftUIRoundTrip()
+
+        let typedSQL = "CASE WHEN 1 THEN value ELSE default END"
+        #expect(textView.string == typedSQL)
+        #expect(document.sql == typedSQL)
+        #expect(
+            snippetSession.placeholderRanges == [
+                SQLSourceRange(location: 10, length: 1),
+                SQLSourceRange(location: 17, length: 5),
+                SQLSourceRange(location: 28, length: 7),
+            ]
+        )
+        #expect(snippetSession.isActive)
+        #expect(
+            snippetSession.highlightedRanges == [
+                SQLSourceRange(location: 17, length: 5),
+                SQLSourceRange(location: 28, length: 7),
+            ]
+        )
+        #expect(
+            textView.emphasisManager?
+                .getEmphases(for: SQLSnippetSession.emphasisGroup).count == 2
+        )
+
+        // 用户反馈：⌘→ 行内导航曾让全部高亮消失。导航后会话与其余高亮都要保留。
+        sendArrowKey(.right, modifiers: [.command], to: textView)
+        await settleSwiftUIRoundTrip()
+        #expect(
+            textView.selectedRange()
+                == NSRange(location: (typedSQL as NSString).length, length: 0)
+        )
+        #expect(document.selectedRange == textView.selectedRange())
+        #expect(snippetSession.isActive)
+        #expect(
+            snippetSession.placeholderRanges == [
+                SQLSourceRange(location: 10, length: 1),
+                SQLSourceRange(location: 17, length: 5),
+                SQLSourceRange(location: 28, length: 7),
+            ]
+        )
+        #expect(
+            snippetSession.highlightedRanges == [
+                SQLSourceRange(location: 17, length: 5),
+                SQLSourceRange(location: 28, length: 7),
+            ]
+        )
+
+        // 用户反馈：输入引号（自动配对包裹选中占位符）曾让全部高亮消失。
+        sendTabKey(to: controller)
+        await settleSwiftUIRoundTrip()
+        #expect(textView.selectedRange() == NSRange(location: 17, length: 5))
+
+        textView.insertText(
+            "\"",
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        await settleSwiftUIRoundTrip()
+
+        let quotedSQL = "CASE WHEN 1 THEN \"value\" ELSE default END"
+        #expect(textView.string == quotedSQL)
+        #expect(document.sql == quotedSQL)
+        #expect(snippetSession.isActive)
+        #expect(
+            snippetSession.placeholderRanges == [
+                SQLSourceRange(location: 10, length: 1),
+                SQLSourceRange(location: 17, length: 7),
+                SQLSourceRange(location: 30, length: 7),
+            ]
+        )
+        #expect(
+            snippetSession.highlightedRanges == [
+                SQLSourceRange(location: 30, length: 7),
+            ]
+        )
+        #expect(
+            textView.emphasisManager?
+                .getEmphases(for: SQLSnippetSession.emphasisGroup).count == 1
+        )
+
+        // ⌘← 反向导航同样不清空高亮。
+        sendArrowKey(.left, modifiers: [.command], to: textView)
+        await settleSwiftUIRoundTrip()
+        #expect(textView.selectedRange() == NSRange(location: 0, length: 0))
+        #expect(snippetSession.isActive)
+        #expect(
+            snippetSession.highlightedRanges == [
+                SQLSourceRange(location: 30, length: 7),
+            ]
+        )
+
+        // 引号包裹后光标停在被包裹的占位符上（currentIndex 指向它），
+        // 经历以上编辑与导航后，一次 Tab 即可直达最后一个占位符。
+        sendTabKey(to: controller)
+        await settleSwiftUIRoundTrip()
+        #expect(textView.selectedRange() == NSRange(location: 30, length: 7))
+        #expect(snippetSession.highlightedRanges.isEmpty)
+        #expect(
+            textView.emphasisManager?
+                .getEmphases(for: SQLSnippetSession.emphasisGroup).isEmpty
+                == true
+        )
     }
 
     @Test
@@ -1621,6 +2063,8 @@ struct WorkspaceCodeEditQueryEditorTests {
             backing: .buffered,
             defer: false
         )
+        // 无头测试里窗口的开关动画没有需要展示的屏幕，反而会在释放动画块时崩溃。
+        window.animationBehavior = .none
         if let appearance {
             window.appearance = NSAppearance(named: appearance)
         }
@@ -1701,6 +2145,47 @@ struct WorkspaceCodeEditQueryEditorTests {
         NSApp.sendEvent(event)
     }
 
+    /// 本地事件监视器只在真实键盘窗口下生效，测试直接走控制器的事件入口，
+    /// 与应用内监视器命中后调用的路径一致。
+    private func sendTabKey(
+        to controller: TextViewController,
+        modifiers: NSEvent.ModifierFlags = []
+    ) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: controller.view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "\t",
+            charactersIgnoringModifiers: "\t",
+            isARepeat: false,
+            keyCode: 48
+        ) else {
+            Issue.record("Failed to create Tab key event")
+            return
+        }
+        _ = controller.handleEvent(event: event)
+    }
+
+    /// 泵主运行循环让 SwiftUI 完成绑定写回、重渲染与 onChange 回调；测试中挂载的
+    /// 编辑器只有走完这一步才与真实应用的逐键往返一致。
+    private func settleSwiftUIRoundTrip() async {
+        for _ in 0..<6 {
+            pumpMainRunLoop(for: 0.05)
+            await Task.yield()
+        }
+    }
+
+    // RunLoop.run(until:) 标注了 noasync，需在同步函数里转一道路才能从异步测试调用。
+    private func pumpMainRunLoop(for interval: TimeInterval) {
+        let deadline = Date().addingTimeInterval(interval)
+        while Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+    }
+
     private enum ArrowKey {
         case left
         case right
@@ -1718,6 +2203,24 @@ struct WorkspaceCodeEditQueryEditorTests {
             case .right: "\u{F703}"
             }
         }
+    }
+}
+
+@MainActor
+private struct QueryEditorDocumentHarness: View {
+    @Bindable var document: WorkspaceQueryDocumentModel
+    let languageService: WorkspaceSQLLanguageService
+    let commandCoordinator: WorkspaceQueryEditorCommandCoordinator
+    let completionService: WorkspaceSQLCompletionService
+
+    var body: some View {
+        WorkspaceCodeEditQueryEditor(
+            text: $document.sql,
+            selectedRange: $document.selectedRange,
+            languageService: languageService,
+            commandCoordinator: commandCoordinator,
+            completionService: completionService
+        )
     }
 }
 
