@@ -43,6 +43,15 @@ base_url="${base_url%/}"
 validate_only="${QUERYCRAFT_DEPLOY_VALIDATE_ONLY:-false}"
 deploy_client="${QUERYCRAFT_DEPLOY_CLIENT:-true}"
 deploy_drivers="${QUERYCRAFT_DEPLOY_DRIVERS:-true}"
+required_driver_api_version="${QUERYCRAFT_REQUIRED_DRIVER_API_VERSION:-}"
+if [[ -z "$required_driver_api_version" ]]; then
+    script_directory="${BASH_SOURCE[0]%/*}"
+    required_driver_api_version="$(awk -F= '/^[[:space:]]*querycraft_driver_api_version=/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' "$script_directory/driver-package-common.sh")"
+fi
+if [[ ! "$required_driver_api_version" =~ ^[0-9]+$ || "$required_driver_api_version" -le 0 ]]; then
+    echo "The required driver API version is invalid: $required_driver_api_version" >&2
+    exit 65
+fi
 temporary_driver_manifest_directory="$(mktemp -d "${RUNNER_TEMP:-/tmp}/querycraft-driver-manifests.XXXXXX")"
 
 cleanup() {
@@ -73,6 +82,22 @@ fi
 if [[ "$deploy_client" == "false" && "$deploy_drivers" == "false" ]]; then
     echo "At least one application or driver deployment must be enabled." >&2
     exit 65
+fi
+
+all_driver_types=(mysql postgresql doris redis elasticsearch kafka)
+driver_types=("${all_driver_types[@]}")
+if [[ "$deploy_drivers" == "true" && -n "${QUERYCRAFT_DEPLOY_DRIVER_TYPES:-}" ]]; then
+    IFS=',' read -r -a driver_types <<< "$QUERYCRAFT_DEPLOY_DRIVER_TYPES"
+    if [[ "${#driver_types[@]}" -eq 0 ]]; then
+        echo "QUERYCRAFT_DEPLOY_DRIVER_TYPES must contain at least one driver." >&2
+        exit 65
+    fi
+    for database_type in "${driver_types[@]}"; do
+        if [[ ! " ${all_driver_types[*]} " == *" $database_type "* ]]; then
+            echo "Unsupported driver type in QUERYCRAFT_DEPLOY_DRIVER_TYPES: $database_type" >&2
+            exit 65
+        fi
+    done
 fi
 
 for command_name in curl jq shasum stat xmllint; do
@@ -118,7 +143,7 @@ fi
 
 driver_archives=()
 driver_manifests=()
-for database_type in mysql postgresql doris redis elasticsearch kafka; do
+for database_type in "${driver_types[@]}"; do
     for architecture in x86_64 arm64; do
         manifest="$artifact_directory/$database_type-$architecture.json"
         if [[ "$deploy_drivers" == "false" ]]; then
@@ -140,7 +165,11 @@ for database_type in mysql postgresql doris redis elasticsearch kafka; do
                 exit 65
             fi
             jq -e \
-                '.releases | max_by([.driverAPIVersion, (.build | tonumber), .version])' \
+                --argjson required_driver_api_version "$required_driver_api_version" \
+                '.releases |
+                 map(select(.driverAPIVersion == $required_driver_api_version)) |
+                 if length == 0 then error("no published driver matches the current API")
+                 else max_by([(.build | tonumber), .version]) end' \
                 "$catalog" > "$manifest"
         fi
         if [[ ! -f "$manifest" ]]; then
@@ -150,11 +179,12 @@ for database_type in mysql postgresql doris redis elasticsearch kafka; do
         if ! jq -e \
             --arg database_type "$database_type" \
             --arg architecture "$architecture" \
+            --argjson required_driver_api_version "$required_driver_api_version" \
             '.databaseType == $database_type and
              (.version | type == "string" and length > 0) and
              (.build | type == "string" and length > 0) and
              (.minimumAppVersion | type == "string" and length > 0) and
-             (.driverAPIVersion | type == "number" and . > 0) and
+             (.driverAPIVersion | type == "number" and . == $required_driver_api_version) and
              (.supportedArchitectures | length == 1) and
              .supportedArchitectures[0] == $architecture' \
             "$manifest" >/dev/null
@@ -198,6 +228,33 @@ for database_type in mysql postgresql doris redis elasticsearch kafka; do
         driver_manifests+=("$manifest")
     done
 done
+
+# A targeted driver release is allowed only when every untouched driver already
+# speaks the current API. This prevents a partial upload from leaving the new
+# application with an incompatible catalog entry.
+if [[ "$deploy_drivers" == "true" && "${#driver_types[@]}" -lt "${#all_driver_types[@]}" ]]; then
+    for database_type in "${all_driver_types[@]}"; do
+        if [[ " ${driver_types[*]} " == *" $database_type "* ]]; then
+            continue
+        fi
+        for architecture in x86_64 arm64; do
+            catalog_url="$base_url/drivers/$database_type-$architecture.json"
+            if ! curl --fail --silent --show-error --location "$catalog_url" |
+                jq -e --arg database_type "$database_type" \
+                   --arg architecture "$architecture" \
+                   --argjson required_driver_api_version "$required_driver_api_version" \
+                   '.schemaVersion == 2 and
+                    .databaseType == $database_type and
+                    .architecture == $architecture and
+                    ([.releases[] | select(.driverAPIVersion == $required_driver_api_version)] | length > 0)' \
+                   >/dev/null
+            then
+                echo "Untouched driver catalog is not compatible with Driver API $required_driver_api_version: $catalog_url" >&2
+                exit 65
+            fi
+        done
+    done
+fi
 
 if [[ "$validate_only" == "true" ]]; then
     echo "Validated QueryCraft $version selected release artifacts."
