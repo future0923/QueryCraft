@@ -45,7 +45,7 @@ deploy_client="${QUERYCRAFT_DEPLOY_CLIENT:-true}"
 deploy_drivers="${QUERYCRAFT_DEPLOY_DRIVERS:-true}"
 required_driver_api_version="${QUERYCRAFT_REQUIRED_DRIVER_API_VERSION:-}"
 if [[ -z "$required_driver_api_version" ]]; then
-    script_directory="${BASH_SOURCE[0]%/*}"
+    script_directory="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
     required_driver_api_version="$(awk -F= '/^[[:space:]]*querycraft_driver_api_version=/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' "$script_directory/driver-package-common.sh")"
 fi
 if [[ ! "$required_driver_api_version" =~ ^[0-9]+$ || "$required_driver_api_version" -le 0 ]]; then

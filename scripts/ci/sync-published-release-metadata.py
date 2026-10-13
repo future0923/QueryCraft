@@ -40,7 +40,15 @@ def main():
                 raise ValueError("Published update archive metadata does not match")
         updates[path] = data
     if os.environ.get("QUERYCRAFT_DEPLOY_DRIVERS", "true") == "true":
-        for database in ("mysql", "postgresql", "doris", "redis", "elasticsearch", "kafka"):
+        all_databases = ("mysql", "postgresql", "doris", "redis", "elasticsearch", "kafka")
+        requested = os.environ.get("QUERYCRAFT_DEPLOY_DRIVER_TYPES", "").strip()
+        databases = all_databases if not requested or requested == "none" else tuple(
+            item.strip() for item in requested.split(",") if item.strip()
+        )
+        unknown = set(databases) - set(all_databases)
+        if unknown:
+            raise ValueError(f"Invalid driver selection: {', '.join(sorted(unknown))}")
+        for database in databases:
             for architecture in ("x86_64", "arm64"):
                 path = directory / f"{database}-{architecture}.json"
                 expected = json.loads(path.read_text())
