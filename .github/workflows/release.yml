@@ -60,7 +60,9 @@ jobs:
         env:
           REQUESTED_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
           REQUESTED_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          REQUESTED_PUBLISH_DRIVERS: ${{ github.event_name == 'push' || inputs.publish_drivers }}
+          # A client tag must not republish every external driver. Driver
+          # releases are explicitly requested through workflow_dispatch.
+          REQUESTED_PUBLISH_DRIVERS: ${{ inputs.publish_drivers || false }}
           REQUESTED_REBUILD_DRIVER: ${{ inputs.rebuild_driver }}
         run: |
           set -euo pipefail
