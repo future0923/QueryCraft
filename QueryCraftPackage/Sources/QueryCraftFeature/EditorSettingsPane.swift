@@ -2,6 +2,8 @@ import SwiftUI
 
 struct EditorSettingsPane: View {
     @Bindable var preferences: ApplicationPreferences
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var showsColors = false
 
     private var copy: SettingsCopy {
         SettingsCopy(language: .activeInterfaceLanguage)
@@ -9,6 +11,23 @@ struct EditorSettingsPane: View {
 
     var body: some View {
         Form {
+            Section(AppCopy.current.text("语法配色", "Syntax Colors")) {
+                HStack {
+                    SettingsControlLabel(
+                        title: AppCopy.current.text("浅色与深色独立配色", "Separate Light and Dark Colors"),
+                        description: AppCopy.current.text(
+                            "内置经典、海洋、柔和主题，可自定义语法及背景颜色。",
+                            "Classic, Ocean and Soft presets with customizable syntax and background colors."
+                        )
+                    )
+                    Spacer()
+                    Button(AppCopy.current.text("自定义配色…", "Customize Colors…")) {
+                        showsColors = true
+                    }
+                    .accessibilityIdentifier("customizeEditorColors")
+                }
+            }
+
             Section(copy.indentationSection) {
                 Picker(
                     selection: $preferences.editorIndentationStyle
@@ -86,6 +105,9 @@ struct EditorSettingsPane: View {
                     )
                 }
             }
+        }
+        .sheet(isPresented: $showsColors) {
+            EditorColorsSettingsView(preferences: preferences, mode: colorScheme == .dark ? .dark : .light)
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

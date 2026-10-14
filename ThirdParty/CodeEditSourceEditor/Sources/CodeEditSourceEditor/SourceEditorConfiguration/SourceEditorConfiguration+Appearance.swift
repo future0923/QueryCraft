@@ -137,7 +137,7 @@ extension SourceEditorConfiguration {
 
         private func updateControllerNewTheme(controller: TextViewController) {
             controller.textView.layoutManager.setNeedsLayout()
-            controller.textView.textStorage.setAttributes(
+            controller.textView.textStorage.addAttributes(
                 controller.attributesFor(nil),
                 range: NSRange(location: 0, length: controller.textView.textStorage.length)
             )
@@ -152,8 +152,14 @@ extension SourceEditorConfiguration {
                 .clear
             }
 
-            controller.gutterView.textColor = theme.text.color.withAlphaComponent(0.35)
-            controller.gutterView.selectedLineTextColor = theme.text.color
+            controller.gutterView.textColor = theme.lineNumber ?? theme.text.color.withAlphaComponent(0.35)
+            controller.gutterView.selectedLineTextColor = theme.currentLineNumber ?? theme.text.color
+            controller.textView.emphasisManager?.setColors(
+                active: theme.searchCurrent ?? .findHighlightColor,
+                inactive: theme.searchMatch ?? NSColor.lightGray.withAlphaComponent(0.4),
+                activeText: theme.searchText ?? .black, inactiveText: theme.text.color,
+                selection: theme.selection
+            )
             controller.gutterView.selectedLineColor = if useThemeBackground {
                 theme.lineHighlight
             } else if controller.systemAppearance == .darkAqua {

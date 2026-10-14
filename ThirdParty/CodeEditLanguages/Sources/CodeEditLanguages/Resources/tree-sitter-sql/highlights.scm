@@ -1,5 +1,29 @@
+(column (identifier) @field)
+((column) @field
+ (#match? @field "^(?:[\\w$]+|`(?:``|[^`])*`|\"(?:\"\"|[^\"])*\")$"))
+(field column: (identifier) @field)
+(create_index column: (identifier) @type)
+(column_definition name: (identifier) @field)
+(column_position col_name: (identifier) @field)
+(alter_column name: (identifier) @field)
+(drop_column name: (identifier) @field)
+(rename_column old_name: (identifier) @field new_name: (identifier) @field)
+(change_column old_name: (identifier) @field)
+(create_schema (identifier) @type)
+(cte . (identifier) @type)
+(cte argument: (identifier) @field)
+(constraint name: (identifier) @type)
+(constraint (keyword_references) (object_reference) (identifier) @field)
+(column_definition (keyword_references) (object_reference) (identifier) @field)
+
+; SQL typed literals use an identifier prefix rather than a keyword node.
+((literal . (identifier) @type.builtin)
+ (#match? @type.builtin "(?i)^(date|time|timestamp|timestamptz|interval|uuid|json|jsonb|numeric|decimal|integer|int|bigint|smallint|real|double|boolean|text|bytea)$"))
+
 (object_reference
   name: (identifier) @type)
+(object_reference schema: (identifier) @type)
+(object_reference database: (identifier) @type)
 
 (invocation
   (object_reference
@@ -45,6 +69,7 @@
 [
  (keyword_true)
  (keyword_false)
+ (keyword_null)
 ] @boolean
 
 (literal) @string
@@ -355,7 +380,6 @@
 
 [
   (keyword_int)
-  (keyword_null)
   (keyword_boolean)
   (keyword_binary)
   (keyword_varbinary)
@@ -427,6 +451,7 @@
   "%"
   "^"
   ":="
+  "::"
   "="
   "<"
   "<="
@@ -448,3 +473,6 @@
   ","
   "."
 ] @punctuation.delimiter
+
+; Fallback comes last so specialized captures also win in the generic TreeSitter client.
+(identifier) @variable

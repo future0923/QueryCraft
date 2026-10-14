@@ -9,3 +9,8 @@
 
 The generated parser is vendored so QueryCraft's trimmed CodeEditLanguages fork
 supports JSON without importing the complete upstream language bundle.
+
+Local grammar corrections (2026-10-14): accept a plus sign in numeric exponents
+and capture all four hexadecimal digits of a Unicode escape as one escape_sequence.
+Reviewed generator source is retained in `Generator/TreeSitterJSON/grammar.js`.
+Regenerate ABI 14 C sources with `sh generate-tree-sitter-json.sh` (CLI v0.26.3).

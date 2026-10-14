@@ -14,6 +14,11 @@ final class WorkspaceModel {
     let profileID: ConnectionProfile.ID
     let safetyLock: WorkspaceSafetyLock
     private(set) var profileName = AppCopy.current.text("工作区", "Workspace")
+    var sqlHighlightContext: SQLHighlightContext {
+        if let sessionConfiguration { return ApplicationPreferences.shared.sqlHighlightContext(for: sessionConfiguration) }
+        return .init(databaseType: databaseType)
+    }
+
     private(set) var databaseType = DatabaseType.mysql
     private(set) var sessionCapabilities = WorkspaceSessionCapabilities.standard
     private(set) var schemaEditingDescriptor =

@@ -30,6 +30,7 @@ struct WorkspaceCodeEditQueryEditorTests {
                 backing: .buffered,
                 defer: false
             )
+            window.isReleasedWhenClosed = false
             window.animationBehavior = .none
             window.appearance = NSAppearance(named: appearanceName)
             window.contentView = hostingView
@@ -936,6 +937,7 @@ struct WorkspaceCodeEditQueryEditorTests {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         window.animationBehavior = .none
         window.contentView = hostingView
         hostingView.layoutSubtreeIfNeeded()
@@ -1532,6 +1534,7 @@ struct WorkspaceCodeEditQueryEditorTests {
             defer: false
         )
         // 无头测试里窗口的开关动画没有需要展示的屏幕，反而会在释放动画块时崩溃。
+        window.isReleasedWhenClosed = false
         window.animationBehavior = .none
         window.contentView = hostingView
         window.makeKeyAndOrderFront(nil)
@@ -2064,6 +2067,7 @@ struct WorkspaceCodeEditQueryEditorTests {
             defer: false
         )
         // 无头测试里窗口的开关动画没有需要展示的屏幕，反而会在释放动画块时崩溃。
+        window.isReleasedWhenClosed = false
         window.animationBehavior = .none
         if let appearance {
             window.appearance = NSAppearance(named: appearance)

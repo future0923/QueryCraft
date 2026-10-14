@@ -116,6 +116,23 @@ public final class TreeSitterClient: HighlightProviding {
 
         let readBlock = textView.createReadBlock()
         let readCallback = textView.createReadCallback()
+        setUp(codeLanguage: codeLanguage, readBlock: readBlock, readCallback: readCallback)
+    }
+
+    /// Parse an immutable document fragment without introducing another text view.
+    /// Query ranges are relative to this source. Call again when the source changes.
+    @MainActor
+    public func setUp(source: String, codeLanguage: CodeLanguage) {
+        let snapshot = source as NSString
+        setUp(codeLanguage: codeLanguage, readBlock: Parser.readFunction(for: source), readCallback: { range, _ in
+            guard range.location >= 0, range.location <= snapshot.length,
+                  range.length <= snapshot.length - range.location else { return nil }
+            return snapshot.substring(with: range)
+        })
+    }
+
+    private func setUp(codeLanguage: CodeLanguage, readBlock: @escaping Parser.ReadBlock,
+                       readCallback: @escaping SwiftTreeSitter.Predicate.TextProvider) {
         self.readBlock = readBlock
         self.readCallback = readCallback
 

@@ -7,7 +7,16 @@ import OSLog
 
 @MainActor
 @Observable
-final class WorkspaceSQLLanguageService: HighlightProviding {
+final class WorkspaceSQLLanguageService: HighlightProviding, @preconcurrency TextViewCoordinator {
+    private(set) var highlightContext: SQLHighlightContext
+    @ObservationIgnored private weak var editorController: TextViewController?
+    func prepareCoordinator(controller: TextViewController) { editorController = controller }
+    func destroy() { editorController = nil }
+    func setHighlightContext(_ context: SQLHighlightContext) {
+        guard highlightContext != context else { return }
+        highlightContext = context
+        editorController?.invalidateSyntaxHighlights()
+    }
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "QueryCraft",
         category: "SQLLanguageService"
@@ -34,7 +43,8 @@ final class WorkspaceSQLLanguageService: HighlightProviding {
     @ObservationIgnored private var parseObserverTask: Task<Void, Never>?
     @ObservationIgnored private var highlightTasks: [UUID: Task<Void, Never>] = [:]
 
-    init() {
+    init(context: SQLHighlightContext = .generic) {
+        highlightContext = context
         parser = try? SQLStructuralParser()
     }
 
@@ -135,6 +145,7 @@ final class WorkspaceSQLLanguageService: HighlightProviding {
         }
 
         let requestID = UUID()
+        let context = highlightContext
         let task = Task { @MainActor [weak self] in
             let result: Result<[HighlightRange], Error>
             do {
@@ -152,10 +163,10 @@ final class WorkspaceSQLLanguageService: HighlightProviding {
                 } else {
                     let highlights = try await parser.highlights(
                         in: SQLSourceRange(range),
-                        revision: revision
+                        revision: revision, context: context
                     )
                     try Task.checkCancellation()
-                    guard self.currentRevision == revision else {
+                    guard self.currentRevision == revision, self.highlightContext == context else {
                         throw CancellationError()
                     }
                     result = .success(
@@ -562,9 +573,10 @@ final class WorkspaceSQLLanguageService: HighlightProviding {
         return set
     }
 
-    private static func captureName(for kind: SQLSyntaxHighlight.Kind) -> CaptureName {
+    static func captureName(for kind: SQLSyntaxHighlight.Kind) -> CaptureName {
         switch kind {
-        case .keyword, .boolean: return .keyword
+        case .keyword: return .keyword
+        case .boolean: return .boolean
         case .comment: return .comment
         case .variable: return .variable
         case .property: return .property
@@ -574,6 +586,9 @@ final class WorkspaceSQLLanguageService: HighlightProviding {
         case .type: return .type
         case .parameter: return .parameter
         case .attribute: return .typeAlternate
+        case .builtinType: return .typeBuiltin
+        case .operator: return .operator
+        case .punctuation: return .punctuation
         }
     }
 

@@ -78,7 +78,8 @@ struct WorkspaceCodeEditElasticsearchEditor: View {
         SourceEditorConfiguration(
             appearance: .init(
                 theme: WorkspaceEditorTheme.make(
-                    for: colorScheme == .dark ? .darkAqua : .aqua
+                    for: colorScheme == .dark ? .darkAqua : .aqua,
+                    settings: preferences.editorColors
                 ),
                 font: preferences.editorFont(),
                 wrapLines: false,

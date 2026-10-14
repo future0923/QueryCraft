@@ -346,10 +346,12 @@ struct ElasticsearchConsoleTests {
                     == "/second_hand/_search"
         })
         #expect(highlights.contains { highlight in
-            highlight.capture == .number
+            highlight.capture == .parameter
                 && (source as NSString).substring(with: highlight.range)
-                    == "?pretty=true"
+                    == "pretty"
         })
+        #expect(highlights.contains { $0.capture == .boolean
+            && (source as NSString).substring(with: $0.range) == "true" })
     }
 
     @Test

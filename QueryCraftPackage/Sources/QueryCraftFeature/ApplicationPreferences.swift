@@ -41,6 +41,30 @@ public final class ApplicationPreferences {
         }
     }
 
+    var editorColors: EditorColorSettings {
+        didSet {
+            if let data = try? JSONEncoder().encode(editorColors) {
+                defaults.set(data, forKey: Key.editorColors)
+            }
+        }
+    }
+
+    var editorThemes: [SavedEditorTheme] {
+        didSet {
+            if let data = try? JSONEncoder().encode(editorThemes) {
+                defaults.set(data, forKey: Key.editorThemes)
+            }
+        }
+    }
+    var editorANSIQuoteConnections: Set<String> {
+        didSet { defaults.set(Array(editorANSIQuoteConnections).sorted(), forKey: Key.editorANSIQuoteConnections) }
+    }
+
+    func sqlHighlightContext(for configuration: DatabaseConnectionConfiguration) -> SQLHighlightContext {
+        .init(databaseType: configuration.databaseType,
+              ansiQuotes: editorANSIQuoteConnections.contains(SQLHighlightContext.connectionKey(configuration)))
+    }
+
     var editorFontFamily: String {
         didSet {
             defaults.set(editorFontFamily, forKey: Key.editorFontFamily)
@@ -261,6 +285,10 @@ public final class ApplicationPreferences {
             userDefaults.object(
                 forKey: Key.automaticallyChecksForUpdates
             ) as? Bool ?? true
+        editorColors = EditorColorSettings.load(userDefaults.data(forKey: Key.editorColors))
+        editorANSIQuoteConnections = Set(userDefaults.stringArray(forKey: Key.editorANSIQuoteConnections) ?? [])
+        editorThemes = userDefaults.data(forKey: Key.editorThemes)
+            .flatMap { try? JSONDecoder().decode([SavedEditorTheme].self, from: $0) } ?? []
         editorFontFamily =
             userDefaults.string(
                 forKey: Key.editorFontFamily
@@ -435,6 +463,7 @@ public final class ApplicationPreferences {
     }
 
     func resetEditor() {
+        editorColors = EditorColorSettings()
         editorIndentationStyle = .spaces
         editorIndentationWidth = 4
         editorCompletionKey = .returnOrTab
@@ -499,6 +528,9 @@ public final class ApplicationPreferences {
         static let appearance = "preferences.general.appearance"
         static let automaticallyChecksForUpdates =
             "preferences.general.automaticallyChecksForUpdates"
+        static let editorColors = "preferences.editor.colors.v1"
+        static let editorThemes = "preferences.editor.themes.v1"
+        static let editorANSIQuoteConnections = "preferences.editor.ansiQuoteConnections.v1"
         static let editorFontFamily = "preferences.editor.fontFamily"
         static let editorFontSize = "preferences.editor.fontSize"
         static let dataGridFontFamily =

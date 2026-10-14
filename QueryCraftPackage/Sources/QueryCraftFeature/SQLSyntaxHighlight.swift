@@ -13,6 +13,9 @@ struct SQLSyntaxHighlight: Equatable, Sendable {
         case parameter
         case boolean
         case attribute
+        case builtinType
+        case `operator`
+        case punctuation
     }
 
     let range: SQLSourceRange
