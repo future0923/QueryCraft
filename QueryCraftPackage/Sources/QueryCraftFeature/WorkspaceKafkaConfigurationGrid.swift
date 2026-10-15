@@ -6,7 +6,7 @@ struct WorkspaceKafkaConfigurationGrid: View {
     let filter: String
     let loading: Bool
     @State private var selectedName: String?
-    @State private var exportController = WorkspaceDataExportController()
+    @State private var exportController = WorkspaceDataExportController(databaseType: .kafka)
     @State private var searchController = WorkspaceGridSearchController()
     @State private var rowInsertEditor = WorkspaceDatabaseDataRowInsertEditorState()
     @State private var preferences = ApplicationPreferences.shared

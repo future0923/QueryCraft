@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WorkspaceDatabaseObjectDetailContent: View {
+    var highlightContext: SQLHighlightContext = .generic
     let detailsState: WorkspaceDatabaseObjectDetailsState
     let indexesState: WorkspaceDatabaseIndexesState
     let dataState: WorkspaceDatabaseDataState
@@ -72,6 +73,7 @@ struct WorkspaceDatabaseObjectDetailContent: View {
 
     var body: some View {
         WorkspaceDatabaseObjectDetailTabHost(
+                highlightContext: highlightContext,
             availableTabs: availableTabs,
             selectedTab: selectedTab,
             detailsState: detailsState,

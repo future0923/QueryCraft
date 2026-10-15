@@ -34,14 +34,34 @@ public final class EmphasisManager {
     }
 
     private var emphasisGroups: [String: [EmphasisLayer]] = [:]
-    private let activeColor: NSColor = .findHighlightColor
-    private let inactiveColor: NSColor = NSColor.lightGray.withAlphaComponent(0.4)
+    private var activeColor: NSColor = .findHighlightColor
+    private var inactiveColor: NSColor = NSColor.lightGray.withAlphaComponent(0.4)
+    private var activeTextColor: NSColor = .black
+    private var inactiveTextColor: NSColor?
     private var originalSelectionColor: NSColor?
 
     weak var textView: TextView?
 
     init(textView: TextView) {
         self.textView = textView
+    }
+
+    /// Recolor existing search layers in place, preserving ranges and avoiding pop animations.
+    public func setColors(active: NSColor, inactive: NSColor, activeText: NSColor,
+                          inactiveText: NSColor, selection: NSColor) {
+        activeColor = active
+        inactiveColor = inactive
+        activeTextColor = activeText
+        inactiveTextColor = inactiveText
+        if originalSelectionColor != nil { originalSelectionColor = selection }
+        for item in emphasisGroups.values.flatMap({ $0 }) {
+            let color = item.emphasis.inactive ? inactive : active
+            guard case .standard = item.emphasis.style else { continue }
+            item.layer.fillColor = color.cgColor
+            if let layer = item.textLayer, let original = layer.string as? NSAttributedString {
+                updateTextLayer(layer, with: original, emphasis: item.emphasis)
+            }
+        }
     }
 
     // MARK: - Add, Update, Remove
@@ -170,6 +190,14 @@ public final class EmphasisManager {
                 var bounds = shapePath.bounds
                 bounds.origin.y += 1 // Move down by 1 pixel
                 textLayer.frame = bounds
+                // AppKit can append freshly laid-out line views after custom layers.
+                // Keep the foreground above them in painter order as well as zPosition.
+                // The standard fill must cover the original glyphs too, otherwise
+                // two antialiased copies of the text remain visible at their edges.
+                if emphasis.emphasis.style == .standard {
+                    textView?.layer?.addSublayer(emphasis.layer)
+                }
+                textView?.layer?.addSublayer(textLayer)
             }
         }
     }
@@ -304,13 +332,14 @@ public final class EmphasisManager {
         let text = NSMutableAttributedString(attributedString: originalString)
         text.addAttribute(
             .foregroundColor,
-            value: emphasis.inactive ? getInactiveTextColor() : NSColor.black,
+            value: emphasis.inactive ? getInactiveTextColor() : activeTextColor,
             range: NSRange(location: 0, length: text.length)
         )
         textLayer.string = text
     }
 
     private func getInactiveTextColor() -> NSColor {
+        if let inactiveTextColor { return inactiveTextColor }
         if textView?.effectiveAppearance.name == .darkAqua {
             return .white
         }

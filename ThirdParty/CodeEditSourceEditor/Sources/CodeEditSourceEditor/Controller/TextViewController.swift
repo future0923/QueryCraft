@@ -196,6 +196,8 @@ public class TextViewController: NSViewController {
     var textCoordinators: [WeakCoordinator] = []
 
     var highlighter: Highlighter?
+    /// Refresh semantic styling without replacing text, selection, scroll or undo state.
+    public func invalidateSyntaxHighlights() { highlighter?.invalidate() }
 
     /// The tree sitter client managed by the source editor.
     ///

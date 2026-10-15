@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct WorkspaceDatabaseObjectDetailTabHost: NSViewRepresentable {
+    var highlightContext: SQLHighlightContext = .generic
     let availableTabs: [WorkspaceDatabaseObjectDetailTab]
     let selectedTab: WorkspaceDatabaseObjectDetailTab
     let detailsState: WorkspaceDatabaseObjectDetailsState
@@ -102,6 +103,7 @@ struct WorkspaceDatabaseObjectDetailTabHost: NSViewRepresentable {
         for tab: WorkspaceDatabaseObjectDetailTab
     ) -> WorkspaceDatabaseObjectDetailTabRoot {
         WorkspaceDatabaseObjectDetailTabRoot(
+                highlightContext: highlightContext,
             tab: tab,
             detailsState: detailsState,
             indexesState: indexesState,

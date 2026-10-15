@@ -44,6 +44,9 @@ class HighlightProviderState {
 
     /// The set of valid indexes
     private var validSet: IndexSet = IndexSet()
+    private var editRevision: UInt64 = 0
+    private var queryGeneration: UInt64 = 0
+    private var isApplyingEdit = false
 
     // MARK: - Providers
 
@@ -95,12 +98,15 @@ class HighlightProviderState {
 
     func setLanguage(language: CodeLanguage) {
         guard let textView else { return }
+        editRevision &+= 1
+        isApplyingEdit = false
         highlightProvider?.setUp(textView: textView, codeLanguage: language)
         invalidate()
     }
 
     /// Invalidates all pending and valid ranges, resetting the provider.
     func invalidate() {
+        queryGeneration &+= 1
         validSet.removeAll()
         pendingSet.removeAll()
         highlightInvalidRanges()
@@ -120,6 +126,7 @@ class HighlightProviderState {
 
     /// Accumulates all pending ranges and calls `queryHighlights`.
     func highlightInvalidRanges() {
+        guard !isApplyingEdit else { return }
         var ranges: [NSRange] = []
         while let nextRange = getNextRange() {
             ranges.append(nextRange)
@@ -132,22 +139,33 @@ class HighlightProviderState {
 extension HighlightProviderState {
     func storageWillUpdate(in range: NSRange) {
         guard let textView else { return }
+        editRevision &+= 1
+        queryGeneration &+= 1
+        isApplyingEdit = true
+        pendingSet.removeAll()
         highlightProvider?.willApplyEdit(textView: textView, range: range)
     }
 
     func storageDidUpdate(range: NSRange, delta: Int) {
         guard let textView else { return }
+        // Preserve valid suffixes at their new offsets; pending results belong to
+        // the old revision and must never mark the new document as highlighted.
+        validSet.remove(integersIn: range)
+        validSet.shift(startingAt: range.max, by: delta)
+        let revision = editRevision
         highlightProvider?.applyEdit(textView: textView, range: range, delta: delta) { [weak self] result in
+            guard let self, self.editRevision == revision else { return }
+            self.isApplyingEdit = false
             switch result {
             case .success(let invalidSet):
                 let modifiedRange = NSRange(location: range.location, length: range.length + delta)
                 // Make sure we add in the edited range too
-                self?.invalidate(invalidSet.union(IndexSet(integersIn: modifiedRange)))
+                self.invalidate(invalidSet.union(IndexSet(integersIn: modifiedRange)))
             case .failure(let error):
                 if case HighlightProvidingError.operationCancelled = error {
-                    self?.invalidate(IndexSet(integersIn: range))
+                    self.invalidate()
                 } else {
-                    self?.logger.error("Failed to apply edit. Query returned with error: \(error)")
+                    self.logger.error("Failed to apply edit. Query returned with error: \(error)")
                 }
             }
         }
@@ -179,16 +197,18 @@ private extension HighlightProviderState {
     func queryHighlights(for rangesToHighlight: [NSRange]) {
         guard let textView else { return }
         for range in rangesToHighlight {
+            let generation = queryGeneration
             highlightProvider?.queryHighlightsFor(textView: textView, range: range) { [weak self] result in
-                guard let providerId = self?.id else { return }
+                guard let self, self.queryGeneration == generation else { return }
+                let providerId = self.id
                 assert(Thread.isMainThread, "Highlighted ranges called on non-main thread.")
 
-                self?.pendingSet.remove(integersIn: range)
-                self?.validSet.insert(range: range)
+                self.pendingSet.remove(integersIn: range)
+                self.validSet.insert(range: range)
 
                 switch result {
                 case .success(let highlights):
-                    self?.delegate?.applyHighlightResult(
+                    self.delegate?.applyHighlightResult(
                         provider: providerId,
                         highlights: highlights,
                         rangeToHighlight: range
@@ -196,9 +216,9 @@ private extension HighlightProviderState {
                 case .failure(let error):
                     // Only invalidate if it was cancelled.
                     if let error = error as? HighlightProvidingError, error == .operationCancelled {
-                        self?.invalidate(IndexSet(integersIn: range))
+                        self.invalidate(IndexSet(integersIn: range))
                     } else {
-                        self?.logger.debug("Highlighter Error: \(error.localizedDescription)")
+                        self.logger.debug("Highlighter Error: \(error.localizedDescription)")
                     }
                 }
             }

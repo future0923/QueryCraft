@@ -1,9 +1,24 @@
 import AppKit
+import CoreText
 
 final class WorkspaceDatabaseDataRowView: NSTableRowView {
     static let maximumDrawnTextCharacters = 300
     static let maximumAccessibilityCellCharacters = 200
     static let maximumAccessibilityRowCharacters = 1_024
+
+    private struct TextLineKey: Hashable {
+        let text: String
+        let width: CGFloat
+        let font: NSFont
+        let color: NSColor
+        let appearance: String
+    }
+    private struct CachedTextLine {
+        let line: CTLine
+        let width: CGFloat
+        let rightToLeft: Bool
+    }
+    private var textLines: [TextLineKey: CachedTextLine] = [:]
 
     private static let leadingParagraphStyle: NSParagraphStyle = {
         let style = NSMutableParagraphStyle()
@@ -132,6 +147,7 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
         cellControls: [Int: WorkspaceGridInlineControl] = [:]
     ) {
         dataTableView = tableView
+        if self.dataRow?.id != dataRow.id { textLines.removeAll(keepingCapacity: true) }
         self.dataRow = dataRow
         tableRowIndex = rowIndex
         self.columnIndexes = columnIndexes
@@ -162,9 +178,13 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
         guard let dataTableView, let dataRow else { return }
         let directDrawTableView =
             dataTableView as? WorkspaceDirectDrawTableView
-        for (tableColumnIndex, tableColumn) in
-            dataTableView.tableColumns.enumerated()
-        {
+        // A row spans the whole document width. Horizontal scrolling can dirty
+        // that entire row; laying out text outside the viewport is wasted work.
+        let paintRect = dirtyRect.intersection(visibleRect)
+        guard !paintRect.isEmpty else { return }
+        let visibleColumns = dataTableView.columnIndexes(in: dataTableView.visibleRect)
+        for tableColumnIndex in visibleColumns {
+            let tableColumn = dataTableView.tableColumns[tableColumnIndex]
             let tableColumnRect = dataTableView.rect(
                 ofColumn: tableColumnIndex
             )
@@ -174,7 +194,7 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
                 width: tableColumnRect.width,
                 height: bounds.height
             )
-            guard cellRect.intersects(dirtyRect) else { continue }
+            guard cellRect.intersects(paintRect) else { continue }
 
             if tableColumn.identifier == rowNumberIdentifier {
                 if insertDraftModes == nil {
@@ -390,10 +410,57 @@ final class WorkspaceDatabaseDataRowView: NSTableRowView {
             ),
             height: lineHeight
         )
-        (text as NSString).draw(
-            in: textRect,
-            withAttributes: attributes
-        )
+        guard textRect.width > 0, let context = NSGraphicsContext.current?.cgContext else { return }
+        let font = attributes[.font] as? NSFont ?? cellFont
+        let color = (attributes[.foregroundColor] as? NSColor ?? .labelColor).usingColorSpace(.deviceRGB) ?? .labelColor
+        let key = TextLineKey(text: text, width: textRect.width, font: font,
+                              color: color, appearance: effectiveAppearance.name.rawValue)
+        let cached: CachedTextLine
+        if let line = textLines[key] { cached = line }
+        else {
+            let lineAttributes: [String: Any] = [
+                kCTFontAttributeName as String: font,
+                kCTForegroundColorAttributeName as String: color.cgColor
+            ]
+            // Core Text repeatedly indexes UTF-16. A lazily bridged Swift UTF-8
+            // string makes those accesses expensive for CJK/emoji. Own UTF-16
+            // storage before shaping, then cache only the visible single line.
+            let units = Array(text.prefix(while: { !$0.isNewline }).utf16)
+            let native = units.withUnsafeBufferPointer { CFStringCreateWithCharacters(nil, $0.baseAddress, $0.count)! }
+            let attributed = CFAttributedStringCreate(nil, native, lineAttributes as CFDictionary)!
+            let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+            let length = CFAttributedStringGetLength(attributed)
+            let fitting = CTTypesetterSuggestClusterBreak(typesetter, 0, Double(textRect.width))
+            let line: CTLine
+            if fitting < length {
+                let token = CFAttributedStringCreate(nil, "…" as CFString, lineAttributes as CFDictionary)!
+                let ellipsis = CTLineCreateWithAttributedString(token)
+                let available = max(0, Double(textRect.width) - CTLineGetTypographicBounds(ellipsis, nil, nil, nil))
+                let count = available > 0 ? CTTypesetterSuggestClusterBreak(typesetter, 0, available) : 0
+                let prefix = CFAttributedStringCreateWithSubstring(nil, attributed, CFRange(location: 0, length: count))!
+                let shortened = CFAttributedStringCreateMutableCopy(nil, 0, prefix)!
+                CFAttributedStringReplaceAttributedString(shortened, CFRange(location: count, length: 0), token)
+                line = CTLineCreateWithAttributedString(shortened)
+            } else {
+                line = CTTypesetterCreateLine(typesetter, CFRange(location: 0, length: length))
+            }
+            let runs = CTLineGetGlyphRuns(line) as? [CTRun]
+            cached = CachedTextLine(line: line, width: CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)),
+                                    rightToLeft: runs?.first.map { CTRunGetStatus($0).contains(.rightToLeft) } ?? false)
+            if textLines.count >= 32 { textLines.removeAll(keepingCapacity: true) }
+            textLines[key] = cached
+        }
+        let alignment = (attributes[.paragraphStyle] as? NSParagraphStyle)?.alignment ?? .natural
+        let trailing = alignment == .right || (alignment == .natural && cached.rightToLeft)
+        let x = trailing ? textRect.maxX - cached.width : textRect.minX
+        context.saveGState()
+        context.clip(to: textRect)
+        context.textMatrix = .identity
+        context.translateBy(x: x, y: textRect.minY + font.ascender)
+        context.scaleBy(x: 1, y: -1)
+        context.textPosition = .zero
+        CTLineDraw(cached.line, context)
+        context.restoreGState()
     }
 
     private func updateFontIfNeeded(_ font: NSFont) {

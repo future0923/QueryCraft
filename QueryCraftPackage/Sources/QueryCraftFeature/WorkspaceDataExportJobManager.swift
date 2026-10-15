@@ -12,7 +12,7 @@ final class WorkspaceDataExportJobManager {
     @ObservationIgnored private let concurrentJobLimit: Int
     @ObservationIgnored private let presentsExportCenterOnEnqueue: Bool
     @ObservationIgnored private var requests:
-        [UUID: WorkspaceDataExportRequest] = [:]
+        [UUID: @Sendable () async throws -> WorkspaceDataExportRequest] = [:]
     @ObservationIgnored private var runningTasks:
         [UUID: Task<Void, Never>] = [:]
 
@@ -33,13 +33,27 @@ final class WorkspaceDataExportJobManager {
         request: WorkspaceDataExportRequest,
         destination: URL
     ) {
+        enqueue(
+            format: request.options.format,
+            estimatedRowCount: request.estimatedRowCount,
+            destination: destination,
+            makeRequest: { request }
+        )
+    }
+
+    func enqueue(
+        format: WorkspaceDataExportFormat,
+        estimatedRowCount: Int? = nil,
+        destination: URL,
+        makeRequest: @escaping @Sendable () async throws -> WorkspaceDataExportRequest
+    ) {
         let job = WorkspaceDataExportJob(
             destination: destination,
-            format: request.options.format,
-            estimatedRowCount: request.estimatedRowCount
+            format: format,
+            estimatedRowCount: estimatedRowCount
         )
         jobs.insert(job, at: 0)
-        requests[job.id] = request
+        requests[job.id] = makeRequest
         startPendingJobs()
         if presentsExportCenterOnEnqueue {
             WorkspaceDataExportCenterWindowController.show()
@@ -76,7 +90,7 @@ final class WorkspaceDataExportJobManager {
               let job = jobs.last(where: {
                   $0.status == .queued && requests[$0.id] != nil
               }),
-              let request = requests[job.id]
+              let makeRequest = requests[job.id]
         {
             job.markExporting()
             let jobID = job.id
@@ -85,6 +99,8 @@ final class WorkspaceDataExportJobManager {
             let manager = self
             runningTasks[jobID] = Task(priority: .utility) {
                 do {
+                    try Task.checkCancellation()
+                    let request = try await makeRequest()
                     let rowCount = try await exporter.export(
                         request,
                         to: destination

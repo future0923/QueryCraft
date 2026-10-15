@@ -12,15 +12,24 @@ enum SQLStructuralParserError: Error, Equatable {
 }
 
 actor SQLStructuralParser {
+    private struct CachedStatement {
+        let syntax: SQLSyntaxNodeSnapshot
+        let kind: SQLStatementKind
+        let scope: SQLQueryScopeSnapshot?
+    }
+
     private struct CachedParse {
         let source: SQLSourceSnapshot
         let tree: Tree
         let snapshot: SQLParseSnapshot
+        let recoveredHighlights: [SQLIndexHighlightRecovery.Correction]
+        let statements: [UInt: CachedStatement]
     }
 
     private let parser: Parser
     private let highlightQuery: Query
     private var cachedParse: CachedParse?
+    private var displayTreeCache: (revision: SQLSourceRevision, context: SQLHighlightContext, tree: Tree)?
 
     init() throws {
         guard let language = CodeLanguage.sql.language else {
@@ -36,6 +45,8 @@ actor SQLStructuralParser {
             throw SQLStructuralParserError.highlightQueryUnavailable
         }
         self.parser = parser
+        // Error recovery on a large incremental tree can otherwise run indefinitely.
+        parser.timeout = 10
         self.highlightQuery = highlightQuery
     }
 
@@ -43,6 +54,12 @@ actor SQLStructuralParser {
         _ source: SQLSourceSnapshot,
         applying edit: SQLSourceEdit? = nil
     ) throws -> SQLParseSnapshot {
+        let timing = ProcessInfo.processInfo.environment["QUERYCRAFT_EDITOR_PERFORMANCE"] == "1"
+        var phase = ContinuousClock.now
+        func mark(_ name: String) {
+            if timing { print("SQL_PHASE \(name) \(phase.duration(to: .now))") }
+            if timing { phase = .now }
+        }
         try Task.checkCancellation()
         if let cachedParse, source.revision <= cachedParse.source.revision {
             throw SQLStructuralParserError.staleRevision
@@ -62,10 +79,11 @@ actor SQLStructuralParser {
             )
             parsedTree = result.tree
             changedRanges = result.changedRanges
-            mode = .incremental
+            mode = result.mode
         } else {
             let tree = parser.parse(source.text)
             guard let tree else {
+                parser.reset()
                 throw SQLStructuralParserError.parseFailed
             }
             parsedTree = tree
@@ -75,6 +93,7 @@ actor SQLStructuralParser {
             mode = .full
         }
 
+        mark("tree")
         try Task.checkCancellation()
         guard let initialTree = parsedTree.copy(),
               let initialRootNode = initialTree.rootNode
@@ -82,18 +101,22 @@ actor SQLStructuralParser {
             throw SQLStructuralParserError.parseFailed
         }
         var tree = initialTree
+        let reusedStatements = mode == .incremental ? cachedParse?.statements ?? [:] : [:]
+        var syntaxTree = Self.syntaxSnapshot(for: initialRootNode, reusing: reusedStatements)
         var snapshotChangedRanges = changedRanges
         var snapshotMode = mode
         if let recoverySource = Self.clauseRecoverySource(
-            syntaxTree: Self.syntaxSnapshot(for: initialRootNode),
+            syntaxTree: syntaxTree,
             source: source.text as NSString
         ) {
             guard let recoveredMutableTree = parser.parse(recoverySource),
                   let recoveredTree = recoveredMutableTree.copy()
             else {
+                parser.reset()
                 throw SQLStructuralParserError.parseFailed
             }
             tree = recoveredTree
+            if let recoveredRoot = tree.rootNode { syntaxTree = Self.syntaxSnapshot(for: recoveredRoot) }
             snapshotChangedRanges = source.text.isEmpty
                 ? []
                 : [SQLSourceRange(
@@ -116,15 +139,72 @@ actor SQLStructuralParser {
         } else {
             carriedRelationReferences = []
         }
+        mark("syntax")
         let snapshot = Self.makeSnapshot(
             source: source,
             rootNode: rootNode,
+            syntaxTree: syntaxTree,
+            reusedStatements: snapshotMode == .incremental ? reusedStatements : [:],
             changedRanges: snapshotChangedRanges,
             mode: snapshotMode,
             carriedRelationReferences: carriedRelationReferences
         )
-        cachedParse = CachedParse(source: source, tree: tree, snapshot: snapshot)
+        mark("snapshot")
+        let syntaxByLocation = Dictionary(grouping: syntaxTree.children.filter { $0.type == "statement" }, by: \.range.location)
+        let statementsByLocation = Dictionary(grouping: snapshot.statements, by: \.range.location)
+        let scopesByLocation = Dictionary(grouping: snapshot.queryScopes, by: \.range.location)
+        var statementCache: [UInt: CachedStatement] = [:]
+        for node in Self.childNodes(of: rootNode) where node.nodeType == "statement" && !node.hasError {
+            guard let syntax = syntaxByLocation[node.range.location]?.first,
+                  let statement = statementsByLocation[node.range.location]?.first else { continue }
+            statementCache[node.id] = .init(syntax: syntax, kind: statement.kind, scope: scopesByLocation[node.range.location]?.first)
+        }
+        let corrections = edit.flatMap { edit in
+            cachedParse.flatMap { Self.incrementalRecovery(source: source.text, snapshot: snapshot, edit: edit, previous: $0) }
+        } ?? (SQLLexicalHighlightRecovery.highlights(in: source.text) + SQLIndexHighlightRecovery.highlights(in: source.text))
+        cachedParse = CachedParse(source: source, tree: tree, snapshot: snapshot,
+                                  recoveredHighlights: corrections, statements: statementCache)
+        mark("recovery")
         return snapshot
+    }
+
+    /// Re-scan only one complete, reliable statement when every other statement
+    /// retains its boundary. Any lexical error or boundary change uses the full scan.
+    private static func incrementalRecovery(source: String, snapshot: SQLParseSnapshot, edit: SQLSourceEdit,
+                                            previous: CachedParse) -> [SQLIndexHighlightRecovery.Correction]? {
+        guard edit.baseRevision == previous.source.revision,
+              snapshot.isReliable, previous.snapshot.isReliable,
+              snapshot.unreliableStatementRanges.isEmpty, previous.snapshot.unreliableStatementRanges.isEmpty,
+              snapshot.statements.count == previous.snapshot.statements.count,
+              let index = previous.snapshot.statements.firstIndex(where: {
+                  $0.range.contains(edit.replacedRange) && edit.replacedRange.location < $0.range.upperBound
+              }) else { return nil }
+        let oldRange = previous.snapshot.statements[index].range
+        let newRange = snapshot.statements[index].range
+        let delta = edit.replacement.utf16.count - edit.replacedRange.length
+        guard newRange.location == oldRange.location, newRange.length == oldRange.length + delta else { return nil }
+        for offset in snapshot.statements.indices where offset != index {
+            let expected = previous.snapshot.statements[offset].range.shiftedForReuse(by: offset > index ? delta : 0)
+            guard snapshot.statements[offset].range == expected else { return nil }
+        }
+        // Recoveries must not straddle the statement boundaries being replaced.
+        guard previous.recoveredHighlights.allSatisfy({
+            let range = $0.highlight.range
+            return range.upperBound <= oldRange.location || range.location >= oldRange.upperBound || oldRange.contains(range)
+        }) else { return nil }
+        var result = previous.recoveredHighlights.compactMap { correction -> SQLIndexHighlightRecovery.Correction? in
+            let range = correction.highlight.range
+            if oldRange.contains(range) { return nil }
+            let shift = range.location >= oldRange.upperBound ? delta : 0
+            return .init(highlight: .init(range: range.shiftedForReuse(by: shift), kind: correction.highlight.kind),
+                         preservesExistingSyntax: correction.preservesExistingSyntax)
+        }
+        let fragment = (source as NSString).substring(with: newRange.nsRange)
+        result += (SQLLexicalHighlightRecovery.highlights(in: fragment) + SQLIndexHighlightRecovery.highlights(in: fragment)).map {
+            .init(highlight: .init(range: $0.highlight.range.shiftedForReuse(by: newRange.location), kind: $0.highlight.kind),
+                  preservesExistingSyntax: $0.preservesExistingSyntax)
+        }
+        return result
     }
 
     private static func clauseRecoverySource(
@@ -204,7 +284,8 @@ actor SQLStructuralParser {
 
     func highlights(
         in requestedRange: SQLSourceRange,
-        revision: SQLSourceRevision
+        revision: SQLSourceRevision,
+        context: SQLHighlightContext = .generic
     ) throws -> [SQLSyntaxHighlight] {
         try Task.checkCancellation()
         guard let cachedParse, cachedParse.source.revision == revision else {
@@ -216,13 +297,28 @@ actor SQLStructuralParser {
             length: (cachedParse.source.text as NSString).length
         )
         guard let includedRange = requestedRange.nsRange.intersection(documentRange),
-              includedRange.length > 0,
-              let rootNode = cachedParse.tree.rootNode
+              includedRange.length > 0
         else {
             return []
         }
 
-        let cursor = highlightQuery.execute(node: rootNode, in: cachedParse.tree)
+        let displayTree: Tree
+        if let cache = displayTreeCache, cache.revision == revision, cache.context == context {
+            displayTree = cache.tree
+        } else if let displaySource = context.displaySource(cachedParse.source.text) {
+            let displayParser = Parser()
+            guard let language = CodeLanguage.sql.language else { throw SQLStructuralParserError.languageUnavailable }
+            try displayParser.setLanguage(language)
+            displayParser.timeout = 10
+            guard let tree = displayParser.parse(displaySource)?.copy() else { throw SQLStructuralParserError.parseFailed }
+            displayTree = tree
+            displayTreeCache = (revision, context, tree)
+        } else {
+            displayTree = cachedParse.tree
+            displayTreeCache = (revision, context, displayTree)
+        }
+        guard let rootNode = displayTree.rootNode else { return [] }
+        let cursor = highlightQuery.execute(node: rootNode, in: displayTree)
         cursor.setRange(includedRange)
         cursor.matchLimit = 256
 
@@ -256,6 +352,30 @@ actor SQLStructuralParser {
                 NSIntersectionRange(range.nsRange, highlight.range.nsRange).length == 0
             }
             highlightsByRange[highlight.range] = highlight
+        }
+
+        var protectedSyntax = IndexSet()
+        for highlight in highlightsByRange.values {
+            switch highlight.kind {
+            case .keyword, .builtinType, .boolean, .comment, .string, .number, .parameter, .attribute:
+                protectedSyntax.insert(integersIn: highlight.range.location..<highlight.range.upperBound)
+            default: break
+            }
+        }
+        let recovered = cachedParse.recoveredHighlights.compactMap { correction -> SQLSyntaxHighlight? in
+            let highlight = correction.highlight
+            guard let range = highlight.range.nsRange.intersection(includedRange), range.length > 0 else { return nil }
+            if correction.preservesExistingSyntax,
+               protectedSyntax.intersects(integersIn: range.location..<NSMaxRange(range)) { return nil }
+            return SQLSyntaxHighlight(range: SQLSourceRange(range), kind: highlight.kind)
+        }
+        if !recovered.isEmpty {
+            var replaced = IndexSet()
+            for highlight in recovered { replaced.insert(integersIn: highlight.range.location..<highlight.range.upperBound) }
+            highlightsByRange = highlightsByRange.filter { range, _ in
+                !replaced.intersects(integersIn: range.location..<range.upperBound)
+            }
+            for highlight in recovered { highlightsByRange[highlight.range] = highlight }
         }
 
         return highlightsByRange.values.sorted { lhs, rhs in
@@ -349,7 +469,7 @@ actor SQLStructuralParser {
         _ source: SQLSourceSnapshot,
         edit: SQLSourceEdit,
         cachedParse: CachedParse
-    ) throws -> (tree: MutableTree, changedRanges: [SQLSourceRange]) {
+    ) throws -> (tree: MutableTree, changedRanges: [SQLSourceRange], mode: SQLParseSnapshot.Mode) {
         let previousText = cachedParse.source.text as NSString
         let range = edit.replacedRange.nsRange
         guard range.location >= 0,
@@ -361,7 +481,7 @@ actor SQLStructuralParser {
 
         let expectedText = NSMutableString(string: cachedParse.source.text)
         expectedText.replaceCharacters(in: range, with: edit.replacement)
-        guard expectedText as String == source.text else {
+        guard expectedText.compare(source.text, options: .literal) == .orderedSame else {
             throw SQLStructuralParserError.invalidEdit
         }
 
@@ -377,34 +497,42 @@ actor SQLStructuralParser {
         guard let editedTree = cachedParse.tree.edit(inputEdit) else {
             throw SQLStructuralParserError.parseFailed
         }
-        let parsedTree = parser.parse(tree: editedTree, string: source.text)
-        guard let parsedTree else {
-            throw SQLStructuralParserError.parseFailed
+        parser.timeout = 2
+        defer { parser.timeout = 10 }
+        guard let parsedTree = parser.parse(tree: editedTree, string: source.text) else {
+            // Discard the paused incremental state and retry the current source once.
+            parser.reset()
+            parser.timeout = 10
+            guard let fullTree = parser.parse(source.text) else { parser.reset(); throw SQLStructuralParserError.parseFailed }
+            return (fullTree, [.init(location: 0, length: source.text.utf16.count)], .full)
         }
         let changedRanges = editedTree.changedRanges(from: parsedTree).map { range in
             SQLSourceRange(range.bytes.range)
         }
-        return (parsedTree, changedRanges)
+        return (parsedTree, changedRanges, .incremental)
     }
 
     private static func makeSnapshot(
         source: SQLSourceSnapshot,
         rootNode: Node,
+        syntaxTree: SQLSyntaxNodeSnapshot,
+        reusedStatements: [UInt: CachedStatement],
         changedRanges: [SQLSourceRange],
         mode: SQLParseSnapshot.Mode,
         carriedRelationReferences: [SQLRelationReferenceSnapshot]
     ) -> SQLParseSnapshot {
+        let nsSource = source.text as NSString
         var statements: [SQLStatement] = []
         var unreliableStatementRanges: [SQLSourceRange] = []
         var diagnostics: [SQLParseDiagnostic] = []
         var segmentNodes: [Node] = []
 
-        for childIndex in 0..<rootNode.childCount {
-            guard let child = rootNode.child(at: childIndex) else { continue }
+        let rootChildren = childNodes(of: rootNode)
+        for child in rootChildren {
             if segmentNodes.isEmpty,
                let recoveredStatements = directTerminatedStatements(
                    inErrorNode: child,
-                   source: source.text
+                   source: nsSource
                )
             {
                 statements.append(contentsOf: recoveredStatements)
@@ -417,11 +545,12 @@ actor SQLStructuralParser {
                 })
                 continue
             }
-            if isStatementTerminator(child, source: source.text) {
+            if isStatementTerminator(child, source: nsSource) {
                 analyzeSegment(
                     nodes: segmentNodes,
                     terminatorEnd: child.range.location + child.range.length,
-                    source: source.text,
+                    source: nsSource,
+                    reusedStatements: reusedStatements,
                     statements: &statements,
                     unreliableStatementRanges: &unreliableStatementRanges,
                     diagnostics: &diagnostics
@@ -434,13 +563,13 @@ actor SQLStructuralParser {
         analyzeSegment(
             nodes: segmentNodes,
             terminatorEnd: nil,
-            source: source.text,
+            source: nsSource,
+            reusedStatements: reusedStatements,
             statements: &statements,
             unreliableStatementRanges: &unreliableStatementRanges,
             diagnostics: &diagnostics
         )
 
-        let syntaxTree = syntaxSnapshot(for: rootNode)
         if !syntaxTree.descendants(named: "delimiter_directive").isEmpty {
             statements = []
             let documentRange = SQLSourceRange(
@@ -458,7 +587,7 @@ actor SQLStructuralParser {
             )
         } else if let recoveredTransactions = exactTransactionStatements(
             in: syntaxTree,
-            source: source.text
+            source: nsSource
         ) {
             statements = recoveredTransactions
             unreliableStatementRanges = []
@@ -467,27 +596,33 @@ actor SQLStructuralParser {
                 statements: &statements,
                 unreliableStatementRanges: &unreliableStatementRanges,
                 syntaxTree: syntaxTree,
-                source: source.text
+                source: nsSource
             )
             repairSemicolonBoundedUnreliableRanges(
                 statements: &statements,
                 unreliableStatementRanges: &unreliableStatementRanges,
                 syntaxTree: syntaxTree,
-                source: source.text
+                source: nsSource
             )
         }
         let currentRelationReferences = relationReferences(
             in: syntaxTree,
-            source: source.text
+            source: nsSource
         )
         let relationReferences = Array(
             Set(currentRelationReferences + carriedRelationReferences)
         ).sorted { $0.range.location < $1.range.location }
+        var reusedScopes: [Int: SQLQueryScopeSnapshot] = [:]
+        for node in rootChildren where !node.hasChanges {
+            guard let cached = reusedStatements[node.id], let scope = cached.scope else { continue }
+            reusedScopes[node.range.location] = scope.shiftedForReuse(by: node.range.location - cached.syntax.range.location)
+        }
         let queryScopes = queryScopes(
             in: syntaxTree,
+            reusedScopes: reusedScopes,
             statements: statements,
             relationReferences: relationReferences,
-            source: source.text
+            source: nsSource
         )
         return SQLParseSnapshot(
             revision: source.revision,
@@ -513,15 +648,30 @@ actor SQLStructuralParser {
 
     private static func queryScopes(
         in syntaxTree: SQLSyntaxNodeSnapshot,
+        reusedScopes: [Int: SQLQueryScopeSnapshot],
         statements: [SQLStatement],
         relationReferences: [SQLRelationReferenceSnapshot],
-        source: String
+        source: NSString
     ) -> [SQLQueryScopeSnapshot] {
         let statementNodes = Dictionary(
             grouping: syntaxTree.descendants(named: "statement"),
             by: \.range.location
         )
+        // References are sorted by source offset. Restrict each statement before
+        // descending; scanning every document relation for every statement was O(n²).
+        func references(in range: SQLSourceRange) -> [SQLRelationReferenceSnapshot] {
+            var lower = 0, upper = relationReferences.count
+            while lower < upper {
+                let middle = (lower + upper) / 2
+                if relationReferences[middle].range.location < range.location { lower = middle + 1 }
+                else { upper = middle }
+            }
+            let start = lower
+            while lower < relationReferences.count, relationReferences[lower].range.location < range.upperBound { lower += 1 }
+            return relationReferences[start..<lower].filter { range.contains($0.range) }
+        }
         return statements.compactMap { statement in
+            if let scope = reusedScopes[statement.range.location], scope.range == statement.range { return scope }
             guard let syntaxNode = statementNodes[statement.range.location]?
                 .min(by: { $0.range.length < $1.range.length })
             else {
@@ -538,8 +688,8 @@ actor SQLStructuralParser {
                     kind: .statement,
                     canReferenceParentRelations: false
                 ),
-                relationReferences: relationReferences,
-                source: source as NSString
+                relationReferences: references(in: statement.range),
+                source: source
             )
         }
     }
@@ -875,9 +1025,8 @@ actor SQLStructuralParser {
 
     private static func relationReferences(
         in syntaxTree: SQLSyntaxNodeSnapshot,
-        source: String
+        source: NSString
     ) -> [SQLRelationReferenceSnapshot] {
-        let source = source as NSString
         return syntaxTree.descendants(named: "relation").compactMap { relation in
             guard let reference = relation.descendants(named: "object_reference").first
             else {
@@ -965,25 +1114,42 @@ actor SQLStructuralParser {
             .replacingOccurrences(of: "``", with: "`")
     }
 
-    private static func syntaxSnapshot(for node: Node) -> SQLSyntaxNodeSnapshot {
+    /// Indexed child access rescans preceding siblings in tree-sitter. A cursor
+    /// keeps traversal linear for documents containing thousands of statements.
+    private static func childNodes(of node: Node) -> [Node] {
+        guard node.childCount > 0 else { return [] }
+        let cursor = node.treeCursor
+        guard cursor.goToFirstChild() else { return [] }
+        var children: [Node] = []
+        children.reserveCapacity(node.childCount)
+        repeat {
+            if let child = cursor.currentNode { children.append(child) }
+        } while cursor.gotoNextSibling()
+        return children
+    }
+
+    private static func syntaxSnapshot(for node: Node, reusing cache: [UInt: CachedStatement] = [:]) -> SQLSyntaxNodeSnapshot {
+        if !node.hasChanges, let cached = cache[node.id] {
+            return cached.syntax.shiftedForReuse(by: node.range.location - cached.syntax.range.location)
+        }
         return SQLSyntaxNodeSnapshot(
             type: node.nodeType ?? "unknown",
             range: SQLSourceRange(node.range),
-            children: compactSyntaxChildren(of: node)
+            children: compactSyntaxChildren(of: node, reusing: cache)
         )
     }
 
     private static func compactSyntaxChildren(
-        of node: Node
+        of node: Node,
+        reusing cache: [UInt: CachedStatement]
     ) -> [SQLSyntaxNodeSnapshot] {
         var children: [SQLSyntaxNodeSnapshot] = []
-        for index in 0..<node.childCount {
-            guard let child = node.child(at: index) else { continue }
+        for child in childNodes(of: node) {
             let type = child.nodeType ?? "unknown"
             if child.childCount == 0 || formattingNodeTypes.contains(type) {
-                children.append(syntaxSnapshot(for: child))
+                children.append(syntaxSnapshot(for: child, reusing: cache))
             } else {
-                children.append(contentsOf: compactSyntaxChildren(of: child))
+                children.append(contentsOf: compactSyntaxChildren(of: child, reusing: cache))
             }
         }
         return children
@@ -1039,8 +1205,16 @@ actor SQLStructuralParser {
             return .number
         case "string":
             return .string
-        case "type", "type.builtin", "type.qualifier":
+        case "type":
             return .type
+        case "type.builtin":
+            return .builtinType
+        case "type.qualifier":
+            return .attribute
+        case "operator":
+            return .operator
+        case "punctuation.bracket", "punctuation.delimiter":
+            return .punctuation
         case "parameter":
             return .parameter
         case "boolean":
@@ -1058,18 +1232,20 @@ actor SQLStructuralParser {
         case .number, .boolean: return 100
         case .function: return 90
         case .property: return 80
-        case .type: return 70
+        case .type, .builtinType: return 70
         case .keyword: return 60
         case .attribute: return 50
         case .parameter, .variable: return 40
         case .string: return 30
+        case .operator, .punctuation: return 20
         }
     }
 
     private static func analyzeSegment(
         nodes: [Node],
         terminatorEnd: Int?,
-        source: String,
+        source: NSString,
+        reusedStatements: [UInt: CachedStatement],
         statements: inout [SQLStatement],
         unreliableStatementRanges: inout [SQLSourceRange],
         diagnostics: inout [SQLParseDiagnostic]
@@ -1078,6 +1254,11 @@ actor SQLStructuralParser {
             !Self.isOrdinaryComment(node)
         }
         guard !significantNodes.isEmpty else { return }
+        if significantNodes.count == 1, let node = significantNodes.first, !node.hasChanges,
+           let cached = reusedStatements[node.id] {
+            statements.append(.init(kind: cached.kind, range: rangeCovering([node], terminatorEnd: terminatorEnd)))
+            return
+        }
 
         let segmentRange = rangeCovering(
             significantNodes,
@@ -1149,7 +1330,7 @@ actor SQLStructuralParser {
         )
         statements.append(
             SQLStatement(
-                kind: statementKind(for: statementNode),
+                kind: (!statementNode.hasChanges ? reusedStatements[statementNode.id]?.kind : nil) ?? statementKind(for: statementNode),
                 range: SQLSourceRange(
                     location: statementStart,
                     length: statementEnd - statementStart
@@ -1171,12 +1352,11 @@ actor SQLStructuralParser {
 
     private static func containsNestedStatementTerminator(
         in nodes: [Node],
-        source: String
+        source: NSString
     ) -> Bool {
         var pending = nodes
         while let node = pending.popLast() {
-            for index in 0..<node.childCount {
-                guard let child = node.child(at: index) else { continue }
+            for child in childNodes(of: node) {
                 if isStatementTerminator(child, source: source) {
                     return true
                 }
@@ -1190,8 +1370,8 @@ actor SQLStructuralParser {
         let nodeTypes = descendantNodeTypes(in: node)
         return statementKind(
             nodeTypes: nodeTypes,
-            hasUpdateWhereClause: hasOuterUpdateWhereClause(in: node),
-            hasDeleteWhereClause: hasOuterDeleteWhereClause(in: node)
+            hasUpdateWhereClause: nodeTypes.contains("keyword_update") && hasOuterUpdateWhereClause(in: node),
+            hasDeleteWhereClause: nodeTypes.contains("keyword_delete") && hasOuterDeleteWhereClause(in: node)
         )
     }
 
@@ -1305,7 +1485,7 @@ actor SQLStructuralParser {
         statements: inout [SQLStatement],
         unreliableStatementRanges: inout [SQLSourceRange],
         syntaxTree: SQLSyntaxNodeSnapshot,
-        source: String
+        source: NSString
     ) {
         let segments = topLevelSyntaxSegments(in: syntaxTree)
         let transactionSegments = segments.compactMap { segment in
@@ -1415,11 +1595,11 @@ actor SQLStructuralParser {
         statements: inout [SQLStatement],
         unreliableStatementRanges: inout [SQLSourceRange],
         syntaxTree: SQLSyntaxNodeSnapshot,
-        source: String
+        source: NSString
     ) {
+        guard !unreliableStatementRanges.isEmpty else { return }
         let terminators = syntaxRanges(named: ";", in: syntaxTree)
-        guard !terminators.isEmpty,
-              !unreliableStatementRanges.isEmpty
+        guard !terminators.isEmpty
         else {
             return
         }
@@ -1495,12 +1675,12 @@ actor SQLStructuralParser {
 
     private static func hasExecutablePayload(
         in range: SQLSourceRange,
-        source: String
+        source: NSString
     ) -> Bool {
-        guard range.upperBound <= (source as NSString).length else {
+        guard range.upperBound <= source.length else {
             return false
         }
-        var payload = (source as NSString)
+        var payload = source
             .substring(with: range.nsRange)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if payload.hasSuffix(";") {
@@ -1512,19 +1692,21 @@ actor SQLStructuralParser {
 
     private static func exactTransactionBoundaryKind(
         in range: SQLSourceRange,
-        source: String
+        source: NSString
     ) -> SQLStatementKind.TransactionOperation? {
-        guard range.upperBound <= (source as NSString).length else {
+        guard range.upperBound <= source.length else {
             return nil
         }
-        var command = (source as NSString)
+        var command = source
             .substring(with: range.nsRange)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if command.hasSuffix(";") {
             command.removeLast()
             command = command.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        guard !command.contains(";") else { return nil }
+        let firstWord = command.prefix { !$0.isWhitespace && $0 != ";" }.uppercased()
+        guard ["BEGIN", "SAVEPOINT", "RELEASE", "START", "COMMIT", "ROLLBACK"].contains(firstWord),
+              !command.contains(";") else { return nil }
         let normalized = command
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
@@ -1563,7 +1745,7 @@ actor SQLStructuralParser {
 
     private static func exactTransactionStatements(
         in syntaxTree: SQLSyntaxNodeSnapshot,
-        source: String
+        source: NSString
     ) -> [SQLStatement]? {
         let terminators = syntaxRanges(named: ";", in: syntaxTree)
         guard !terminators.isEmpty else { return nil }
@@ -1593,7 +1775,7 @@ actor SQLStructuralParser {
                 location: statementStart,
                 length: syntaxTree.range.upperBound - statementStart
             )
-            let trailingText = (source as NSString)
+            let trailingText = source
                 .substring(with: trailingRange.nsRange)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard trailingText.isEmpty else { return nil }
@@ -1603,17 +1785,10 @@ actor SQLStructuralParser {
 
     private static func directTerminatedStatements(
         inErrorNode node: Node,
-        source: String
+        source: NSString
     ) -> [SQLStatement]? {
         guard node.nodeType == "ERROR" else { return nil }
-        let terminators: [Node] = (0..<node.childCount).compactMap { index in
-            guard let child = node.child(at: index),
-                  isStatementTerminator(child, source: source)
-            else {
-                return nil
-            }
-            return child
-        }
+        let terminators = childNodes(of: node).filter { isStatementTerminator($0, source: source) }
         guard !terminators.isEmpty else { return nil }
 
         let fallbackKind = terminators.count == 1
@@ -1642,7 +1817,7 @@ actor SQLStructuralParser {
                 location: statementStart,
                 length: node.range.location + node.range.length - statementStart
             )
-            let trailingText = (source as NSString)
+            let trailingText = source
                 .substring(with: trailingRange.nsRange)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard trailingText.isEmpty else { return nil }
@@ -1652,17 +1827,17 @@ actor SQLStructuralParser {
 
     private static func isStatementTerminator(
         _ node: Node,
-        source: String
+        source: NSString
     ) -> Bool {
         let range = node.range
         guard node.childCount == 0,
               range.length == 1,
               range.location >= 0,
-              NSMaxRange(range) <= (source as NSString).length
+              NSMaxRange(range) <= source.length
         else {
             return false
         }
-        return (source as NSString).substring(with: range) == ";"
+        return source.substring(with: range) == ";"
     }
 
     private static func syntaxRanges(
@@ -1698,11 +1873,7 @@ actor SQLStructuralParser {
             if let nodeType = current.nodeType {
                 result.insert(nodeType.lowercased())
             }
-            for index in 0..<current.childCount {
-                if let child = current.child(at: index) {
-                    pending.append(child)
-                }
-            }
+            pending.append(contentsOf: childNodes(of: current))
         }
         return result
     }
@@ -1723,6 +1894,7 @@ actor SQLStructuralParser {
         in node: Node,
         into diagnostics: inout [SQLParseDiagnostic]
     ) {
+        guard node.hasError || node.isMissing else { return }
         if node.nodeType == "ERROR" {
             diagnostics.append(
                 SQLParseDiagnostic(
@@ -1740,10 +1912,8 @@ actor SQLStructuralParser {
                 )
             )
         }
-        for childIndex in 0..<node.childCount {
-            if let child = node.child(at: childIndex) {
-                collectDiagnostics(in: child, into: &diagnostics)
-            }
+        for child in childNodes(of: node) {
+            collectDiagnostics(in: child, into: &diagnostics)
         }
     }
 

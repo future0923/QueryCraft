@@ -2,7 +2,7 @@ import SwiftUI
 
 struct WorkspaceElasticsearchMappingView: View {
     @State private var page: WorkspaceDatabaseDataPage
-    @State private var exportController = WorkspaceDataExportController()
+    @State private var exportController = WorkspaceDataExportController(databaseType: .elasticsearch)
     @State private var searchController = WorkspaceGridSearchController()
     @State private var rowInsertEditor = WorkspaceDatabaseDataRowInsertEditorState()
     @State private var selectedRows = IndexSet()

@@ -52,6 +52,8 @@ Topic 页面中的“消费组”可查看各分区已提交 Offset、日志范�
 - SQL、Kafka、Elasticsearch 表格自动将常见时间戳列显示为本地年月日时分秒（设置 → 数据中可关闭，默认开启）；列头右键可选择原始值、秒或毫秒，编辑、复制和导出保留原始值
 - 搜索、复制、分页、服务端排序与筛选
 - Excel、CSV、JSON、JSON Lines 与 SQL 导出
+- MySQL、PostgreSQL、Doris 表右键可直接导出 CSV、JSON、SQL INSERT、XLSX；参数在设置 → 数据中统一配置，INSERT 默认每条 1000 行，支持自定义
+- MySQL、PostgreSQL 表右键可导入 CSV、TSV、分隔文本、JSON/JSONL、XLSX/XLSM 和 SQL INSERT；提供预览、字段映射及事务写入（MySQL 限 InnoDB），默认每批 500 行
 - 简体中文 / English、浅色 / 深色外观
 - Sparkle 签名自动更新
 

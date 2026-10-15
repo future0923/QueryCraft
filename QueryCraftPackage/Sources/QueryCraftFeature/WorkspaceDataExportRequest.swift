@@ -1,7 +1,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-enum WorkspaceDataExportScope: String, CaseIterable, Identifiable, Sendable {
+enum WorkspaceDataExportScope: String, CaseIterable, Identifiable, Codable, Sendable {
     case selection
     case currentData
     case allTableRows
@@ -9,7 +9,7 @@ enum WorkspaceDataExportScope: String, CaseIterable, Identifiable, Sendable {
     var id: Self { self }
 }
 
-enum WorkspaceDataExportNullStyle: String, CaseIterable, Identifiable, Sendable {
+enum WorkspaceDataExportNullStyle: String, CaseIterable, Identifiable, Codable, Sendable {
     case literal
     case empty
 
@@ -25,7 +25,7 @@ enum WorkspaceDataExportNullStyle: String, CaseIterable, Identifiable, Sendable 
     }
 }
 
-enum WorkspaceCSVDelimiter: String, CaseIterable, Identifiable, Sendable {
+enum WorkspaceCSVDelimiter: String, CaseIterable, Identifiable, Codable, Sendable {
     case comma
     case tab
     case semicolon
@@ -43,7 +43,7 @@ enum WorkspaceCSVDelimiter: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-enum WorkspaceCSVLineEnding: String, CaseIterable, Identifiable, Sendable {
+enum WorkspaceCSVLineEnding: String, CaseIterable, Identifiable, Codable, Sendable {
     case crlf
     case lf
 
@@ -57,14 +57,14 @@ enum WorkspaceCSVLineEnding: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-enum WorkspaceCSVQuotePolicy: String, CaseIterable, Identifiable, Sendable {
+enum WorkspaceCSVQuotePolicy: String, CaseIterable, Identifiable, Codable, Sendable {
     case asNeeded
     case allText
 
     var id: Self { self }
 }
 
-enum WorkspaceJSONLayout: String, CaseIterable, Identifiable, Sendable {
+enum WorkspaceJSONLayout: String, CaseIterable, Identifiable, Codable, Sendable {
     case tabular
     case objects
     case lines
@@ -105,6 +105,10 @@ struct WorkspaceDataExportOptions: Sendable {
     var sqlInsertBatchSize = 1_000
     var sqlWrapsInTransaction = true
     var sqlConflictStrategy = WorkspaceSQLConflictStrategy.insert
+    var sqlDialect = WorkspaceSQLExportDialect.mysql
+    var sqlTableIdentifierParts: [String]?
+    var sqlOverridesIdentity = false
+    var sqlMaximumStatementBytes = 8 * 1_024 * 1_024
 
     var fileExtension: String {
         if format == .json, jsonLayout == .lines {

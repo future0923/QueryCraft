@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WorkspaceDatabaseObjectDetailsTabContent: Equatable, View {
+    var highlightContext: SQLHighlightContext = .generic
     let state: WorkspaceDatabaseObjectDetailsState
     let tab: WorkspaceDatabaseObjectDetailTab
     let retry: () -> Void
@@ -22,7 +23,7 @@ struct WorkspaceDatabaseObjectDetailsTabContent: Equatable, View {
         lhs: WorkspaceDatabaseObjectDetailsTabContent,
         rhs: WorkspaceDatabaseObjectDetailsTabContent
     ) -> Bool {
-        guard lhs.state == rhs.state,
+        guard lhs.highlightContext == rhs.highlightContext, lhs.state == rhs.state,
               lhs.tab == rhs.tab,
               lhs.canEditSchema == rhs.canEditSchema,
               lhs.schemaEditingDescriptor == rhs.schemaEditingDescriptor
@@ -73,7 +74,7 @@ struct WorkspaceDatabaseObjectDetailsTabContent: Equatable, View {
                     )
                 }
             case .ddl:
-                WorkspaceDatabaseDDLView(ddl: details.ddl)
+                WorkspaceDatabaseDDLView(ddl: details.ddl, highlightContext: highlightContext)
             case .options:
                 WorkspaceNewTableOptionsView(
                     options: $tableOptions,

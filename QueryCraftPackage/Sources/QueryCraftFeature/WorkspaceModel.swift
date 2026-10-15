@@ -14,6 +14,11 @@ final class WorkspaceModel {
     let profileID: ConnectionProfile.ID
     let safetyLock: WorkspaceSafetyLock
     private(set) var profileName = AppCopy.current.text("工作区", "Workspace")
+    var sqlHighlightContext: SQLHighlightContext {
+        if let sessionConfiguration { return ApplicationPreferences.shared.sqlHighlightContext(for: sessionConfiguration) }
+        return .init(databaseType: databaseType)
+    }
+
     private(set) var databaseType = DatabaseType.mysql
     private(set) var sessionCapabilities = WorkspaceSessionCapabilities.standard
     private(set) var schemaEditingDescriptor =
@@ -928,6 +933,56 @@ final class WorkspaceModel {
             await changeSession.close()
             throw error
         }
+    }
+
+    func canImportTable(_ selection: WorkspaceDatabaseObjectSelection) -> Bool {
+        selection.kind == .table && WorkspaceDataImportTarget.supports(databaseType)
+            && sessionCapabilities.supportsDataEditing && sessionCapabilities.supportsTransactions
+            && connectionState == .connected
+    }
+
+    func importTable(_ selection: WorkspaceDatabaseObjectSelection) {
+        guard canImportTable(selection), let configuration = sessionConfiguration else { return }
+        let target = WorkspaceDataImportTarget(sessionFactory: sessionFactory, configuration: configuration, selection: selection)
+        let capturedWorkspaceID = workspaceID
+        let label = "\(profileName) / \(selection.databaseName) / \(selection.objectName)"
+        let key = "\(workspaceID):\(selection.databaseName):\(selection.objectName)"
+        WorkspaceDataImportWindowController.show(key: key, model: WorkspaceDataImportModel(
+            target: target, targetLabel: label, safetyLock: safetyLock,
+            authorize: { [weak self] in
+                guard let self, self.workspaceID == capturedWorkspaceID,
+                      self.connectionState == .connected,
+                      self.sessionConfiguration == configuration else {
+                    throw WorkspaceDatabaseTableMutationError.contextChanged
+                }
+                guard !self.safetyLock.isEnabled else {
+                    throw WorkspaceDatabaseDataRowInsertError.safetyLockEnabled
+                }
+            }
+        ))
+    }
+
+    func canExportTable(_ selection: WorkspaceDatabaseObjectSelection) -> Bool {
+        selection.kind == .table
+            && WorkspaceSQLExportDialect(databaseType: databaseType) != nil
+            && connectionState == .connected
+    }
+
+    func exportTable(
+        _ selection: WorkspaceDatabaseObjectSelection,
+        format: WorkspaceDataExportFormat
+    ) {
+        guard canExportTable(selection), let configuration = sessionConfiguration else { return }
+        let target = WorkspaceTableDataExportTarget(
+            sessionFactory: sessionFactory,
+            configuration: configuration.selecting(database: selection.databaseName),
+            selection: selection
+        )
+        WorkspaceTableDataExportPresenter.chooseDestination(
+            target: target,
+            format: format,
+            preferences: ApplicationPreferences.shared.dataExport
+        )
     }
 
     func dataExportAllRowsProvider(

@@ -167,6 +167,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
                     resource: .init(resource: selection.objectName, kind: selection.kind))
             } else {
             WorkspaceDatabaseObjectDetailContent(
+                highlightContext: model.sqlHighlightContext,
                 detailsState: model.selectedObjectDetailsState,
                 indexesState: model.selectedObjectIndexesState,
                 dataState: displayedDataState,
@@ -331,6 +332,9 @@ struct WorkspaceDatabaseObjectDetailView: View {
             guard model.databaseType == .kafka, kafkaJSONTableEnabled else { return }
             await kafkaJSONTable.load(model.selectedObjectDataState.page,
                 selectionID: selection.id, schemaID: kafkaJSONSchemaID)
+        }
+        .onChange(of: model.databaseType, initial: true) {
+            exportController.databaseType = model.databaseType
         }
         .onChange(of: kafkaJSONTableEnabled) { _, _ in
             kafkaJSONSchemaID = UUID()

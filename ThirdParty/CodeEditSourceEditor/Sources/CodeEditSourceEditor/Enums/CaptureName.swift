@@ -33,6 +33,9 @@ public enum CaptureName: Int8, CaseIterable, Sendable {
     case variableBuiltin
     case keywordReturn
     case keywordFunction
+    case typeBuiltin
+    case `operator`
+    case punctuation
 
     var alternate: CaptureName {
         switch self {
@@ -50,6 +53,9 @@ public enum CaptureName: Int8, CaseIterable, Sendable {
     public static func fromString(_ string: String?) -> CaptureName? { // swiftlint:disable:this cyclomatic_complexity
         guard let string else { return nil }
         switch string {
+        case "type.builtin": return .typeBuiltin
+        case "operator": return .operator
+        case "punctuation.bracket", "punctuation.delimiter": return .punctuation
         case "include":
             return .include
         case "constructor":
@@ -100,6 +106,9 @@ public enum CaptureName: Int8, CaseIterable, Sendable {
     /// See ``CaptureName`` docs for why this enum isn't a raw representable.
     var stringValue: String {
         switch self {
+        case .typeBuiltin: return "type.builtin"
+        case .operator: return "operator"
+        case .punctuation: return "punctuation.delimiter"
         case .include:
             return "include"
         case .constructor:

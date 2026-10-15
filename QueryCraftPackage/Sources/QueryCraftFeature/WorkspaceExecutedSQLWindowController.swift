@@ -1,8 +1,10 @@
 import AppKit
+import CodeEditSourceEditor
 import SwiftUI
 
 struct WorkspaceExecutedSQLControl: View {
     let sql: String
+    var highlightContext: SQLHighlightContext = .generic
     @State private var isHovered = false
 
     var body: some View {
@@ -15,14 +17,14 @@ struct WorkspaceExecutedSQLControl: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
-                    WorkspaceExecutedSQLWindowController.show(sql: sql)
+                    WorkspaceExecutedSQLWindowController.show(sql: sql, context: highlightContext)
                 }
                 .accessibilityAction(named: AppCopy.current.text("查看完整 SQL", "View Full SQL")) {
-                    WorkspaceExecutedSQLWindowController.show(sql: sql)
+                    WorkspaceExecutedSQLWindowController.show(sql: sql, context: highlightContext)
                 }
 
             Button {
-                WorkspaceExecutedSQLWindowController.show(sql: sql)
+                WorkspaceExecutedSQLWindowController.show(sql: sql, context: highlightContext)
             } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.caption)
@@ -46,16 +48,18 @@ struct WorkspaceExecutedSQLControl: View {
 final class WorkspaceExecutedSQLWindowController: NSWindowController, NSWindowDelegate {
     private static var windows: [String: WorkspaceExecutedSQLWindowController] = [:]
     private let sql: String
+    private let key: String
 
-    static func show(sql: String) {
-        if let existing = windows[sql] {
+    static func show(sql: String, context: SQLHighlightContext = .generic) {
+        let key = context.dialect.rawValue + String(context.ansiQuotes) + sql
+        if let existing = windows[key] {
             existing.showWindow(nil)
             existing.window?.makeKeyAndOrderFront(nil)
             return
         }
         let parent = NSApp.keyWindow
-        let controller = WorkspaceExecutedSQLWindowController(sql: sql)
-        windows[sql] = controller
+        let controller = WorkspaceExecutedSQLWindowController(sql: sql, context: context, key: key)
+        windows[key] = controller
         if let available = parent?.screen?.visibleFrame.insetBy(dx: 24, dy: 24),
             let window = controller.window {
             let maximum = window.contentRect(forFrameRect: available).size
@@ -76,7 +80,8 @@ final class WorkspaceExecutedSQLWindowController: NSWindowController, NSWindowDe
         controller.window?.makeKeyAndOrderFront(nil)
     }
 
-    private init(sql: String) {
+    private init(sql: String, context: SQLHighlightContext, key: String) {
+        self.key = key
         self.sql = sql
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
@@ -89,7 +94,7 @@ final class WorkspaceExecutedSQLWindowController: NSWindowController, NSWindowDe
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         window.contentViewController = NSHostingController(
-            rootView: WorkspaceExecutedSQLWindowView(sql: sql)
+            rootView: WorkspaceExecutedSQLWindowView(sql: sql, highlightContext: context)
         )
         super.init(window: window)
         window.delegate = self
@@ -101,13 +106,15 @@ final class WorkspaceExecutedSQLWindowController: NSWindowController, NSWindowDe
     }
 
     func windowWillClose(_ notification: Notification) {
-        if Self.windows[sql] === self { Self.windows[sql] = nil }
+        if Self.windows[key] === self { Self.windows[key] = nil }
     }
 }
 
-private struct WorkspaceExecutedSQLWindowView: View {
+struct WorkspaceExecutedSQLWindowView: View {
     let sql: String
+    let highlightContext: SQLHighlightContext
     @Environment(\.colorScheme) private var colorScheme
+    @State private var preferences = ApplicationPreferences.shared
     @State private var fontSize: CGFloat = 14
     @State private var highlights: [SQLSyntaxHighlight] = []
 
@@ -157,7 +164,7 @@ private struct WorkspaceExecutedSQLWindowView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Color(nsColor: theme.background))
         .accessibilityIdentifier("executedSQLWindow")
         .task(id: sql) {
             highlights = []
@@ -167,7 +174,7 @@ private struct WorkspaceExecutedSQLWindowView: View {
                 _ = try await parser.parse(source)
                 let parsedHighlights = try await parser.highlights(
                     in: SQLSourceRange(location: 0, length: (sql as NSString).length),
-                    revision: source.revision
+                    revision: source.revision, context: highlightContext
                 )
                 try Task.checkCancellation()
                 highlights = parsedHighlights
@@ -177,29 +184,32 @@ private struct WorkspaceExecutedSQLWindowView: View {
         }
     }
 
-    private var highlightedSQL: AttributedString {
-        let theme = WorkspaceEditorTheme.make(
-            for: colorScheme == .dark ? .darkAqua : .aqua
+    private var theme: EditorTheme {
+        WorkspaceEditorTheme.make(
+            for: colorScheme == .dark ? .darkAqua : .aqua,
+            settings: preferences.editorColors
         )
+    }
+
+    private var highlightedSQL: AttributedString {
+        Self.highlightedSQL(sql, highlights: highlights, theme: theme, fontSize: fontSize)
+    }
+
+    static func highlightedSQL(_ sql: String, highlights: [SQLSyntaxHighlight], theme: EditorTheme, fontSize: CGFloat) -> AttributedString {
         var result = AttributedString(sql)
         result.foregroundColor = Color(nsColor: theme.text.color)
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        result.font = Font(font)
         for highlight in highlights {
             guard let sourceRange = Range(highlight.range.nsRange, in: sql),
                   let lowerBound = AttributedString.Index(sourceRange.lowerBound, within: result),
                   let upperBound = AttributedString.Index(sourceRange.upperBound, within: result)
             else { continue }
 
-            let color: NSColor
-            switch highlight.kind {
-            case .keyword, .boolean: color = theme.keywords.color
-            case .comment: color = theme.comments.color
-            case .variable, .property, .function, .parameter: color = theme.variables.color
-            case .number: color = theme.numbers.color
-            case .string: color = theme.strings.color
-            case .type: color = theme.types.color
-            case .attribute: color = theme.attributes.color
-            }
+            let capture = WorkspaceSQLLanguageService.captureName(for: highlight.kind)
+            let color = theme.colorFor(capture)
             result[lowerBound..<upperBound].foregroundColor = Color(nsColor: color)
+            result[lowerBound..<upperBound].font = Font(theme.fontFor(for: capture, from: font))
         }
         return result
     }

@@ -62,6 +62,8 @@ Database drivers are installed on demand for the current Mac architecture.
 - Search, copy, paging, server-side sorting, and filtering
 - Automatic local date/time display for timestamp columns in SQL, Kafka, and Elasticsearch grids (enabled by default; toggle in Settings → Data); column-header menus offer raw, Unix seconds, and milliseconds formats, while editing, copying, and exporting preserve raw values
 - Excel, CSV, JSON, JSON Lines, and SQL export
+- Right-click a MySQL, PostgreSQL, or Doris table to export CSV, JSON, SQL INSERT, or XLSX directly; configure defaults in Settings → Data, including a custom INSERT batch size (1,000 rows per statement by default)
+- Right-click a MySQL or PostgreSQL table to import CSV, TSV, delimited text, JSON/JSONL, XLSX/XLSM, or SQL INSERT with preview, column mapping, and transactional writes (InnoDB required for MySQL); defaults to 500 rows per batch
 - Simplified Chinese and English in Light and Dark appearance
 - Signed updates through Sparkle
 

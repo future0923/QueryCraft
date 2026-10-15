@@ -374,8 +374,8 @@ export default {
       $.keyword_null,
     ),
   ),
-  _double_quote_string: _ => /"[^"]*"/,
-  _backtick_quoted_string: _ => /`[^`]*`/,
+  _double_quote_string: _ => /"(?:""|[^"])*"/,
+  _backtick_quoted_string: _ => /`(?:``|[^`])*`/,
   // The norm specify that between two consecutive string must be a return,
   // but this is good enough.
   _single_quote_string: _ => seq(/([uU]&|[nN])?'([^']|'')*'/, repeat(/'([^']|'')*'/)),
@@ -394,12 +394,12 @@ export default {
   _natural_number: _ => /\d+/,
   _integer: $ => seq(
     optional(choice("-", "+")),
-    /(0[xX][0-9A-Fa-f]+(_[0-9A-Fa-f]+)*)|(0[oO][0-7]+(_[0-7]+)*)|(0[bB][01]+(_[01]+)*)|(\d+(_\d+)*(e[+-]?\d+(_\d+)*)?)/
+    /(0[xX][0-9A-Fa-f]+(_[0-9A-Fa-f]+)*)|(0[oO][0-7]+(_[0-7]+)*)|(0[bB][01]+(_[01]+)*)|(\d+(_\d+)*([eE][+-]?\d+(_\d+)*)?)/
   ),
   _decimal_number: $ => seq(
     optional(
       choice("-", "+")),
-    /((\d+(_\d+)*)?[.]\d+(_\d+)*(e[+-]?\d+(_\d+)*)?)|(\d+(_\d+)*[.](e[+-]?\d+(_\d+)*)?)/
+    /((\d+(_\d+)*)?[.]\d+(_\d+)*([eE][+-]?\d+(_\d+)*)?)|(\d+(_\d+)*[.]([eE][+-]?\d+(_\d+)*)?)/
   ),
   _bit_string: $ => seq(/[bBxX]'([^']|'')*'/, repeat(/'([^']|'')*'/)),
   // The identifier should be followed by a string (no parenthesis allowed)

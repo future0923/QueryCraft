@@ -10,7 +10,14 @@ enum WorkspaceDataExportSourceKind: Sendable {
 @Observable
 final class WorkspaceDataExportController {
     var isPresentingOptions = false
-    var options = WorkspaceDataExportOptions()
+    var options = ApplicationPreferences.shared.dataExport.options(for: .xlsx)
+    var databaseType = DatabaseType.mysql
+
+    var availableFormats: [WorkspaceDataExportFormat] {
+        WorkspaceDataExportFormat.allCases.filter {
+            $0 != .sql || WorkspaceSQLExportDialect(databaseType: databaseType) != nil
+        }
+    }
     var showsError = false
     private(set) var errorMessage = ""
     private(set) var hasSelection = false
@@ -28,6 +35,10 @@ final class WorkspaceDataExportController {
         WorkspaceDataExportAllRowsProvider?
     @ObservationIgnored private var suggestedFileName = "query-result"
     @ObservationIgnored private var knownSQLTableName: String?
+
+    init(databaseType: DatabaseType = .mysql) {
+        self.databaseType = databaseType
+    }
 
     func attach(
         tableView: WorkspaceDirectDrawTableView,
@@ -66,6 +77,10 @@ final class WorkspaceDataExportController {
     ) {
         guard let snapshot = tableView?.dataExportSnapshot() else { return }
         pendingSnapshot = snapshot
+        options = ApplicationPreferences.shared.dataExport.options(for: options.format)
+        if !availableFormats.contains(options.format) { options.format = .json }
+        options.sqlDialect = WorkspaceSQLExportDialect(databaseType: databaseType) ?? .mysql
+        if databaseType == .doris { options.sqlWrapsInTransaction = false }
         hasSelection = snapshot.hasSelection
         totalRowCount = snapshot.allRows.count
         selectedRowCount = snapshot.selectedRows?.count ?? 0
@@ -74,6 +89,11 @@ final class WorkspaceDataExportController {
             : .currentData
         if options.sqlTableName.isEmpty, let knownSQLTableName {
             options.sqlTableName = knownSQLTableName
+            if databaseType == .postgresql {
+                options.sqlTableIdentifierParts = knownSQLTableName.split(separator: ".", maxSplits: 1).map(String.init)
+            } else {
+                options.sqlTableIdentifierParts = [knownSQLTableName]
+            }
         }
         isPresentingOptions = true
     }
@@ -90,7 +110,10 @@ final class WorkspaceDataExportController {
         }
         isPresentingOptions = false
 
-        let selectedOptions = options
+        var selectedOptions = options
+        if selectedOptions.sqlTableName != knownSQLTableName {
+            selectedOptions.sqlTableIdentifierParts = nil
+        }
         let panel = NSSavePanel()
         panel.title = AppCopy.current.text("导出数据", "Export Data")
         panel.prompt = AppCopy.current.text("导出", "Export")

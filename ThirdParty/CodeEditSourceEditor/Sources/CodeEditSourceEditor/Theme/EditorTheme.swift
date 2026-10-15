@@ -25,6 +25,14 @@ public struct EditorTheme: Equatable {
         }
     }
 
+    /// Optional semantic styles, preserving the defaults of existing clients.
+    public var captureOverrides: [CaptureName: Attribute] = [:]
+    public var lineNumber: NSColor?
+    public var currentLineNumber: NSColor?
+    public var searchMatch: NSColor?
+    public var searchCurrent: NSColor?
+    public var searchText: NSColor?
+
     public var text: Attribute
     public var insertionPoint: NSColor
     public var invisibles: Attribute
@@ -82,6 +90,7 @@ public struct EditorTheme: Equatable {
     /// - Parameter capture: The capture to map to.
     /// - Returns: Theme attributes for the capture.
     private func mapCapture(_ capture: CaptureName?) -> Attribute {
+        if let capture, let override = captureOverrides[capture] { return override }
         switch capture {
         case .include, .constructor, .keyword, .boolean, .variableBuiltin,
                 .keywordReturn, .keywordFunction, .repeat, .conditional, .tag:
@@ -101,7 +110,7 @@ public struct EditorTheme: Equatable {
     /// Get the color from ``theme`` for the specified capture name.
     /// - Parameter capture: The capture name
     /// - Returns: A `NSColor`
-    func colorFor(_ capture: CaptureName?) -> NSColor {
+    public func colorFor(_ capture: CaptureName?) -> NSColor {
         return mapCapture(capture).color
     }
 
@@ -110,7 +119,7 @@ public struct EditorTheme: Equatable {
     ///   - capture: The capture name.
     ///   - font: The font to add attributes to.
     /// - Returns: A new font that has the correct attributes for the capture.
-    func fontFor(for capture: CaptureName?, from font: NSFont) -> NSFont {
+    public func fontFor(for capture: CaptureName?, from font: NSFont) -> NSFont {
         let attributes = mapCapture(capture)
         guard attributes.bold || attributes.italic else {
             return font
