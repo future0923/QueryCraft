@@ -133,7 +133,10 @@ querycraft_strip_local_symbols "$binary"
 
 for framework_dependency in "$frameworks"/*.framework(N); do
     framework_binary="$framework_dependency/Versions/A/${framework_dependency:t:r}"
-    [[ ! -f "$framework_binary" ]] || querycraft_strip_local_symbols "$framework_binary"
+    if [[ -f "$framework_binary" ]]; then
+        querycraft_delete_rpath_for_directory "$framework_binary" "$build_frameworks_rpath"
+        querycraft_strip_local_symbols "$framework_binary"
+    fi
     querycraft_codesign "$signing_identity" "$framework_dependency"
 done
 querycraft_codesign "$signing_identity" "$binary"

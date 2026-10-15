@@ -34,6 +34,37 @@ final class WorkspaceWindowManager: NSObject {
         self.credentialPrompter = credentialPrompter
         super.init()
         NSWindow.allowsAutomaticWindowTabbing = false
+        DistributedNotificationCenter.default().addObserver(self, selector: #selector(receiveMCPRequest(_:)), name: MCPDesktopBridge.notification, object: nil)
+    }
+
+    @objc private func receiveMCPRequest(_ notification: Notification) {
+        guard let rawID = notification.object as? String, let id = UUID(uuidString: rawID) else { return }
+        let root = QueryCraftStorageLocation.applicationSupportDirectory.appending(path: "MCPRequests")
+        let url = root.appending(path: id.uuidString + ".json")
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let size = attributes[.size] as? Int, size <= 16_777_216,
+              let data = try? Data(contentsOf: url),
+              let request = try? JSONDecoder().decode(MCPDesktopRequest.self, from: data),
+              request.id == id, abs(request.createdAt.timeIntervalSinceNow) < 15 else { return }
+        Task { @MainActor in
+            let response = root.appending(path: id.uuidString + ".response")
+            do {
+                let policy = try MCPPolicyStore().load()
+                guard let profile = try await profileRepository.fetch(id: request.profileID) else { throw MCPFailure("Connection not found") }
+                try policy.authorize(tool: request.tool, profile: profile, database: request.database)
+                if request.tool == "execute_and_show", let json = request.resultJSON {
+                    try await MCPResultWindowController.show(json, profile: profile, database: request.database)
+                } else if request.tool == "open_table", let table = request.table {
+                    guard try await openWorkspace(profileID: profile.id, welcomeWindow: nil),
+                          let model = groups.values.first(where: { $0.model.profileID == profile.id })?.model else { throw MCPFailure("Workspace unavailable") }
+                    let database = request.database ?? profile.defaultDatabase ?? ""
+                    guard policy.permitsObject(table, profile: profile), let kind = request.objectKind else { throw MCPFailure("Object is not authorized") }
+                    await model.selectObject(.init(databaseName: database, objectName: table, kind: kind))
+                } else { throw MCPFailure("Unknown desktop request") }
+                try Data("opened".utf8).write(to: response, options: .atomic)
+            } catch { try? Data("failed".utf8).write(to: response, options: .atomic) }
+        }
     }
 
     @discardableResult

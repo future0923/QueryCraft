@@ -1,7 +1,7 @@
 import CMariaDB
 
-package enum MariaDBColumnType {
-    package static func name(for field: MYSQL_FIELD) -> String? {
+public enum MariaDBColumnType {
+    public static func name(for field: MYSQL_FIELD) -> String? {
         let name: String
         switch field.type {
         case MYSQL_TYPE_TINY: name = "tinyint"

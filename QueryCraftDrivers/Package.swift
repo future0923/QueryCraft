@@ -39,12 +39,9 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../QueryCraftPackage"),
+        .package(path: "MariaDBTransport"),
     ],
     targets: [
-        .systemLibrary(
-            name: "CMariaDB",
-            path: "Sources/CMariaDB"
-        ),
         .systemLibrary(
             name: "CLibPQ",
             path: "Sources/CLibPQ"
@@ -61,32 +58,13 @@ let package = Package(
             publicHeadersPath: "include"
         ),
         .target(
-            name: "QueryCraftMariaDBTransport",
-            dependencies: [
-                .product(
-                    name: "QueryCraftFeature",
-                    package: "QueryCraftPackage"
-                ),
-                "CMariaDB",
-            ],
-            linkerSettings: [
-                .unsafeFlags([
-                    "-L\(Context.packageDirectory)/Libs",
-                    "-lmariadb",
-                    "-lssl",
-                    "-lcrypto",
-                    "-lz",
-                ]),
-            ]
-        ),
-        .target(
             name: "QueryCraftMySQLDriver",
             dependencies: [
                 .product(
                     name: "QueryCraftFeature",
                     package: "QueryCraftPackage"
                 ),
-                "QueryCraftMariaDBTransport",
+                .product(name: "QueryCraftMariaDBTransport", package: "MariaDBTransport"),
             ],
             swiftSettings: [
                 .unsafeFlags(["-enable-testing"]),
@@ -99,7 +77,7 @@ let package = Package(
                     name: "QueryCraftFeature",
                     package: "QueryCraftPackage"
                 ),
-                "QueryCraftMariaDBTransport",
+                .product(name: "QueryCraftMariaDBTransport", package: "MariaDBTransport"),
             ],
             swiftSettings: [
                 .unsafeFlags(["-enable-testing"]),
@@ -175,8 +153,8 @@ let package = Package(
             name: "QueryCraftMySQLDriverTests",
             dependencies: [
                 "QueryCraftMySQLDriver",
-                "QueryCraftMariaDBTransport",
-                "CMariaDB",
+                .product(name: "QueryCraftMariaDBTransport", package: "MariaDBTransport"),
+                .product(name: "CMariaDB", package: "MariaDBTransport"),
                 .product(
                     name: "QueryCraftFeature",
                     package: "QueryCraftPackage"
@@ -198,7 +176,7 @@ let package = Package(
             name: "QueryCraftDorisDriverTests",
             dependencies: [
                 "QueryCraftDorisDriver",
-                "QueryCraftMariaDBTransport",
+                .product(name: "QueryCraftMariaDBTransport", package: "MariaDBTransport"),
                 .product(
                     name: "QueryCraftFeature",
                     package: "QueryCraftPackage"

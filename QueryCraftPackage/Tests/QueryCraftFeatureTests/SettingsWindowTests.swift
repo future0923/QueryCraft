@@ -8,12 +8,15 @@ struct SettingsWindowTests {
     @Test
     func cancelOperationClosesSettingsWindow() {
         let window = SettingsWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            contentRect: NSRect(x: -10000, y: -10000, width: 320, height: 240),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
-        window.orderFront(nil)
+        // Match the controller's ARC ownership and keep the fixture offscreen.
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
+        window.orderBack(nil)
 
         window.cancelOperation(nil)
 

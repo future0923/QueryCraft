@@ -15,7 +15,7 @@ if [ -z "$openssl_root" ] && command -v brew >/dev/null 2>&1; then
 fi
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 libs_directory="$project_root/QueryCraftDrivers/Libs"
-headers_directory="$project_root/QueryCraftDrivers/Sources/CMariaDB/include"
+headers_directory="$project_root/QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB/include"
 build_directory="$(mktemp -d)"
 worker_count="$(sysctl -n hw.ncpu)"
 

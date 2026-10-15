@@ -13,7 +13,7 @@ enum QueryCraftStorageLocation {
     }
 
     private static var directoryName: String {
-        Bundle.main.bundleIdentifier == "io.github.future0923.QueryCraft.Dev"
+        ["io.github.future0923.QueryCraft.Dev", "io.github.future0923.QueryCraft.MCP.Dev"].contains(Bundle.main.bundleIdentifier ?? "")
             ? "QueryCraftDev"
             : "QueryCraft"
     }

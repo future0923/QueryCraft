@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsDetailView: View {
     let tab: SettingsTab
     @Bindable var preferences: ApplicationPreferences
+    let mcpModel: MCPSettingsModel
 
     private var copy: SettingsCopy {
         SettingsCopy(language: .activeInterfaceLanguage)
@@ -25,6 +26,8 @@ struct SettingsDetailView: View {
                 QuerySettingsPane(preferences: preferences)
             case .data:
                 DataSettingsPane(preferences: preferences)
+            case .mcp:
+                MCPSettingsPane(model: mcpModel)
             case .plugins:
                 PluginSettingsPane()
             }

@@ -1,14 +1,14 @@
 import QueryCraftFeature
 
-package struct MariaDBTransportConfiguration: Equatable, Sendable {
-    package let host: String
-    package let port: Int
-    package let username: String
-    package let password: String?
-    package let database: String?
-    package let tlsMode: ConnectionTLSMode
+public struct MariaDBTransportConfiguration: Equatable, Sendable {
+    public let host: String
+    public let port: Int
+    public let username: String
+    public let password: String?
+    public let database: String?
+    public let tlsMode: ConnectionTLSMode
 
-    package init(
+    public init(
         host: String,
         port: Int,
         username: String,

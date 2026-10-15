@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var navigation: SettingsNavigation
     @State private var preferences = ApplicationPreferences.shared
+    @State private var mcpModel = MCPSettingsModel()
     let updateWindowTitle: (String) -> Void
 
     private var copy: SettingsCopy {
@@ -23,7 +24,8 @@ struct SettingsView: View {
         } detail: {
             SettingsDetailView(
                 tab: navigation.selectedTab,
-                preferences: preferences
+                preferences: preferences,
+                mcpModel: mcpModel
             )
         }
         .navigationTitle(copy.settings)

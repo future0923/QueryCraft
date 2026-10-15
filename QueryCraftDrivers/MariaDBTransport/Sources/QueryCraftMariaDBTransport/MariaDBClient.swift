@@ -2,7 +2,12 @@ import CMariaDB
 import Foundation
 import QueryCraftFeature
 
-package final class MariaDBClient: @unchecked Sendable {
+// Keep the original source-facing name, but give the dynamic implementation a
+// new runtime identity so it can coexist with an older, statically linked driver
+// while MySQL and Doris are upgraded independently.
+public typealias MariaDBClient = MariaDBConnection
+
+public final class MariaDBConnection: @unchecked Sendable {
     private let queue = DispatchQueue(
         label: "io.github.future0923.QueryCraft.Driver.MariaDBClient",
         qos: .userInitiated
@@ -11,11 +16,11 @@ package final class MariaDBClient: @unchecked Sendable {
     private var handle: UnsafeMutablePointer<MYSQL>?
     private var cachedServerVersion: String?
 
-    package init(configuration: MariaDBTransportConfiguration) {
+    public init(configuration: MariaDBTransportConfiguration) {
         self.configuration = configuration
     }
 
-    package func connect() async throws {
+    public func connect() async throws {
         try await runOnQueue {
             if self.handle != nil { return }
             self.handle = try self.openConnection(database: self.configuration.database)
@@ -25,19 +30,19 @@ package final class MariaDBClient: @unchecked Sendable {
         }
     }
 
-    package func isConnected() async -> Bool {
+    public func isConnected() async -> Bool {
         await runOnQueueReturningFalseOnError {
             self.handle != nil && mysql_ping(self.handle) == 0
         }
     }
 
-    package func serverVersion() async -> String? {
+    public func serverVersion() async -> String? {
         await runOnQueueReturningNilOnError {
             self.cachedServerVersion
         }
     }
 
-    package func connectionID() async throws -> Int {
+    public func connectionID() async throws -> Int {
         try await runOnQueue {
             guard let handle = self.handle else {
                 throw WorkspaceSessionError.notConnected
@@ -46,7 +51,7 @@ package final class MariaDBClient: @unchecked Sendable {
         }
     }
 
-    package func query(_ sql: String) async throws -> CDatabaseQueryResult {
+    public func query(_ sql: String) async throws -> CDatabaseQueryResult {
         try await runOnQueue {
             guard let handle = self.handle else {
                 throw WorkspaceSessionError.notConnected
@@ -55,7 +60,7 @@ package final class MariaDBClient: @unchecked Sendable {
         }
     }
 
-    package func query(
+    public func query(
         _ sql: String,
         bindings: [WorkspaceDatabaseDataCell]
     ) async throws -> CDatabaseQueryResult {
@@ -72,7 +77,7 @@ package final class MariaDBClient: @unchecked Sendable {
         }
     }
 
-    package func close() async {
+    public func close() async {
         await runOnQueueIgnoringError {
             if let handle = self.handle {
                 mysql_close(handle)

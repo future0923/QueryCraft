@@ -207,6 +207,20 @@ prepare_release_app() {
         fi
     done
 
+    if [[ "${QUERYCRAFT_BUILD_MCP:-false}" == "true" ]]; then
+        local mcp_staging
+        mcp_staging="$(mktemp -d "$temporary_root/mcp.XXXXXX")"
+        python3 "$project_root/scripts/package-mcp.py" \
+            --build-dir "$(dirname "$app_path")" --architecture "$architecture" \
+            --output "$mcp_staging/QueryCraft MCP.app"
+        python3 "$project_root/scripts/test-mcp-protocol.py" \
+            "$mcp_staging/QueryCraft MCP.app/Contents/MacOS/querycraft-mcp"
+        cp "$mcp_staging/"*.zip "$mcp_staging/"*.package.json "$output_directory/"
+        local component_sign_tool
+        component_sign_tool="$(find "$derived_data_root" -name sign_update -type f -perm -111 -print -quit)"
+        python3 "$project_root/scripts/package-components.py" --component mcp --sign-existing \
+            --output "$output_directory" --sign-tool "$component_sign_tool"
+    fi
     python3 "$project_root/scripts/code-signing.py" sign "$app_path"
 }
 

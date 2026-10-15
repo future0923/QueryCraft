@@ -15,11 +15,14 @@ import subprocess
 root = Path(__file__).resolve().parent.parent
 dd = Path(os.environ.get('DERIVED_DATA', root / '.build/DerivedData'))
 
-args=[ '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc', '-parse-as-library', '-target',platform.machine()+'-apple-macosx15.0', '-sdk',subprocess.check_output(['/usr/bin/xcode-select','-p'],text=True).strip()+'/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk', '-package-name','querycraftdrivers',str(root/'scripts/test-sql-query-metadata.swift'),'-I',str(dd/'Build/Products/Debug'),'-F',str(dd/'Build/Products/Debug/PackageFrameworks'),'-framework','QueryCraftFeature','-framework','QueryCraftPostgreSQLDriver','-framework','QueryCraftMySQLDriver','-o',str(root/'.build/test-sql-query-metadata'),'-Xlinker','-rpath','-Xlinker',str(dd/'Build/Products/Debug/PackageFrameworks')]
-for name in ['TreeSitterJSON','TreeSitterSQL','TreeSitter','Internal']:
- args+=['-Xcc','-fmodule-map-file='+str(dd/f'Build/Intermediates.noindex/GeneratedModuleMaps/{name}.modulemap')]
-for p in [dd/'SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap',root/'QueryCraftDrivers/Sources/CLibPQ/module.modulemap',root/'QueryCraftDrivers/Sources/CMariaDB/module.modulemap']:
+args=[ '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc', '-parse-as-library', '-target',platform.machine()+'-apple-macosx15.0', '-sdk',subprocess.check_output(['/usr/bin/xcode-select','-p'],text=True).strip()+'/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk', '-package-name','querycraftdrivers',str(root/'scripts/test-sql-query-metadata.swift'),'-I',str(dd/'Build/Products/Debug'),'-F',str(dd/'Build/Products/Debug/PackageFrameworks'),'-framework','QueryCraftFeature','-framework','QueryCraftPostgreSQLDriver','-framework','QueryCraftMySQLDriver','-framework','QueryCraftMariaDBTransport','-o',str(root/'.build/test-sql-query-metadata'),'-Xlinker','-rpath','-Xlinker',str(dd/'Build/Products/Debug/PackageFrameworks')]
+for name in ['TreeSitterJSON','TreeSitterSQL','TreeSitter','Internal','CNIODarwin','CNIOLinux','CNIOOpenBSD','CNIOPosix','CNIOAtomics','CNIOLLHTTP','CNIOSHA1','CNIOWindows','CNIOWASI','_AtomicsShims']:
+ modulemap=dd/f'Build/Intermediates.noindex/GeneratedModuleMaps/{name}.modulemap'
+ if modulemap.exists():args+=['-Xcc','-fmodule-map-file='+str(modulemap)]
+for p in [dd/'SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap',root/'QueryCraftDrivers/Sources/CLibPQ/module.modulemap',root/'QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB/module.modulemap']:
  args+=['-Xcc','-fmodule-map-file='+str(p)]
+for p in list((dd/'SourcePackages/checkouts/swift-nio/Sources').glob('*/include/module.modulemap')) + [dd/'SourcePackages/checkouts/swift-atomics/Sources/_AtomicsShims/include/module.modulemap']:
+ if p.exists():args+=['-Xcc','-fmodule-map-file='+str(p)]
 for p in [root/'ThirdParty/CodeEditLanguages/Sources/TreeSitterJSON/include',root/'ThirdParty/CodeEditLanguages/Sources/TreeSitterSQL/include',dd/'SourcePackages/checkouts/tree-sitter/lib/include',dd/'SourcePackages/checkouts/TextStory/Sources/Internal',root/'ThirdParty/CodeEditTextView/Sources/CodeEditTextViewObjC/include']:
  args+=['-Xcc','-I'+str(p)]
 subprocess.run(args,check=True)

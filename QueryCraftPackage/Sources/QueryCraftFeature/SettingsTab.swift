@@ -7,6 +7,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case query
     case data
     case plugins
+    case mcp
 
     var id: Self { self }
 
@@ -30,6 +31,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
             "play.circle"
         case .data:
             "tablecells"
+        case .mcp:
+            "network"
         case .plugins:
             "puzzlepiece.extension"
         }

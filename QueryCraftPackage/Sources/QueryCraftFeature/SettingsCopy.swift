@@ -28,6 +28,8 @@ struct SettingsCopy {
             text("查询", "Query")
         case .data:
             text("数据", "Data")
+        case .mcp:
+            "MCP"
         case .plugins:
             text("插件", "Plugins")
         }

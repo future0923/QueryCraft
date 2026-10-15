@@ -16,6 +16,7 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
     private static let downloadBufferSize = 256 * 1_024
     private static let hashBufferSize = 1024 * 1_024
 
+    private let maintainsInstalledDrivers: Bool
     private let fileManager: FileManager
     private let session: URLSession
     private let registry: DatabaseDriverRegistry
@@ -37,18 +38,20 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
         session: URLSession = .shared,
         registry: DatabaseDriverRegistry = .shared,
         driversDirectory: URL? = nil,
-        compatibilityValidator: DatabaseDriverCompatibilityValidator = .init()
+        compatibilityValidator: DatabaseDriverCompatibilityValidator = .init(),
+        maintainsInstalledDrivers: Bool = true
     ) {
+        self.maintainsInstalledDrivers = maintainsInstalledDrivers
         self.fileManager = fileManager
         self.session = session
         self.registry = registry
         self.compatibilityValidator = compatibilityValidator
         self.driversDirectory = driversDirectory
-            ?? Self.defaultDriversDirectory(fileManager: fileManager)
+            ?? Self.installedDriversDirectory(in: QueryCraftStorageLocation.applicationSupportDirectory)
     }
 
     func loadInstalledDrivers() async -> [any DatabaseDriver] {
-        applyPendingUpdates()
+        if maintainsInstalledDrivers { applyPendingUpdates() }
         guard let urls = try? fileManager.contentsOfDirectory(
             at: driversDirectory,
             includingPropertiesForKeys: nil,
@@ -78,7 +81,7 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
                 // that cannot pass signature, compatibility, or activation
                 // checks from masking the current catalog and blocking a
                 // clean reinstall of the driver.
-                if (try? Self.metadata(at: url)) != nil {
+                if maintainsInstalledDrivers, (try? Self.metadata(at: url)) != nil {
                     do {
                         try fileManager.removeItem(at: url)
                         logger.notice(
@@ -492,10 +495,8 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
         return driver
     }
 
-    private nonisolated static func defaultDriversDirectory(
-        fileManager: FileManager
-    ) -> URL {
-        QueryCraftStorageLocation.applicationSupportDirectory
+    nonisolated static func installedDriversDirectory(in applicationSupportDirectory: URL) -> URL {
+        applicationSupportDirectory
             // Keep incompatible app generations from loading or deleting each
             // other's drivers and pending updates when users switch builds.
             .appending(

@@ -1,13 +1,13 @@
 import Foundation
 import QueryCraftFeature
 
-package struct CDatabaseQueryResult: Sendable, Equatable {
-    package struct ColumnOrigin: Sendable, Equatable {
-        package let databaseName: String
-        package let tableName: String
-        package let columnName: String
+public struct CDatabaseQueryResult: Sendable, Equatable {
+    public struct ColumnOrigin: Sendable, Equatable {
+        public let databaseName: String
+        public let tableName: String
+        public let columnName: String
 
-        package init(
+        public init(
             databaseName: String,
             tableName: String,
             columnName: String
@@ -18,14 +18,14 @@ package struct CDatabaseQueryResult: Sendable, Equatable {
         }
     }
 
-    package let columns: [String]
-    package let columnTypes: [String?]
-    package let columnOrigins: [ColumnOrigin?]
-    package let rows: [[String?]]
-    package let affectedRows: UInt64
-    package let insertID: UInt64
+    public let columns: [String]
+    public let columnTypes: [String?]
+    public let columnOrigins: [ColumnOrigin?]
+    public let rows: [[String?]]
+    public let affectedRows: UInt64
+    public let insertID: UInt64
 
-    package init(
+    public init(
         columns: [String] = [],
         columnTypes: [String?] = [],
         columnOrigins: [ColumnOrigin?] = [],
@@ -42,12 +42,12 @@ package struct CDatabaseQueryResult: Sendable, Equatable {
     }
 }
 
-package struct CDatabaseClientError: LocalizedError, Sendable {
-    package let code: UInt32
-    package let message: String
-    package let sqlState: String?
+public struct CDatabaseClientError: LocalizedError, Sendable {
+    public let code: UInt32
+    public let message: String
+    public let sqlState: String?
 
-    package var errorDescription: String? {
+    public var errorDescription: String? {
         if let sqlState, !sqlState.isEmpty {
             return "\(message) [\(sqlState)]"
         }
@@ -55,7 +55,7 @@ package struct CDatabaseClientError: LocalizedError, Sendable {
     }
 }
 
-package extension CDatabaseQueryResult {
+public extension CDatabaseQueryResult {
     var workspaceColumns: [WorkspaceDatabaseDataColumn] {
         columns.enumerated().map { index, name in
             let origin = (columnOrigins.indices.contains(index) ? columnOrigins[index] : nil).map {

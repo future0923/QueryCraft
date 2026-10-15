@@ -8,6 +8,10 @@ on:
         required: true
         default: false
         type: boolean
+      publish_components:
+        description: Publish changed MCP/Skill components independently
+        type: boolean
+        default: false
       source_run_id:
         description: Reuse macOS artifacts from an earlier workflow run
         required: false
@@ -53,11 +57,22 @@ jobs:
       build_client: ${{ steps.release.outputs.build_client }}
       rebuild_driver: ${{ steps.release.outputs.rebuild_driver }}
       driver_matrix: ${{ steps.release.outputs.driver_matrix }}
+      mcp_changed: ${{ steps.components.outputs.mcp_changed }}
+      skill_changed: ${{ steps.components.outputs.skill_changed }}
+      publish_components: ${{ steps.release.outputs.publish_components }}
     steps:
       - uses: actions/checkout@v7
-
+        with:
+          fetch-depth: 0
+      - name: Check component and driver release rules
+        run: python3 scripts/test-component-release-plan.py
+      - id: components
+        run: python3 scripts/component-release-plan.py --require-notes --github-output "$GITHUB_OUTPUT" --output component-plan.json
       - id: release
         env:
+          REQUESTED_PUBLISH_COMPONENTS: ${{ github.event_name == 'push' || inputs.publish_components || false }}
+          CHANGED_DRIVERS: ${{ steps.components.outputs.changed_drivers }}
+          DRIVER_REQUIREMENTS: ${{ steps.components.outputs.driver_requirements }}
           REQUESTED_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
           REQUESTED_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           # A client tag must not republish every external driver. Driver
@@ -82,6 +97,18 @@ jobs:
               ;;
             *) echo "Invalid driver rebuild target." >&2; exit 1 ;;
           esac
+          if [[ "$REQUESTED_PUBLISH_DRIVERS" == "true" ]]; then
+            if [[ "$rebuild_driver" == "none" ]]; then
+              driver_matrix="$CHANGED_DRIVERS"
+              if [[ "$driver_matrix" == "[]" ]]; then
+                echo "No relevant driver changes; refusing to publish unchanged drivers." >&2; exit 1
+              fi
+            elif ! jq -e --arg driver "$rebuild_driver" 'index($driver) != null' <<<"$CHANGED_DRIVERS" >/dev/null; then
+              echo "Selected driver has no relevant changes; refusing publication." >&2; exit 1
+            elif ! jq -e --arg driver "$rebuild_driver" '.[$driver] | length == 1' <<<"$DRIVER_REQUIREMENTS" >/dev/null; then
+              echo "Shared transport/API changes require related drivers together. Use rebuild_driver=none." >&2; exit 1
+            fi
+          fi
           build_client=true
           test -n "$version"
           test -n "$build"
@@ -91,8 +118,8 @@ jobs:
             echo "Source run ID must be numeric." >&2
             exit 1
           fi
-          if [[ -n "$source_run_id" && "$REQUESTED_PUBLISH" != "true" && "$REQUESTED_PUBLISH_DRIVERS" != "true" ]]; then
-            echo "Reusing a source run requires application or driver publishing." >&2
+          if [[ -n "$source_run_id" && "$REQUESTED_PUBLISH" != "true" && "$REQUESTED_PUBLISH_DRIVERS" != "true" && "$REQUESTED_PUBLISH_COMPONENTS" != "true" ]]; then
+            echo "Reusing a source run requires application, driver or component publishing." >&2
             exit 1
           fi
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
@@ -106,6 +133,7 @@ jobs:
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "publish_components=$REQUESTED_PUBLISH_COMPONENTS" >> "$GITHUB_OUTPUT"
           echo "publish=$REQUESTED_PUBLISH" >> "$GITHUB_OUTPUT"
           echo "source_run_id=$source_run_id" >> "$GITHUB_OUTPUT"
           echo "publish_drivers=$REQUESTED_PUBLISH_DRIVERS" >> "$GITHUB_OUTPUT"
@@ -129,6 +157,8 @@ jobs:
     env:
       QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
       QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
+      SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      QUERYCRAFT_BUILD_MCP: ${{ needs.metadata.outputs.mcp_changed }}
       QUERYCRAFT_BUILD_CLIENT: true
       QUERYCRAFT_BUILD_DRIVERS: false
       QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: false
@@ -212,6 +242,11 @@ jobs:
           DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
         run: scripts/ci/build-release-artifacts.sh arm64 artifacts/update
 
+      - name: Package changed Skill
+        if: needs.metadata.outputs.skill_changed == 'true'
+        run: |
+          tool="$(find "$RUNNER_TEMP/querycraft-derived-data" -name sign_update -type f -perm -111 -print -quit)"
+          python3 scripts/package-components.py --component skill --output artifacts/update --sign-tool "$tool"
       - name: Remove temporary signing keychain
         if: always()
         run: python3 scripts/code-signing.py cleanup-ci
@@ -225,7 +260,7 @@ jobs:
 
   build_drivers:
     needs: metadata
-    if: needs.metadata.outputs.publish_drivers == 'true' && (needs.metadata.outputs.source_run_id == '' || needs.metadata.outputs.rebuild_driver != 'none')
+    if: needs.metadata.outputs.publish_drivers == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -291,13 +326,14 @@ jobs:
         needs.metadata.result == 'success' &&
         (
           needs.metadata.outputs.publish == 'true' ||
-          needs.metadata.outputs.publish_drivers == 'true'
+          needs.metadata.outputs.publish_drivers == 'true' ||
+          needs.metadata.outputs.publish_components == 'true'
         ) &&
         (
           (
             needs.metadata.outputs.source_run_id != '' &&
             (
-              needs.metadata.outputs.rebuild_driver == 'none' ||
+              needs.metadata.outputs.publish_drivers != 'true' ||
               needs.build_drivers.result == 'success'
             )
           ) ||
@@ -352,26 +388,38 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ needs.metadata.outputs.source_run_id }}
 
-      - name: Download rebuilt driver artifacts
+      - name: Download selected driver artifacts
         uses: actions/download-artifact@v8
-        if: needs.metadata.outputs.source_run_id != '' && needs.metadata.outputs.rebuild_driver != 'none'
+        if: needs.metadata.outputs.source_run_id != '' && needs.metadata.outputs.publish_drivers == 'true'
         with:
-          pattern: querycraft-release-driver-${{ needs.metadata.outputs.rebuild_driver }}-*
+          pattern: querycraft-release-driver-*
           path: dist
           merge-multiple: true
 
       - name: Publish selected resources
+        if: needs.metadata.outputs.publish == 'true' || needs.metadata.outputs.publish_drivers == 'true'
+        env:
+          SELECTED_DRIVERS: ${{ needs.metadata.outputs.driver_matrix }}
         run: |
           set -euo pipefail
-          if [[ "${{ needs.metadata.outputs.rebuild_driver }}" != "none" ]]; then
-            export QUERYCRAFT_DEPLOY_DRIVER_TYPES="${{ needs.metadata.outputs.rebuild_driver }}"
+          if [[ "$QUERYCRAFT_DEPLOY_DRIVERS" == "true" ]]; then
+            export QUERYCRAFT_DEPLOY_DRIVER_TYPES="$(jq -r 'join(",")' <<<"$SELECTED_DRIVERS")"
           fi
           scripts/deploy-release-artifacts.sh "${{ needs.metadata.outputs.version }}" dist
 
-      - name: Synchronize canonical published download URLs
+      - name: Publish changed independent components
+        if: needs.metadata.outputs.publish_components == 'true'
         env:
-          QUERYCRAFT_DEPLOY_DRIVER_TYPES: ${{ needs.metadata.outputs.rebuild_driver }}
-        run: python3 scripts/ci/sync-published-release-metadata.py dist
+          MCP_CHANGED: ${{ needs.metadata.outputs.mcp_changed }}
+          SKILL_CHANGED: ${{ needs.metadata.outputs.skill_changed }}
+        run: python3 scripts/deploy-components.py --directory dist --github
+      - name: Synchronize canonical published download URLs
+        if: needs.metadata.outputs.publish == 'true' || needs.metadata.outputs.publish_drivers == 'true'
+        env:
+          SELECTED_DRIVERS: ${{ needs.metadata.outputs.driver_matrix }}
+        run: |
+          export QUERYCRAFT_DEPLOY_DRIVER_TYPES="$(jq -r 'join(",")' <<<"$SELECTED_DRIVERS")"
+          python3 scripts/ci/sync-published-release-metadata.py dist
 
       - name: Create or update GitHub client release
         if: needs.metadata.outputs.publish == 'true'
@@ -395,18 +443,13 @@ jobs:
         if: needs.metadata.outputs.publish_drivers == 'true'
         env:
           RELEASE_TAG: v${{ needs.metadata.outputs.version }}
+          SELECTED_DRIVERS: ${{ needs.metadata.outputs.driver_matrix }}
         run: |
           set -euo pipefail
           gh release view "$RELEASE_TAG" >/dev/null
-          if [[ "${{ needs.metadata.outputs.rebuild_driver }}" == "none" ]]; then
-            gh release upload "$RELEASE_TAG" --clobber \
-              dist/*-driver-*.zip \
-              dist/*-x86_64.json \
-              dist/*-arm64.json
-          else
-            driver="${{ needs.metadata.outputs.rebuild_driver }}"
+          while IFS= read -r driver; do
             gh release upload "$RELEASE_TAG" --clobber \
               "dist/${driver}-x86_64.json" \
               "dist/${driver}-arm64.json" \
               "dist/${driver}-driver-"*.zip
-          fi
+          done < <(jq -r '.[]' <<<"$SELECTED_DRIVERS")
