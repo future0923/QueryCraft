@@ -18,7 +18,7 @@ struct WorkspaceJSONTextView: NSViewControllerRepresentable {
     var configuration: SourceEditorConfiguration {
         .init(
             appearance: .init(
-                theme: WorkspaceEditorTheme.make(for: colorScheme == .dark ? .darkAqua : .aqua),
+                theme: WorkspaceEditorTheme.make(for: colorScheme == .dark ? .darkAqua : .aqua, settings: preferences.editorColors),
                 font: preferences.editorFont(),
                 wrapLines: true,
                 tabWidth: preferences.editorIndentationWidth

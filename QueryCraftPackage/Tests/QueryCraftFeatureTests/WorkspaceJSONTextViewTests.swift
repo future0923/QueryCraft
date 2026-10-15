@@ -69,11 +69,11 @@ struct WorkspaceJSONTextViewTests {
                     continuation.resume(with: $0)
                 }
             }
-            for (token, capture) in [("\"name\"", CaptureName.type), ("\"沈阳\"", .string), ("true", .boolean), ("null", .boolean), ("18446744073709551615", .number)] {
+            for (token, capture) in [("\"name\"", CaptureName.property), ("\"沈阳\"", .string), ("true", .boolean), ("null", .boolean), ("18446744073709551615", .number)] {
                 let range = (source as NSString).range(of: token)
                 #expect(highlights.contains { $0.range == range && $0.capture == capture })
             }
-            let colors = [CaptureName.type, .string, .boolean, .number].compactMap {
+            let colors = [CaptureName.property, .string, .boolean, .number].compactMap {
                 controller.attributesFor($0)[.foregroundColor] as? NSColor
             }
             #expect(Set(colors).count == 4)

@@ -70,11 +70,12 @@ struct WorkspaceSQLExecutionMessagesView: View {
 
 struct WorkspaceSQLExecutionSummaryView: View {
     let results: [WorkspaceStatementResult]
+    var highlightContext: SQLHighlightContext = .generic
 
     var body: some View {
         Table(results) {
             TableColumn(AppCopy.current.text("SQL 语句", "Query")) { result in
-                WorkspaceExecutedSQLControl(sql: result.statement.sql)
+                WorkspaceExecutedSQLControl(sql: result.statement.sql, highlightContext: highlightContext)
             }
             .width(min: 180, ideal: 420)
             TableColumn(AppCopy.current.text("消息", "Message")) { result in

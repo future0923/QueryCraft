@@ -167,6 +167,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
                     resource: .init(resource: selection.objectName, kind: selection.kind))
             } else {
             WorkspaceDatabaseObjectDetailContent(
+                highlightContext: model.sqlHighlightContext,
                 detailsState: model.selectedObjectDetailsState,
                 indexesState: model.selectedObjectIndexesState,
                 dataState: displayedDataState,

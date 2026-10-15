@@ -30,3 +30,10 @@ The grammar was selected independently against QueryCraft-owned MySQL 5.7 and
   upstream `%d` patterns.
 - QueryCraft maps the upstream SQL capture names into its SQL-only editor theme
   in application code. No TablePro highlight query or patch is used.
+- Doubled double quotes and backticks stay inside a single quoted token, so
+  escaped column/table names preserve their syntax role. Regenerate with
+  `./generate-tree-sitter-sql.sh` (pinned CLI and ABI above).
+- Highlight queries cover CHANGE COLUMN old names, CREATE SCHEMA names and
+  built-in typed-literal prefixes, alongside the editor color coverage fixtures.
+- Numeric exponent tokens accept both `e` and `E`. Besides consistent coloring,
+  this prevents large valid scripts from entering expensive syntax-error recovery.

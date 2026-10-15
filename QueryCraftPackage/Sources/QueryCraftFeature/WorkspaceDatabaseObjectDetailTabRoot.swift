@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WorkspaceDatabaseObjectDetailTabRoot: Equatable, View {
+    var highlightContext: SQLHighlightContext = .generic
     let tab: WorkspaceDatabaseObjectDetailTab
     let detailsState: WorkspaceDatabaseObjectDetailsState
     let indexesState: WorkspaceDatabaseIndexesState
@@ -73,7 +74,7 @@ struct WorkspaceDatabaseObjectDetailTabRoot: Equatable, View {
         lhs: WorkspaceDatabaseObjectDetailTabRoot,
         rhs: WorkspaceDatabaseObjectDetailTabRoot
     ) -> Bool {
-        guard lhs.tab == rhs.tab else { return false }
+        guard lhs.highlightContext == rhs.highlightContext, lhs.tab == rhs.tab else { return false }
 
         switch lhs.tab {
         case .data:
@@ -150,6 +151,7 @@ struct WorkspaceDatabaseObjectDetailTabRoot: Equatable, View {
 
         case .structure, .options, .ddl:
             WorkspaceDatabaseObjectDetailsTabContent(
+                highlightContext: highlightContext,
                 state: detailsState,
                 tab: tab,
                 retry: retry,

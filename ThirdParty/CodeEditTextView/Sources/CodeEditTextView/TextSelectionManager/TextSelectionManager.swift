@@ -27,6 +27,10 @@ public class TextSelectionManager: NSObject {
     public var insertionPointColor: NSColor = NSColor.labelColor {
         didSet {
             textSelections.compactMap({ $0.view as? CursorView }).forEach { $0.color = insertionPointColor }
+            if #available(macOS 14, *) {
+                textSelections.compactMap({ $0.view as? NSTextInsertionIndicator })
+                    .forEach { $0.color = insertionPointColor }
+            }
         }
     }
     public var highlightSelectedLine: Bool = true
@@ -216,6 +220,7 @@ public class TextSelectionManager: NSObject {
                 if useSystemCursor, #available(macOS 14.0, *) {
                     let systemCursorView = NSTextInsertionIndicator(frame: .zero)
                     cursorView = systemCursorView
+                    systemCursorView.color = insertionPointColor
                     systemCursorView.displayMode = .automatic
                 } else {
                     let internalCursorView = CursorView(color: insertionPointColor)

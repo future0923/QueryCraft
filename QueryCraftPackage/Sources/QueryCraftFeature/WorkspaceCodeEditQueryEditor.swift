@@ -38,7 +38,7 @@ struct WorkspaceCodeEditQueryEditor: View {
             configuration: configuration,
             state: $editorState,
             highlightProviders: [languageService],
-            coordinators: commandCoordinator.map { [$0] } ?? [],
+            coordinators: [languageService] + (commandCoordinator.map { [$0] } ?? []),
             completionDelegate: completionService
         )
         .onChange(of: editorState.cursorPositions) { _, cursorPositions in
@@ -93,40 +93,8 @@ struct WorkspaceCodeEditQueryEditor: View {
 
     private var theme: EditorTheme {
         WorkspaceEditorTheme.make(
-            for: colorScheme == .dark ? .darkAqua : .aqua
-        )
-    }
-}
-
-enum WorkspaceEditorTheme {
-    static func make(for appearanceName: NSAppearance.Name) -> EditorTheme {
-        let appearance = NSAppearance(named: appearanceName)
-            ?? NSAppearance(named: .aqua)!
-        func color(_ semanticColor: NSColor) -> NSColor {
-            semanticColor.resolved(for: appearance)
-        }
-
-        return .init(
-            text: .init(color: color(.textColor)),
-            insertionPoint: color(.controlAccentColor),
-            invisibles: .init(color: color(.tertiaryLabelColor)),
-            background: color(.textBackgroundColor),
-            lineHighlight: color(.tertiarySystemFill),
-            // CodeEdit preserves syntax foreground colors inside selections. Use a
-            // translucent selection so dark text remains readable in the light theme.
-            selection: color(.controlAccentColor).withAlphaComponent(
-                appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 0.45 : 0.28
-            ),
-            keywords: .init(color: color(.systemPurple), bold: true),
-            commands: .init(color: color(.systemTeal)),
-            types: .init(color: color(.systemBlue)),
-            attributes: .init(color: color(.systemOrange)),
-            variables: .init(color: color(.textColor)),
-            values: .init(color: color(.systemBlue)),
-            numbers: .init(color: color(.systemOrange)),
-            strings: .init(color: color(.systemRed)),
-            characters: .init(color: color(.systemRed)),
-            comments: .init(color: color(.secondaryLabelColor), italic: true)
+            for: colorScheme == .dark ? .darkAqua : .aqua,
+            settings: preferences.editorColors
         )
     }
 }

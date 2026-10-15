@@ -136,7 +136,7 @@ class Highlighter: NSObject {
 
         // Remove all current highlights. Makes the language setting feel snappier and tells the user we're doing
         // something immediately.
-        textView.textStorage.setAttributes(
+        textView.textStorage.addAttributes(
             attributeProvider?.attributesFor(nil) ?? [:],
             range: NSRange(location: 0, length: textView.textStorage.length)
         )
@@ -267,7 +267,8 @@ extension Highlighter: @preconcurrency NSTextStorageDelegate {
 
 extension Highlighter: StyledRangeContainerDelegate {
     func styleContainerDidUpdate(in range: NSRange) {
-        guard let textView, let attributeProvider else { return }
+        guard let textView, let attributeProvider,
+              let range = range.intersection(textView.documentRange), range.length > 0 else { return }
         textView.textStorage.beginEditing()
 
         let storage = textView.textStorage
@@ -277,7 +278,7 @@ extension Highlighter: StyledRangeContainerDelegate {
             guard let range = NSRange(location: offset, length: run.length).intersection(range) else {
                 continue
             }
-            storage?.setAttributes(attributeProvider.attributesFor(run.value?.capture), range: range)
+            storage?.addAttributes(attributeProvider.attributesFor(run.value?.capture), range: range)
             offset += range.length
         }
 

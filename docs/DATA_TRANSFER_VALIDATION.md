@@ -171,3 +171,14 @@ Dev 已安装并后台启动，标记 `20261015-092359-79b07e42`，持久签名�
 | Kafka | 未改驱动，不重新编译/打包/发布；安装版加载/激活及共享视图回归通过 |
 
 本次不进行线上 catalog、双架构发布包与 appcast 验收；这些属于未来发布前的必要检查，不以本地通过代替线上兼容性验收。
+
+
+### 与 main 编辑器改动的合并验证
+
+导入导出功能提交 `af6e031`，与 main 的编辑器配色提交 `dab2db0` 自动合并，双方功能保留；清理了共同修改测试窗口时重复的 `isReleasedWhenClosed = false` 赋值。
+
+合并后的 Debug 主程序构建通过（111.1 秒）；完整 Feature 回归 **1281 通过、0 失败、5 条件跳过**（155.2 秒）。跳过为原有三项 Elasticsearch 实库测试，以及 main 新增的两项需显式启用 `QUERYCRAFT_EDITOR_PERFORMANCE=1` 的编辑器性能测试。未把未启用项计为通过。结果包 `test_macos_2026-10-15T02-39-54-214Z_pid85442_e3fb702e.xcresult`。
+
+用合并后的构建框架再次加载/激活六类 API 5 打包驱动全部通过。日志位于 `.build/validation/import-performance/merged-main-build.log`、`merged-main-tests.log`、`merged-main-driver-loads.log`。本轮没有重跑实库回灌；导入导出数据处理与驱动协议代码未受 main 配色合并影响，实库覆盖仍以上述四格式逐字段验证为准。窗口测试的蒙屏与输入隔离结束后已正常解除。
+
+本次合并不替换已安装 Dev、不推送、不发版；main 工作区原有未跟踪文件保留。

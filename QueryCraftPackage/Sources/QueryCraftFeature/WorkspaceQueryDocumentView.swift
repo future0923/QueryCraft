@@ -42,6 +42,21 @@ struct WorkspaceQueryDocumentView: View {
                         commandCoordinator: commandCoordinator,
                         completionService: completionService
                     )
+                    .contextMenu {
+                        if document.databaseType == .mysql || document.databaseType == .doris {
+                            Toggle(AppCopy.current.text("当前连接：双引号按标识符高亮（ANSI_QUOTES）", "Connection: Highlight Double Quotes as Identifiers (ANSI_QUOTES)"), isOn: Binding(
+                                get: { preferences.editorANSIQuoteConnections.contains(SQLHighlightContext.connectionKey(document.currentConnectionConfiguration)) },
+                                set: { enabled in
+                                    let key = SQLHighlightContext.connectionKey(document.currentConnectionConfiguration)
+                                    if enabled { preferences.editorANSIQuoteConnections.insert(key) }
+                                    else { preferences.editorANSIQuoteConnections.remove(key) }
+                                }
+                            ))
+                        }
+                    }
+                    .onChange(of: preferences.sqlHighlightContext(for: document.currentConnectionConfiguration), initial: true) { _, context in
+                        languageService.setHighlightContext(context)
+                    }
 
                     WorkspaceQueryEditorActionBar(
                         selectionOrCurrentStatementAvailability: languageService
@@ -89,6 +104,7 @@ struct WorkspaceQueryDocumentView: View {
                             elapsedSeconds: document.elapsedSeconds,
                             currentDatabase: document.databaseName,
                             databaseType: document.databaseType,
+                            highlightContext: preferences.sqlHighlightContext(for: document.currentConnectionConfiguration),
                             supportsDataEditing: document.supportsResultDataEditing,
                             safetyLock: safetyLock,
                             contentID: contentID,

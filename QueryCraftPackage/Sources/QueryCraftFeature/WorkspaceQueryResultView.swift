@@ -7,6 +7,7 @@ struct WorkspaceQueryResultView: View {
     let elapsedSeconds: Double
     let currentDatabase: String?
     let databaseType: DatabaseType
+    var highlightContext: SQLHighlightContext = .generic
     let supportsDataEditing: Bool
     let safetyLock: WorkspaceSafetyLock
     let contentID: WorkspaceContentTabID
@@ -73,7 +74,7 @@ struct WorkspaceQueryResultView: View {
                         results: statementResults, databaseType: databaseType
                     )
                 } else if !statementResults.isEmpty && displayedSection == .summary {
-                    WorkspaceSQLExecutionSummaryView(results: statementResults)
+                    WorkspaceSQLExecutionSummaryView(results: statementResults, highlightContext: highlightContext)
                 } else if let page = displayedState.page, !page.columns.isEmpty {
                     resultTable(for: page)
                 } else if usesSingleResultLayout && state.isRunning {
@@ -91,7 +92,7 @@ struct WorkspaceQueryResultView: View {
                 HStack(spacing: 8) {
                     Text("SQL")
                         .foregroundStyle(.secondary)
-                    WorkspaceExecutedSQLControl(sql: result.statement.sql)
+                    WorkspaceExecutedSQLControl(sql: result.statement.sql, highlightContext: highlightContext)
                         .font(.system(.callout, design: .monospaced))
                         .accessibilityIdentifier("executedQuerySQL")
                     Spacer(minLength: 0)

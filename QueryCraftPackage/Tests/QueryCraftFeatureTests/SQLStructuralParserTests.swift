@@ -4,6 +4,21 @@ import CodeEditLanguages
 @testable import QueryCraftFeature
 
 struct SQLStructuralParserTests {
+    @Test(arguments: [
+        "SELECT `a``;DROP TABLE fake;--b` FROM `table``name`;",
+        "SELECT u.\"a\"\";DROP TABLE fake;--b\" FROM users u;",
+        "SELECT \"quoted\"\";DELETE FROM fake;\";"
+    ])
+    func escapedQuotesPreserveStatementBoundaries(_ statement: String) async throws {
+        let source = statement + "\nSELECT 42;"
+        let parser = try SQLStructuralParser()
+        let snapshot = try await parser.parse(.init(revision: .init(1), text: source))
+        #expect(snapshot.isReliable)
+        #expect(snapshot.statements.map(\.kind) == [.read, .read])
+        #expect(snapshot.statements.map { (source as NSString).substring(with: $0.range.nsRange) }
+                == [statement, "SELECT 42;"])
+    }
+
     @Test(arguments: ["DESC users;", "desc `app`.`users`;", "DESCRIBE users;", "DESC users name;", "DESCRIBE users 'na%';"])
     func recognizesTableDescriptionStatements(_ source: String) async throws {
         let parser = try SQLStructuralParser()

@@ -14,7 +14,7 @@ final class WorkspaceQueryEditorContext {
         ) async -> WorkspaceSchemaCatalogSnapshot,
         save: (@MainActor () -> Void)? = nil
     ) {
-        let languageService = WorkspaceSQLLanguageService()
+        let languageService = WorkspaceSQLLanguageService(context: .init(databaseType: document.databaseType))
         let snippetSession = SQLSnippetSession()
         self.languageService = languageService
         commandCoordinator = WorkspaceQueryEditorCommandCoordinator(

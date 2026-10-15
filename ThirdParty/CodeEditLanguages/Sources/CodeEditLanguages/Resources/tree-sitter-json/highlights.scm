@@ -1,5 +1,8 @@
 (pair
-  key: (_) @type)
+  key: (_) @property)
+
+; Keep a completed key colored while its object/array value is still being typed.
+(ERROR (string) @property . ":")
 
 (string) @string
 
@@ -14,3 +17,6 @@
 (escape_sequence) @type_alternate
 
 (comment) @comment
+
+["{" "}" "[" "]"] @punctuation.bracket
+[":" ","] @punctuation.delimiter

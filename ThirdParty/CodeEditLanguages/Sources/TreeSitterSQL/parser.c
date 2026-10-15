@@ -39893,9 +39893,11 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       END_STATE();
     case 108:
       ACCEPT_TOKEN(sym__double_quote_string);
+      if (lookahead == '"') ADVANCE(5);
       END_STATE();
     case 109:
       ACCEPT_TOKEN(sym__backtick_quoted_string);
+      if (lookahead == '`') ADVANCE(28);
       END_STATE();
     case 110:
       ACCEPT_TOKEN(aux_sym__single_quote_string_token1);
@@ -39923,9 +39925,10 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       ADVANCE_MAP(
         '.', 125,
         '_', 36,
-        'e', 29,
         'B', 31,
         'b', 31,
+        'E', 29,
+        'e', 29,
         'O', 32,
         'o', 32,
         'X', 39,
@@ -39937,7 +39940,8 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       ACCEPT_TOKEN(aux_sym__integer_token1);
       if (lookahead == '.') ADVANCE(125);
       if (lookahead == '_') ADVANCE(36);
-      if (lookahead == 'e') ADVANCE(29);
+      if (lookahead == 'E' ||
+          lookahead == 'e') ADVANCE(29);
       if (('0' <= lookahead && lookahead <= '9')) ADVANCE(116);
       END_STATE();
     case 117:
@@ -39962,9 +39966,10 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       ACCEPT_TOKEN(aux_sym__integer_token1);
       ADVANCE_MAP(
         '_', 34,
-        'e', 29,
         'B', 31,
         'b', 31,
+        'E', 29,
+        'e', 29,
         'O', 32,
         'o', 32,
         'X', 39,
@@ -39975,7 +39980,8 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
     case 121:
       ACCEPT_TOKEN(aux_sym__integer_token1);
       if (lookahead == '_') ADVANCE(34);
-      if (lookahead == 'e') ADVANCE(29);
+      if (lookahead == 'E' ||
+          lookahead == 'e') ADVANCE(29);
       if (('0' <= lookahead && lookahead <= '9')) ADVANCE(121);
       END_STATE();
     case 122:
@@ -39986,7 +39992,8 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
     case 123:
       ACCEPT_TOKEN(aux_sym__decimal_number_token1);
       if (lookahead == '_') ADVANCE(37);
-      if (lookahead == 'e') ADVANCE(30);
+      if (lookahead == 'E' ||
+          lookahead == 'e') ADVANCE(30);
       if (('0' <= lookahead && lookahead <= '9')) ADVANCE(123);
       END_STATE();
     case 124:
@@ -39996,7 +40003,8 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       END_STATE();
     case 125:
       ACCEPT_TOKEN(aux_sym__decimal_number_token1);
-      if (lookahead == 'e') ADVANCE(30);
+      if (lookahead == 'E' ||
+          lookahead == 'e') ADVANCE(30);
       if (('0' <= lookahead && lookahead <= '9')) ADVANCE(123);
       END_STATE();
     case 126:

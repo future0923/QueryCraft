@@ -3,6 +3,7 @@ import SwiftUI
 
 struct WorkspaceDatabaseDDLView: View {
     let ddl: String
+    var highlightContext: SQLHighlightContext = .generic
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var editorState = SourceEditorState()
@@ -15,9 +16,10 @@ struct WorkspaceDatabaseDDLView: View {
             language: .sql,
             configuration: configuration,
             state: $editorState,
-            highlightProviders: [languageService]
+            highlightProviders: [languageService], coordinators: [languageService]
         )
         .id(ddl)
+        .onChange(of: highlightContext, initial: true) { _, context in languageService.setHighlightContext(context) }
         .accessibilityLabel(
             AppCopy.current.text("DDL SQL 代码", "DDL SQL code")
         )
@@ -28,7 +30,8 @@ struct WorkspaceDatabaseDDLView: View {
         SourceEditorConfiguration(
             appearance: .init(
                 theme: WorkspaceEditorTheme.make(
-                    for: colorScheme == .dark ? .darkAqua : .aqua
+                    for: colorScheme == .dark ? .darkAqua : .aqua,
+                    settings: preferences.editorColors
                 ),
                 font: preferences.editorFont(),
                 wrapLines: false,
