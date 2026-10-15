@@ -13,6 +13,10 @@ struct SettingsWindowTests {
             backing: .buffered,
             defer: false
         )
+        // Match SettingsWindowController: ARC owns the window, so closing it
+        // must not also release it through AppKit's legacy ownership policy.
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
         window.orderFront(nil)
 
         window.cancelOperation(nil)

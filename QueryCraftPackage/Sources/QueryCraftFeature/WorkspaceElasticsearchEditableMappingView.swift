@@ -5,7 +5,7 @@ struct WorkspaceElasticsearchEditableMappingView: View {
     @Bindable var editor: WorkspaceElasticsearchMappingEditor
     let workspace: WorkspaceModel
     let resource: WorkspaceMappingTarget
-    @State private var exportController = WorkspaceDataExportController()
+    @State private var exportController = WorkspaceDataExportController(databaseType: .elasticsearch)
     @State private var searchController = WorkspaceGridSearchController()
     @State private var rowInsertEditor = WorkspaceDatabaseDataRowInsertEditorState()
     @State private var preferences = ApplicationPreferences.shared

@@ -9,6 +9,8 @@ struct WorkspaceDatabaseObjectRow: View {
     let openTab: @MainActor (WorkspaceDatabaseObjectDetailTab) -> Void
     let renameTable: @MainActor () -> Void
     let deleteTable: @MainActor () -> Void
+    var exportData: (@MainActor (WorkspaceDataExportFormat) -> Void)? = nil
+    var importData: (@MainActor () -> Void)? = nil
     var deleteIndex: (@MainActor () -> Void)? = nil
     var deleteTopic: (@MainActor () -> Void)? = nil
 
@@ -19,6 +21,8 @@ struct WorkspaceDatabaseObjectRow: View {
         openTab: @escaping @MainActor (WorkspaceDatabaseObjectDetailTab) -> Void,
         renameTable: @escaping @MainActor () -> Void,
         deleteTable: @escaping @MainActor () -> Void,
+        exportData: (@MainActor (WorkspaceDataExportFormat) -> Void)? = nil,
+        importData: (@MainActor () -> Void)? = nil,
         deleteIndex: (@MainActor () -> Void)? = nil,
         deleteTopic: (@MainActor () -> Void)? = nil,
         iconSystemImage: String? = nil,
@@ -30,6 +34,8 @@ struct WorkspaceDatabaseObjectRow: View {
         self.openTab = openTab
         self.renameTable = renameTable
         self.deleteTable = deleteTable
+        self.exportData = exportData
+        self.importData = importData
         self.deleteIndex = deleteIndex
         self.deleteTopic = deleteTopic
         self.iconSystemImage = iconSystemImage
@@ -68,6 +74,21 @@ struct WorkspaceDatabaseObjectRow: View {
                     Button(tab.openTitle(for: selection.kind)) {
                         openTab(tab)
                     }
+                }
+                if let exportData {
+                    Divider()
+                    Menu(AppCopy.current.text("导出数据", "Export Data"), systemImage: "square.and.arrow.up") {
+                        ForEach(WorkspaceDataExportFormat.contextMenuFormats) { format in
+                            Button(format.menuTitle + "…", systemImage: format.systemImage) {
+                                exportData(format)
+                            }
+                            .accessibilityIdentifier("exportTable.\(format.rawValue)")
+                        }
+                    }
+                }
+                if let importData {
+                    Button(AppCopy.current.text("导入数据…", "Import Data…"), systemImage: "square.and.arrow.down", action: importData)
+                        .accessibilityIdentifier("importTable")
                 }
                 if selection.kind == .table && allowsTableMutations {
                     Divider()

@@ -332,6 +332,9 @@ struct WorkspaceDatabaseObjectDetailView: View {
             await kafkaJSONTable.load(model.selectedObjectDataState.page,
                 selectionID: selection.id, schemaID: kafkaJSONSchemaID)
         }
+        .onChange(of: model.databaseType, initial: true) {
+            exportController.databaseType = model.databaseType
+        }
         .onChange(of: kafkaJSONTableEnabled) { _, _ in
             kafkaJSONSchemaID = UUID()
             selectedDataRowIndexes = []

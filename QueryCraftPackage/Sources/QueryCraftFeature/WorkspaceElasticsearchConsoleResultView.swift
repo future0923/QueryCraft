@@ -4,7 +4,7 @@ struct WorkspaceElasticsearchConsoleResultView: View {
     let result: WorkspaceElasticsearchConsoleResult
     var canLocateError = false
     var locateError: () -> Void = {}
-    @State private var exportController = WorkspaceDataExportController()
+    @State private var exportController = WorkspaceDataExportController(databaseType: .elasticsearch)
     @State private var searchController = WorkspaceGridSearchController()
     @State private var rowInsertEditor = WorkspaceDatabaseDataRowInsertEditorState()
     @State private var selectedRows = IndexSet()

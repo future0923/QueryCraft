@@ -87,7 +87,9 @@ struct WorkspaceDataExportOptionsView: View {
                         Text("Excel").tag(WorkspaceDataExportFormat.xlsx)
                         Text("CSV").tag(WorkspaceDataExportFormat.csv)
                         Text("JSON").tag(WorkspaceDataExportFormat.json)
-                        Text("SQL").tag(WorkspaceDataExportFormat.sql)
+                        if controller.availableFormats.contains(.sql) {
+                            Text("SQL INSERT").tag(WorkspaceDataExportFormat.sql)
+                        }
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
@@ -223,20 +225,22 @@ struct WorkspaceDataExportOptionsView: View {
                                 )
                             )
                             .tag(WorkspaceSQLConflictStrategy.insert)
-                            Text(
-                                AppCopy.current.text(
-                                    "INSERT IGNORE（忽略冲突）",
-                                    "INSERT IGNORE (Skip Conflicts)"
+                            if controller.databaseType == .mysql {
+                                Text(
+                                    AppCopy.current.text(
+                                        "INSERT IGNORE（忽略冲突）",
+                                        "INSERT IGNORE (Skip Conflicts)"
+                                    )
                                 )
-                            )
-                            .tag(WorkspaceSQLConflictStrategy.ignore)
-                            Text(
-                                AppCopy.current.text(
-                                    "REPLACE（替换）",
-                                    "REPLACE (Replace)"
+                                .tag(WorkspaceSQLConflictStrategy.ignore)
+                                Text(
+                                    AppCopy.current.text(
+                                        "REPLACE（替换）",
+                                        "REPLACE (Replace)"
+                                    )
                                 )
-                            )
-                            .tag(WorkspaceSQLConflictStrategy.replace)
+                                .tag(WorkspaceSQLConflictStrategy.replace)
+                            }
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
@@ -379,31 +383,7 @@ struct WorkspaceDataExportOptionsView: View {
             case .json:
                 EmptyView()
             case .sql:
-                optionRow(
-                    AppCopy.current.text(
-                        "单条语句行数",
-                        "Rows per Statement"
-                    )
-                ) {
-                    Picker(
-                        AppCopy.current.text(
-                            "单条语句行数",
-                            "Rows per Statement"
-                        ),
-                        selection: $controller.options.sqlInsertBatchSize
-                    ) {
-                        Text(AppCopy.current.text("100 行", "100 rows"))
-                            .tag(100)
-                        Text(AppCopy.current.text("500 行", "500 rows"))
-                            .tag(500)
-                        Text(AppCopy.current.text("1,000 行", "1,000 rows"))
-                            .tag(1_000)
-                        Text(AppCopy.current.text("5,000 行", "5,000 rows"))
-                            .tag(5_000)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                }
+                DataExportBatchSizeField(value: $controller.options.sqlInsertBatchSize)
                 optionRow(AppCopy.current.text("使用事务", "Use Transaction")) {
                     Toggle(
                         AppCopy.current.text(
@@ -412,6 +392,7 @@ struct WorkspaceDataExportOptionsView: View {
                         ),
                         isOn: $controller.options.sqlWrapsInTransaction
                     )
+                    .disabled(controller.databaseType == .doris)
                     .labelsHidden()
                     .toggleStyle(.switch)
                 }

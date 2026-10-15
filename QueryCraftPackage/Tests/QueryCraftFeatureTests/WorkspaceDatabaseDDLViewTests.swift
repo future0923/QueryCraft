@@ -216,6 +216,8 @@ struct WorkspaceDatabaseDDLViewTests {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
         window.appearance = NSAppearance(named: appearanceName)
         window.contentView = hostingView
         window.makeKeyAndOrderFront(nil)
@@ -278,6 +280,8 @@ struct WorkspaceDatabaseDDLViewTests {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
         window.contentView = hostingView
         window.makeKeyAndOrderFront(nil)
         hostingView.layoutSubtreeIfNeeded()

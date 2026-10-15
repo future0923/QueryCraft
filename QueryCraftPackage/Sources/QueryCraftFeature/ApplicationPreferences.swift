@@ -228,6 +228,18 @@ public final class ApplicationPreferences {
         }
     }
 
+    var dataExport: WorkspaceDataExportPreferences {
+        didSet {
+            guard dataExport.isValid else {
+                dataExport = oldValue
+                return
+            }
+            if let data = try? JSONEncoder().encode(dataExport) {
+                defaults.set(data, forKey: Key.dataExport)
+            }
+        }
+    }
+
     private let defaults: UserDefaults
     private let appliesApplicationAppearance: Bool
 
@@ -236,6 +248,9 @@ public final class ApplicationPreferences {
         appliesApplicationAppearance: Bool = false
     ) {
         defaults = userDefaults
+        dataExport = userDefaults.data(forKey: Key.dataExport)
+            .flatMap { try? JSONDecoder().decode(WorkspaceDataExportPreferences.self, from: $0) }
+            .flatMap { $0.isValid ? $0 : nil } ?? WorkspaceDataExportPreferences()
         self.appliesApplicationAppearance = appliesApplicationAppearance
         let storedApplicationLanguage = Self.value(
             ApplicationLanguage.self,
@@ -448,6 +463,7 @@ public final class ApplicationPreferences {
     }
 
     func resetData() {
+        dataExport = WorkspaceDataExportPreferences()
         tableDataPageSize = 200
         usesAlternatingTableRows = true
         showsSQLColumnComments = true
@@ -494,6 +510,7 @@ public final class ApplicationPreferences {
     }
 
     private enum Key {
+        static let dataExport = "preferences.data.export"
         static let applicationLanguage = "preferences.general.applicationLanguage"
         static let startupBehavior = "preferences.general.startupBehavior"
         static let appearance = "preferences.general.appearance"

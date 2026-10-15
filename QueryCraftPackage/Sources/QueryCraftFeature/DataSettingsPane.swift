@@ -108,6 +108,8 @@ struct DataSettingsPane: View {
                 }
             }
 
+            DataExportSettingsSections(preferences: preferences)
+
             Section(copy.redisSection) {
                 Toggle(
                     isOn: $preferences

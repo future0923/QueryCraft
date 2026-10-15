@@ -2,6 +2,12 @@ import Foundation
 import zlib
 
 enum WorkspaceDataExportError: LocalizedError {
+    case unavailableColumn(String)
+    case sqlStatementTooLarge
+    case incompleteBinaryValue
+    case unsupportedSQLValue
+    case missingColumns
+    case changedColumns
     case missingRow
     case missingSQLTableName
     case unableToCreateFile
@@ -11,6 +17,18 @@ enum WorkspaceDataExportError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case let .unavailableColumn(name):
+            AppCopy.current.text("字段 \(name) 缺少可无损导出的原始数据，未生成导出文件。", "Original data for column \(name) is unavailable for lossless export. No file was exported.")
+        case .sqlStatementTooLarge:
+            AppCopy.current.text("单行数据超过 SQL 语句大小上限，请使用其他导出格式。", "A row exceeds the SQL statement size limit. Use another export format.")
+        case .incompleteBinaryValue:
+            AppCopy.current.text("无法导出 SQL：二进制值只有预览，没有完整数据。", "Cannot export SQL: complete binary data is unavailable.")
+        case .unsupportedSQLValue:
+            AppCopy.current.text("此对象或字段类型暂不支持 SQL INSERT 导出。", "SQL INSERT export is unavailable for this object or column type.")
+        case .missingColumns:
+            AppCopy.current.text("无法获取可导出的字段。", "No exportable columns are available.")
+        case .changedColumns:
+            AppCopy.current.text("导出期间表结构发生变化，请重新导出。", "Table columns changed during export. Please export again.")
         case .missingRow:
             AppCopy.current.text(
                 "导出期间结果数据发生了变化。",
@@ -54,6 +72,20 @@ actor WorkspaceDataExporter {
         to destination: URL,
         progress: @escaping ProgressHandler = { _ in }
     ) async throws -> Int {
+        do {
+            return try await writeFile(request, to: destination, progress: progress)
+        } catch {
+            await request.source.finish()
+            throw error
+        }
+    }
+
+    private func writeFile(
+        _ request: WorkspaceDataExportRequest,
+        to destination: URL,
+        progress: @escaping ProgressHandler
+    ) async throws -> Int {
+        try Task.checkCancellation()
         let fileManager = FileManager.default
         let replacementDirectory = try fileManager.url(
             for: .itemReplacementDirectory,
@@ -298,7 +330,7 @@ private enum WorkspaceCSVExporter {
                 forceQuotes = false
             case let .text(text):
                 value = text
-                forceQuotes = text.isEmpty
+                forceQuotes = text.isEmpty || text == nullStyle.text
             case let .binary(byteCount, _):
                 value = "<BINARY \(byteCount) bytes>"
                 forceQuotes = false
@@ -331,8 +363,7 @@ private enum WorkspaceCSVExporter {
             || options.csvQuotePolicy == .allText
             || value.contains(options.csvDelimiter.character)
             || value.contains("\"")
-            || value.contains("\n")
-            || value.contains("\r")
+            || value.contains(where: \.isNewline)
         guard requiresQuotes else { return value }
         return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
     }
@@ -578,10 +609,17 @@ private enum WorkspaceSQLExporter {
         guard !rawTableName.isEmpty else {
             throw WorkspaceDataExportError.missingSQLTableName
         }
-        let tableName = quotedIdentifier(rawTableName)
-        let columns = request.columns.map {
-            quotedIdentifier($0.name)
-        }.joined(separator: ", ")
+        let dialect = options.sqlDialect
+        let parts = options.sqlTableIdentifierParts
+            ?? rawTableName.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        let tableName = parts.map(dialect.identifier).joined(separator: ".")
+        let columns = request.columns.map { dialect.identifier($0.name) }.joined(separator: ", ")
+        guard options.sqlConflictStrategy == .insert || dialect == .mysql else {
+            throw WorkspaceDataExportError.unsupportedSQLValue
+        }
+        let wrapsInTransaction = options.sqlWrapsInTransaction && dialect != .doris
+        let identityClause = options.sqlOverridesIdentity && dialect == .postgresql
+            ? " OVERRIDING SYSTEM VALUE" : ""
         let statementPrefix: String
         switch options.sqlConflictStrategy {
         case .insert:
@@ -591,12 +629,15 @@ private enum WorkspaceSQLExporter {
         case .replace:
             statementPrefix = "REPLACE INTO"
         }
-        if options.sqlWrapsInTransaction {
+        if wrapsInTransaction {
             try writer.writeUTF8("START TRANSACTION;\n")
         }
 
         var rowCount = 0
         var rowsInStatement = 0
+        var statementBytes = 0
+        let prefix = "\(statementPrefix) \(tableName) (\(columns))\(identityClause) VALUES\n"
+        let prefixBytes = prefix.utf8.count
         let batchSize = max(1, options.sqlInsertBatchSize)
         var nextBatch = try await request.source.nextBatch()
         while let batch = nextBatch {
@@ -606,16 +647,24 @@ private enum WorkspaceSQLExporter {
                 if batchIndex.isMultiple(of: 256) {
                     try Task.checkCancellation()
                 }
+                let tuple = "  (\(try encodedValues(row, columns: request.columns, dialect: dialect)))"
+                let tupleBytes = tuple.utf8.count
+                guard prefixBytes + tupleBytes + 2 <= options.sqlMaximumStatementBytes else {
+                    throw WorkspaceDataExportError.sqlStatementTooLarge
+                }
+                if rowsInStatement > 0 && statementBytes + tupleBytes + 4 > options.sqlMaximumStatementBytes {
+                    try writer.writeUTF8(";\n")
+                    rowsInStatement = 0
+                }
                 if rowsInStatement == 0 {
-                    try writer.writeUTF8(
-                        "\(statementPrefix) \(tableName) (\(columns)) VALUES\n"
-                    )
+                    try writer.writeUTF8(prefix)
+                    statementBytes = prefixBytes
                 } else {
                     try writer.writeUTF8(",\n")
+                    statementBytes += 2
                 }
-                try writer.writeUTF8(
-                    "  (\(encodedValues(row, columns: request.columns)))"
-                )
+                try writer.writeUTF8(tuple)
+                statementBytes += tupleBytes
                 rowsInStatement += 1
                 rowCount += 1
                 if rowsInStatement == batchSize {
@@ -633,7 +682,7 @@ private enum WorkspaceSQLExporter {
         if rowsInStatement > 0 {
             try writer.writeUTF8(";\n")
         }
-        if options.sqlWrapsInTransaction {
+        if wrapsInTransaction {
             try writer.writeUTF8("COMMIT;\n")
         }
         try writer.finish()
@@ -642,25 +691,12 @@ private enum WorkspaceSQLExporter {
 
     private static func encodedValues(
         _ row: WorkspaceDatabaseDataRow,
-        columns: [WorkspaceGridCopyColumn]
-    ) -> String {
-        columns.map { column in
-            switch row.value(at: column.dataIndex) {
-            case .null:
-                "NULL"
-            case let .text(value):
-                "'\(value.replacingOccurrences(of: "'", with: "''"))'"
-            case let .binary(byteCount, _):
-                "'<BINARY \(byteCount) bytes>'"
-            }
-        }.joined(separator: ", ")
+        columns: [WorkspaceGridCopyColumn],
+        dialect: WorkspaceSQLExportDialect
+    ) throws -> String {
+        try columns.map { try dialect.literal(row.value(at: $0.dataIndex)) }.joined(separator: ", ")
     }
 
-    private static func quotedIdentifier(_ value: String) -> String {
-        value.split(separator: ".", omittingEmptySubsequences: false)
-            .map { "`\($0.replacingOccurrences(of: "`", with: "``"))`" }
-            .joined(separator: ".")
-    }
 }
 
 private enum WorkspaceXLSXExporter {
@@ -877,7 +913,7 @@ private enum WorkspaceXLSXExporter {
                 "\" t=\"inlineStr\"><is><t xml:space=\"preserve\">"
             )
         }
-        data.appendXMLEscaped(value)
+        data.appendSpreadsheetText(value)
         data.appendUTF8("</t></is></c>")
     }
 
@@ -1315,6 +1351,32 @@ private extension Data {
                 append(baseAddress, count: buffer.count)
             }
         } ?? append(contentsOf: string.utf8)
+    }
+
+    /// SpreadsheetML escapes must be applied before XML escaping. Literal escape-looking
+    /// strings and CR/control characters otherwise change when Excel or XMLParser reads them.
+    mutating func appendSpreadsheetText(_ text: String) {
+        // Most cells need XML escaping only. Avoid allocating a scalar array and
+        // rebuilding their strings on every cell in large exports.
+        guard text.utf8.contains(where: { $0 == 95 || $0 == 13 || $0 < 32 && $0 != 9 && $0 != 10 || $0 == 0xEF }) else {
+            appendXMLEscaped(text)
+            return
+        }
+        let scalars = Array(text.unicodeScalars)
+        var encoded = ""
+        for (index, scalar) in scalars.enumerated() {
+            if scalar == "_", index + 6 < scalars.count,
+               scalars[index + 1] == "x", scalars[index + 6] == "_",
+               scalars[(index + 2)...(index + 5)].allSatisfy({ CharacterSet(charactersIn: "0123456789abcdefABCDEF").contains($0) }) {
+                encoded += "_x005F_"
+            } else if scalar.value == 13 || scalar.value < 32 && scalar.value != 9 && scalar.value != 10
+                        || scalar.value == 0xFFFE || scalar.value == 0xFFFF {
+                encoded += String(format: "_x%04X_", scalar.value)
+            } else {
+                encoded.unicodeScalars.append(scalar)
+            }
+        }
+        appendXMLEscaped(encoded)
     }
 
     mutating func appendXMLEscaped(_ text: String) {

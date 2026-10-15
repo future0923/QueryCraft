@@ -204,7 +204,7 @@ struct WorkspaceDatabaseDataPendingPresentationTests {
         )
 
         #expect(publishedRows == nil)
-        await waitForSelectionPublication()
+        await waitForSelectionPublication { publishedRows != nil }
         #expect(publishedRows == [1])
     }
 
@@ -231,7 +231,7 @@ struct WorkspaceDatabaseDataPendingPresentationTests {
         )
 
         #expect(publishedRows.isEmpty)
-        await waitForSelectionPublication()
+        await waitForSelectionPublication { !publishedRows.isEmpty }
         #expect(publishedRows == [IndexSet(integer: 2)])
         #expect(tableView.selectedDataRowIndexesForActions == [2])
     }
@@ -262,7 +262,7 @@ struct WorkspaceDatabaseDataPendingPresentationTests {
         )
 
         #expect(tableView.gridSelection.active?.row == 2)
-        await waitForSelectionPublication()
+        await waitForSelectionPublication { !publishedRows.isEmpty }
         #expect(publishedRows == [2])
     }
 
@@ -309,7 +309,7 @@ struct WorkspaceDatabaseDataPendingPresentationTests {
 
         #expect(tableView.gridSelection.isEmpty)
         #expect(tableView.selectedDataRowIndexesForActions.isEmpty)
-        await waitForSelectionPublication()
+        await waitForSelectionPublication { !publishedRows.isEmpty }
         #expect(publishedRows == [IndexSet(integer: 0)])
     }
 
@@ -755,8 +755,16 @@ struct WorkspaceDatabaseDataPendingPresentationTests {
         ))
     }
 
-    private func waitForSelectionPublication() async {
-        try? await Task.sleep(for: .milliseconds(300))
+    private func waitForSelectionPublication(
+        _ hasPublished: @MainActor () -> Bool
+    ) async {
+        // Await the observable callback: under a busy main actor the debounced
+        // publication task can start after a fixed-duration test sleep ends.
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(10))
+        while !hasPublished(), clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     private func makeCoordinator(

@@ -181,6 +181,9 @@ struct WorkspaceQueryResultView: View {
                 resultSection = .messages
             }
         }
+        .onChange(of: databaseType, initial: true) {
+            exportController.databaseType = databaseType
+        }
         .onChange(of: displayedState.page?.store.id, initial: true) {
             _, resultID in
             if resultID == nil {

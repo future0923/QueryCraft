@@ -2063,6 +2063,8 @@ struct WorkspaceCodeEditQueryEditorTests {
             backing: .buffered,
             defer: false
         )
+        // The returned window is ARC-owned; close() must not release it again.
+        window.isReleasedWhenClosed = false
         // 无头测试里窗口的开关动画没有需要展示的屏幕，反而会在释放动画块时崩溃。
         window.animationBehavior = .none
         if let appearance {

@@ -205,6 +205,8 @@ struct WorkspaceDatabaseItems: View {
                 openTab: { tab in openObjectTab(selection, tab) },
                 renameTable: { renameTable(selection) },
                 deleteTable: { deleteTable(selection) },
+                exportData: tableExportAction(for: selection),
+                importData: tableImportAction(for: selection),
                 deleteTopic: topicDeletionAction(for: selection),
                 iconSystemImage: model.databaseType == .kafka
                     ? "point.3.connected.trianglepath.dotted"
@@ -212,6 +214,20 @@ struct WorkspaceDatabaseItems: View {
                 allowsTableMutations: model.databaseType != .kafka
             )
         }
+    }
+
+    private func tableImportAction(
+        for selection: WorkspaceDatabaseObjectSelection
+    ) -> (@MainActor @Sendable () -> Void)? {
+        guard model.canImportTable(selection) else { return nil }
+        return { model.importTable(selection) }
+    }
+
+    private func tableExportAction(
+        for selection: WorkspaceDatabaseObjectSelection
+    ) -> (@MainActor @Sendable (WorkspaceDataExportFormat) -> Void)? {
+        guard model.canExportTable(selection) else { return nil }
+        return { format in model.exportTable(selection, format: format) }
     }
 
     private func topicDeletionAction(for selection: WorkspaceDatabaseObjectSelection) -> (@MainActor () -> Void)? {
