@@ -40,7 +40,9 @@ def main():
     for kind,entries in records.items():
         for record,release,archive,notes in entries:
             result=subprocess.run(['curl','--fail-with-body','--silent','--show-error','--header','@-',
-                '--form',f'manifest=@{record}','--form',f'archive=@{archive}','--form',f'release_notes=<{notes}',endpoint+'/'+kind],
+                # Existing production proxies already allow large uploads here.
+                # The server dispatches to the same authenticated component handler.
+                '--form',f'manifest=@{record}','--form',f'archive=@{archive}','--form',f'release_notes=<{notes}',endpoint+'/drivers?component='+kind],
                 input=('Authorization: Bearer '+token+'\n').encode(),capture_output=True)
             if result.returncode:raise RuntimeError(f'{kind} deployment failed (curl {result.returncode}); previously published artifacts were preserved')
         if args.github:

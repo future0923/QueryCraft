@@ -61,7 +61,7 @@ MySQL 和 Doris 共用 `QueryCraftDrivers/MariaDBTransport` 动态库。该目�
 - 运行 `scripts/test-mcp-desktop.py <MCP.app> --component-checks --output <隔离结果目录>`，验证真实签名目录下载、兼容回退、固定启动入口、独立 CLI 更新、旧会话继续调用、失败保留旧版、显式回退、旧客户端路径保留及 Skill 本地修改保护。
 - `MCPComponentTests`、`MCPTests`、`MCPSessionTests`、`MCPOptimizationTests` 应通过。设置仍使用原有左右对齐原生布局，加载与状态反馈保持稳定。
 - LicenseServer 提供 MCP 管理、Skill 管理、上传草稿/发布/下架/删除草稿、管理员/CSRF、部署令牌和审计。服务端只持有发行公钥；CI 对单个不可变发行记录签名，服务端聚合已发布记录供客户端下载。
-- 发布前先部署支持 `/components/` 及对应管理/部署路由的服务端和 Nginx 配置；组件包、签名记录及双语说明全部就绪后再发布。核对三处版本：包内、下载清单、GitHub Release。
+- 发布前先部署支持 `/components/` 及对应管理/部署路由的服务端。Nginx 使用新配置，或使用已验证的大包上传兼容入口 `/admin/resources/deploy/drivers?component=mcp|skill`；兼容入口仍走组件鉴权、签名与独立存储。组件包、签名记录及双语说明全部就绪后再发布。核对三处版本：包内、下载清单、GitHub Release。
 - 新版入口 `<数据目录>/MCP/bin/querycraft-mcp` 固定不变。原 `<数据目录>/MCP/QueryCraft MCP.app` 保留给旧客户端；更新后在设置中重新添加客户端即可迁移。保留不可变旧版本供已有会话及回退使用，不自动删除运行中的资源。
 
 
