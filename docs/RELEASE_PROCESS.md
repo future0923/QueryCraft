@@ -79,7 +79,7 @@ git tag -a v<版本> -m "QueryCraft <版本>"
 git push origin v<版本>
 ```
 
-主程序 tag 工作流构建 Intel、Apple Silicon 和 Universal Sparkle 更新包，发布主程序及实际变更的 MCP/Skill；未变更组件保持原版本。tag 不会因为主程序版本变化而自动上传六类驱动。
+主程序 tag 工作流构建 Intel、Apple Silicon 和 Universal Sparkle 更新包，发布主程序、实际变更的 MCP/Skill 和受影响的驱动；未变更组件保持原版本。tag 不会因为主程序版本变化而自动上传未改动驱动。手动构建保持 `publish_drivers` 显式选择。
 
 ## 4. 需要发布驱动时
 

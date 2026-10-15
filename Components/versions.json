@@ -2,7 +2,7 @@
   "mcp": {
     "version": "0.1.0",
     "build": "1",
-    "minimumAppVersion": "0.1.9",
+    "minimumAppVersion": "0.1.10",
     "driverAPI": 5,
     "storageAPI": 1,
     "credentialAPI": 1,
@@ -11,7 +11,7 @@
   "skill": {
     "version": "1.0.0",
     "build": "1",
-    "minimumAppVersion": "0.1.9",
+    "minimumAppVersion": "0.1.10",
     "minimumMCPVersion": "0.1.0",
     "maximumMCPVersionExclusive": "1.0.0",
     "driverAPI": 5,
