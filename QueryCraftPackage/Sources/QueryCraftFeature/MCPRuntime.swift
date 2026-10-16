@@ -25,11 +25,11 @@ actor MCPRuntime {
     var stopped = false
     private var maintenance: Task<Void, Never>?
 
-    init(directory: URL, credentials: any CredentialStore = MCPCredentialStore(), registry: DatabaseDriverRegistry = .shared) {
+    init(directory: URL, credentials: (any CredentialStore)? = nil, registry: DatabaseDriverRegistry = .shared) {
         store = MCPPolicyStore(directory: directory)
         history = MCPHistoryStore(directory: directory)
         repository = SQLiteConnectionProfileRepository(databaseURL: directory.appending(path: "QueryCraft.sqlite"))
-        self.credentials = credentials; self.registry = registry
+        self.credentials = credentials ?? MCPCredentialStore(directory: directory); self.registry = registry
     }
 
     func startMaintenance() {

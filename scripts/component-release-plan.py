@@ -31,6 +31,7 @@ def component_paths(kind):
       'QueryCraftPackage/Sources/QueryCraftFeature/QueryCraftMCPApplication*','QueryCraftPackage/Sources/QueryCraftMCPExecutable/**',
       'QueryCraftPackage/Sources/QueryCraftFeature/DatabaseDriver*.swift','QueryCraftPackage/Sources/QueryCraftFeature/SQLiteConnectionProfileRepository*',
       'QueryCraftPackage/Sources/QueryCraftFeature/SQL*.swift','QueryCraftPackage/Sources/QueryCraftFeature/ConnectionProfile.swift','QueryCraftPackage/Sources/QueryCraftFeature/KeychainCredentialStore.swift','QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceCredentialHelperClient.swift','QueryCraftPackage/Sources/QueryCraftFeature/QueryCraftStorageLocation.swift',
+      'QueryCraftPackage/Sources/QueryCraftFeature/SharedKeychainCredentialStore.swift',
       'QueryCraftPackage/Sources/QueryCraftFeature/Resources/**','QueryCraftPackage/Package.swift','MCPLauncher/**','CredentialHelper/**','scripts/package-mcp.py','scripts/package-components.py']
 def plan(base,head,versions):
     paths=changes(base,head)

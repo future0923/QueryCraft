@@ -102,7 +102,7 @@ struct MCPSettingsPane: View {
             }
             HStack {
                 MCPSettingsControlLabel(title: copy("已保存的密码", "Saved credentials"),
-                    description: copy("首次接入时，允许独立程序读取钥匙串密码。", "Authorize Keychain access when connecting for the first time."))
+                    description: copy("一次授权已选连接，主程序与 MCP 共用安全凭据助手。", "Authorize selected connections once through the shared secure credential helper."))
                 Spacer(minLength: 8)
                 Button { Task { await model.authorizeCredentials() } } label: {
                     Text(copy("授权…", "Authorize…"))

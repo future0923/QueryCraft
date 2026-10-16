@@ -48,8 +48,43 @@ def embed(app, signer, identity):
         }))
         signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN,
                    '--timestamp=none', '--options', 'runtime', helper)
+    embed_shared(app, signer, identity)
+    info['QCSharedCredentialHelperRequired'] = True
     info['QCCredentialHelperRequired'] = True
     info_path.write_bytes(plistlib.dumps(info))
+
+
+def embed_shared(app, signer, identity, archs=('arm64', 'x86_64')):
+    """v2 has a new identity/path; never replace either installed v1 helper."""
+    app = Path(app)
+    identifier = 'io.github.future0923.QueryCraft.SharedCredentialHelper'
+    helper = app / 'Contents/Helpers/QueryCraft Shared Credentials.app'
+    if helper.exists():
+        requirement = f'identifier "{identifier}" and certificate leaf = H"{identity}"'
+        signer.run('codesign', '--verify', '--strict', '-R', requirement, helper)
+        if plistlib.loads((helper / 'Contents/Info.plist').read_bytes()).get('QCCredentialProtocolVersion') != 2:
+            raise RuntimeError('Unexpected shared helper protocol.')
+        return
+    (helper / 'Contents/MacOS').mkdir(parents=True)
+    source = (ROOT / 'CredentialHelper/main.swift').read_text().replace('__PINNED_CERTIFICATE_SHA1__', identity)
+    with tempfile.TemporaryDirectory(prefix='querycraft-shared-helper-') as directory:
+        directory = Path(directory)
+        main = directory / 'main.swift'
+        main.write_text(source)
+        binaries = []
+        for arch in archs:
+            binary = directory / arch
+            subprocess.run(['swiftc', '-O', '-D', 'SHARED_CREDENTIALS', '-target', arch + '-apple-macosx15.0', str(main), '-o', str(binary)], check=True)
+            binaries.append(binary)
+        subprocess.run(['lipo', '-create', *map(str, binaries), '-output', str(helper / 'Contents/MacOS/QueryCraftCredentials')], check=True)
+    (helper / 'Contents/Info.plist').write_bytes(plistlib.dumps({
+        'CFBundleIdentifier': identifier, 'CFBundleName': 'QueryCraft Shared Credentials',
+        'CFBundleExecutable': 'QueryCraftCredentials', 'CFBundlePackageType': 'APPL',
+        'CFBundleVersion': '2', 'LSMinimumSystemVersion': '15.0',
+        'LSUIElement': True, 'QCCredentialProtocolVersion': 2,
+    }))
+    signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN,
+               '--timestamp=none', '--options', 'runtime', helper)
 
 
 if __name__ == '__main__':

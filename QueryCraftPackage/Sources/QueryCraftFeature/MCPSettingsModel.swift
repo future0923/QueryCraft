@@ -302,9 +302,25 @@ final class MCPSettingsModel {
         guard didLoad, !isBusy else { return }; isBusy = true; defer { isBusy = false }
         do {
             captureQueryTimeout(); try store.save(policy)
-            _ = try await MCPProcess.run(URL(fileURLWithPath: executable), arguments: ["--authorize-credentials", "--data-dir", directory.path], timeout: 120)
-            status = AppCopy.current.text("凭据授权完成", "Credential authorization complete"); error = nil
-        } catch { self.error = error.localizedDescription }
+            error = nil
+            status = AppCopy.current.text("正在统一授权已选连接…", "Authorizing selected connections…")
+            let supported = try? await MCPProcess.run(URL(fileURLWithPath: executable), arguments: ["--credential-protocol"])
+            guard supported == "2",
+                  Bundle.main.object(forInfoDictionaryKey: "QCSharedCredentialHelperRequired") as? Bool == true else {
+                throw MCPFailure(AppCopy.current.text("请升级主程序和 MCP 程序后使用统一凭据授权。", "Update QueryCraft and the MCP runtime to use shared credential authorization."), code: .unsupported)
+            }
+            let repository = SQLiteConnectionProfileRepository(databaseURL: directory.appending(path: "QueryCraft.sqlite"))
+            let count = try await MCPCredentialAuthorization.authorize(profiles: try await repository.fetchAll(), policy: policy,
+                source: KeychainCredentialStore(directory: directory, allowsInteraction: false), destination: SharedKeychainCredentialStore(directory: directory),
+                legacy: LegacyKeychainCredentialStore(allowsInteraction: false))
+            status = AppCopy.current.text("已统一授权 \(count) 个连接的凭据", "Authorized credentials for \(count) connections"); error = nil
+        } catch {
+            let failure = MCPFailure.normalized(error)
+            self.error = failure.code == .credentialDenied
+                ? AppCopy.current.text("无法静默读取旧凭据。请先解锁登录钥匙串，并在 QueryCraft 中确认该连接可正常连接后重试；不会逐条弹出授权。",
+                    "Cannot read legacy credentials without prompting. Unlock the login Keychain and verify the connection in QueryCraft, then retry.")
+                : failure.localizedDescription
+        }
     }
     func uninstall() async {
         guard !isBusy, !isCheckingRuntime else { return }; isBusy = true; defer { isBusy = false }
@@ -333,7 +349,7 @@ final class MCPSettingsModel {
         guard !loadingDatabaseChoices.contains(id), let profile = profiles.first(where: { $0.id == id }) else { return }
         loadingDatabaseChoices.insert(id)
         defer { loadingDatabaseChoices.remove(id) }
-        let runtime = MCPRuntime(directory: directory, credentials: KeychainCredentialStore())
+        let runtime = MCPRuntime(directory: directory, credentials: KeychainCredentialStore(directory: directory))
         do {
             let session = try await runtime.connect(profile, database: profile.defaultDatabase, mode: .readOnly)
             do {

@@ -26,6 +26,9 @@ class ReleasePlanTests(unittest.TestCase):
     def test_runtime_change_selects_mcp_only(self):
         self.write('QueryCraftPackage/Sources/QueryCraftFeature/MCPHTTPListener.swift','actor Listener {}')
         result=self.result();self.assertTrue(result['components']['mcp']['changed']);self.assertFalse(result['components']['skill']['changed']);self.assertFalse(any(item['changed'] for item in result['drivers'].values()))
+    def test_shared_credential_change_selects_mcp_only(self):
+        self.write('QueryCraftPackage/Sources/QueryCraftFeature/SharedKeychainCredentialStore.swift','actor SharedCredentials {}')
+        result=self.result();self.assertTrue(result['components']['mcp']['changed']);self.assertFalse(result['components']['skill']['changed']);self.assertFalse(any(item['changed'] for item in result['drivers'].values()))
     def test_skill_change_selects_skill_only(self):
         self.write('Components/Skill/querycraft/SKILL.md','Workflow instructions')
         result=self.result();self.assertTrue(result['components']['skill']['changed']);self.assertFalse(result['components']['mcp']['changed'])

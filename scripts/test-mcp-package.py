@@ -32,6 +32,10 @@ def verify(app, drivers=None, previous_drivers=None):
         helper = relocated / 'Contents/Helpers/QueryCraft Credentials.app/Contents/MacOS/QueryCraftCredentials'
         rejected = subprocess.run([str(helper)], input='', capture_output=True, text=True, timeout=10, env=env)
         assert rejected.returncode == 77, 'Credential helper accepted an unrelated caller'
+        shared = relocated / 'Contents/Helpers/QueryCraft Shared Credentials.app/Contents/MacOS/QueryCraftCredentials'
+        rejected = subprocess.run([str(shared)], input='', capture_output=True, text=True, timeout=10, env=env)
+        assert rejected.returncode == 77, 'Shared credential helper accepted an unrelated caller'
+        assert run([binary, '--credential-protocol'], env=env).stdout.strip() == '2'
         print('PASS relocated signature, SQL resources, handshake, library paths and helper caller rejection')
         protocol = run(['python3', ROOT/'scripts/test-mcp-protocol.py', binary], cwd=root, env=env)
         print(protocol.stdout.strip())

@@ -82,7 +82,7 @@ def package(build, output, development=False, archive_enabled=True, architecture
     info = {'CFBundleIdentifier': 'io.github.future0923.QueryCraft.MCP' + ('.Dev' if development else ''),
             'CFBundleName': 'QueryCraft MCP', 'CFBundleExecutable': 'querycraft-mcp', 'CFBundlePackageType': 'APPL',
             'CFBundleShortVersionString': version, 'CFBundleVersion': metadata['build'], 'QCMCPVersion': version, 'LSMinimumSystemVersion': '15.0',
-            'LSUIElement': True, 'QCAppVersion': app_version, 'QCCredentialHelperRequired': True,
+            'LSUIElement': True, 'QCAppVersion': app_version, 'QCCredentialHelperRequired': True, 'QCSharedCredentialHelperRequired': True,
             'QCComponentCatalogBaseURL': 'https://querycraft.debug-tools.cc/components/',
             'QCComponentPublicKey': '8dcu6cE1Vh6kUXtkeuDsSEWIy6sLbuHaqdnnZhE3rP8='}
     (output/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
@@ -107,6 +107,9 @@ def package(build, output, development=False, archive_enabled=True, architecture
     (helper/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier': 'io.github.future0923.QueryCraft.CredentialHelper',
         'CFBundleName': 'QueryCraft MCP Credentials', 'CFBundleExecutable': 'QueryCraftCredentials', 'CFBundlePackageType': 'APPL',
         'CFBundleVersion': '1', 'LSUIElement': True, 'QCCredentialProtocolVersion': 1}))
+    helper_spec = importlib.util.spec_from_file_location('credential_helper', ROOT/'scripts/credential-helper.py')
+    helper_packager = importlib.util.module_from_spec(helper_spec); helper_spec.loader.exec_module(helper_packager)
+    helper_packager.embed_shared(output, signer, identity, archs)
     for stale in list(output.rglob('AgentSkills')):
         if stale.is_dir(): shutil.rmtree(stale)
     run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', frameworks / 'QueryCraftFeature.framework')
