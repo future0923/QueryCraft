@@ -36,9 +36,10 @@ actor MCPInstallation {
         if let localPackage { return Bundle(url: localPackage)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String }
         return try await availableRelease().version
     }
-    func install() async throws {
+    func install(onProgress: @escaping @Sendable (MCPComponentInstallationProgress) async -> Void = { _ in }) async throws {
         guard !installing else { throw MCPFailure("MCP installation is already running.") }
         installing = true; defer { installing = false }
+        await onProgress(.init(phase: .checking))
         let fm = FileManager.default
         try fm.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let lock = try MCPComponentLock(directory: root); defer { withExtendedLifetime(lock) {} }
@@ -50,6 +51,7 @@ actor MCPInstallation {
         let release: MCPComponentRelease?
         if let localPackage {
             // Dependency injection for signed fixtures; never a bundled-app fallback.
+            await onProgress(.init(phase: .installing))
             app = staged.appending(path: "QueryCraft MCP.app")
             try fm.copyItem(at: localPackage, to: app)
             identity = "local-" + UUID().uuidString
@@ -62,7 +64,8 @@ actor MCPInstallation {
                 throw MCPFailure("Refusing an automatic MCP downgrade. Use explicit rollback instead.")
             }
             let archive = staged.appending(path: "download.zip")
-            try await catalog.download(selected, to: archive)
+            try await catalog.download(selected, to: archive, onProgress: onProgress)
+            await onProgress(.init(phase: .extracting))
             let unpacked = staged.appending(path: "unpacked")
             try fm.createDirectory(at: unpacked, withIntermediateDirectories: true)
             try await MCPComponentArchive.extract(archive, into: unpacked, root: "QueryCraftMCP")
@@ -71,6 +74,7 @@ actor MCPInstallation {
             identity = selected.identity
             release = selected
         }
+        await onProgress(.init(phase: .verifying))
         try verify(app)
         if let release {
             guard Bundle(url: app)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String == release.version,
@@ -78,9 +82,11 @@ actor MCPInstallation {
                 throw MCPFailure("MCP bundle version does not match its signed catalog.")
             }
         }
+        await onProgress(.init(phase: .selfTesting))
         _ = try await MCPProcess.run(app.appending(path: "Contents/MacOS/querycraft-mcp"), arguments: ["--self-test"])
         let launcher = app.appending(path: "Contents/Helpers/querycraft-mcp-launcher")
         try MCPComponentArchive.verifySignature(launcher)
+        await onProgress(.init(phase: .installing))
         let versionRoot = root.appending(path: "Versions/" + identity)
         // Published versions are immutable: never rewrite resources of running sessions.
         if fm.fileExists(atPath: versionRoot.path) {

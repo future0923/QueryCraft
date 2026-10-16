@@ -9,6 +9,7 @@ enum MCPComponentCheck {
         let key = Curve25519.Signing.PrivateKey()
         let host = MCPComponentHost(appVersion: "0.1.9")
         let catalog = MCPComponentCatalog(baseURL: baseURL, publicKey: key.publicKey.rawRepresentation, allowsLocalHTTP: true)
+        try await MCPDownloadProgressCheck.run(catalog: catalog, root: root, baseURL: baseURL)
         let installation = MCPInstallation(root: root.appending(path: "MCP"), catalog: catalog, host: host)
         let identity = ProcessInfo.processInfo.environment["QC_MCP_SIGNING_IDENTITY"]!
         let keychain = ProcessInfo.processInfo.environment["QC_MCP_SIGNING_KEYCHAIN"]!
@@ -117,32 +118,37 @@ enum MCPComponentCheck {
             throw CheckFailure(message: "old runtime did not answer request \(id)")
         }
         try await waitForResponse(1)
+        let checksLaunchd = ProcessInfo.processInfo.environment["QC_MCP_LAUNCHD_CHECKS"] == "1"
         let service = MCPServiceManager(directory: root)
-        try await service.start(executable: launcher.path, settings: policy.http)
+        if checksLaunchd { try await service.start(executable: launcher.path, settings: policy.http) }
         try publish(.mcp, [v2, v1])
         _ = try await MCPProcess.run(launcher, arguments: ["--update", "--data-dir", root.path], timeout: 120)
         try check(try await MCPProcess.run(launcher, arguments: ["--version"]) == "0.1.1", "standalone CLI update did not activate v2")
-        var request = URLRequest(url: URL(string: policy.http.endpoint)!)
-        request.httpMethod = "POST"; request.timeoutInterval = 5
-        request.setValue("Bearer " + policy.http.token, forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
-        request.setValue("2025-11-25", forHTTPHeaderField: "MCP-Protocol-Version")
-        request.httpBody = Data("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"UpdateCheck\",\"version\":\"1\"}}}".utf8)
-        let (responseData, response) = try await URLSession.shared.data(for: request)
-        try check((response as? HTTPURLResponse)?.statusCode == 200 && !responseData.isEmpty,
-                  "updated HTTP initialize failed: status \((response as? HTTPURLResponse)?.statusCode ?? -1), bytes \(responseData.count)")
-        let responseText = String(decoding: responseData, as: UTF8.self)
-        try responseData.write(to: serving.deletingLastPathComponent().appending(path: "updated-http-response.txt"))
-        let messages = responseText.split(separator: "\n").filter { $0.hasPrefix("data:") }
-            .compactMap { try? JSONSerialization.jsonObject(with: Data($0.dropFirst(5).trimmingCharacters(in: .whitespaces).utf8)) as? [String: Any] }
-        let object = messages.first(where: { $0["result"] != nil })
-            ?? (try? JSONSerialization.jsonObject(with: responseData) as? [String: Any])
-        let result = object?["result"] as? [String: Any]
-        try check((response as? HTTPURLResponse)?.statusCode == 200 && (result?["serverInfo"] as? [String: Any])?["version"] as? String == "0.1.1",
-                  "standalone update did not restart HTTP on v2 with the saved token")
-        try await service.stop()
-        print("PASS independent CLI update stops/restarts live launchd HTTP with saved settings and authenticates the new version")
+        if checksLaunchd {
+            var request = URLRequest(url: URL(string: policy.http.endpoint)!)
+            request.httpMethod = "POST"; request.timeoutInterval = 5
+            request.setValue("Bearer " + policy.http.token, forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+            request.setValue("2025-11-25", forHTTPHeaderField: "MCP-Protocol-Version")
+            request.httpBody = Data("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"UpdateCheck\",\"version\":\"1\"}}}".utf8)
+            let (responseData, response) = try await URLSession.shared.data(for: request)
+            try check((response as? HTTPURLResponse)?.statusCode == 200 && !responseData.isEmpty,
+                      "updated HTTP initialize failed: status \((response as? HTTPURLResponse)?.statusCode ?? -1), bytes \(responseData.count)")
+            let responseText = String(decoding: responseData, as: UTF8.self)
+            try responseData.write(to: serving.deletingLastPathComponent().appending(path: "updated-http-response.txt"))
+            let messages = responseText.split(separator: "\n").filter { $0.hasPrefix("data:") }
+                .compactMap { try? JSONSerialization.jsonObject(with: Data($0.dropFirst(5).trimmingCharacters(in: .whitespaces).utf8)) as? [String: Any] }
+            let object = messages.first(where: { $0["result"] != nil })
+                ?? (try? JSONSerialization.jsonObject(with: responseData) as? [String: Any])
+            let result = object?["result"] as? [String: Any]
+            try check((response as? HTTPURLResponse)?.statusCode == 200 && (result?["serverInfo"] as? [String: Any])?["version"] as? String == "0.1.1",
+                      "standalone update did not restart HTTP on v2 with the saved token")
+            try await service.stop()
+            print("PASS independent CLI update stops/restarts live launchd HTTP with saved settings and authenticates the new version")
+        } else {
+            print("SKIP persistent HTTP/launchd checks; enable --launchd-checks explicitly (macOS may notify about background activity)")
+        }
         try send(["jsonrpc": "2.0", "method": "notifications/initialized"])
         try send(["jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": ["name": "querycraft_list_connections", "arguments": [:]]])
         try await waitForResponse(2)

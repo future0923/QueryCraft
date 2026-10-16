@@ -29,6 +29,7 @@ final class MCPSettingsModel {
     var error: String?
     var status = ""
     var isBusy = false
+    var installationProgress: MCPComponentInstallationProgress?
     var isLoading = false
     var isCheckingRuntime = false
     var runtimeStatusLoaded = false
@@ -176,15 +177,17 @@ final class MCPSettingsModel {
             try Task.checkCancellation()
             installedVersion = result.installedVersion; availableVersion = result.availableVersion
             httpRunning = result.httpRunning; runtimeStatusLoaded = true; runtimeError = nil
-            if checksRemoteComponents && componentTask == nil {
-                componentTask = Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    defer { self.componentTask = nil }
-                    await self.checkComponentUpdates()
-                }
-            }
+            scheduleComponentCheck()
         } catch is CancellationError {
         } catch { runtimeError = error.localizedDescription; runtimeStatusLoaded = true }
+    }
+    private func scheduleComponentCheck() {
+        guard checksRemoteComponents, componentTask == nil else { return }
+        componentTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.componentTask = nil }
+            await self.checkComponentUpdates()
+        }
     }
     func checkComponentUpdates() async {
         guard !checkingComponents else { return }; checkingComponents = true; defer { checkingComponents = false }
@@ -240,10 +243,17 @@ final class MCPSettingsModel {
         } catch { if skillTarget == target { skillError = error.localizedDescription; skillStatus = nil } }
     }
     func changeSkillInstallation(install: Bool) async {
-        guard !isBusy else { return }; isBusy = true; defer { isBusy = false }
+        guard !isBusy else { return }; isBusy = true
+        defer { isBusy = false; installationProgress = nil }
+        error = nil; skillError = nil; status = ""
         let target = skillTarget
         do {
-            if install { try await skillInstaller.install(at: target.directory(in: skillHomeDirectory), mcpVersion: installedVersion) }
+            if install {
+                installationProgress = .init(phase: .checking)
+                try await skillInstaller.install(at: target.directory(in: skillHomeDirectory), mcpVersion: installedVersion) { [weak self] progress in
+                    await self?.updateInstallationProgress(progress)
+                }
+            }
             else { try await skillInstaller.uninstall(at: target.directory(in: skillHomeDirectory)) }
             await inspectSkill()
             status = AppCopy.current.text("Skill 已更新，重新打开客户端后生效", "Skill updated; reopen your client to load it")
@@ -255,7 +265,10 @@ final class MCPSettingsModel {
         catch { self.error = error.localizedDescription }
     }
     func install() async {
-        guard !isBusy, !isCheckingRuntime else { return }; isBusy = true; defer { isBusy = false }
+        guard !isBusy, !isCheckingRuntime else { return }; isBusy = true
+        defer { isBusy = false; installationProgress = nil }
+        error = nil; runtimeError = nil; status = ""
+        installationProgress = .init(phase: .checking)
         do {
             let restartHTTP = await service.isRunning()
             // Updates restart the configuration the service was actually running.
@@ -263,7 +276,10 @@ final class MCPSettingsModel {
             let runningHTTP = restartHTTP ? try store.load().http : policy.http
             if restartHTTP { try await service.stop(); httpRunning = false }
             do {
-                try await installation.install()
+                try await installation.install { [weak self] progress in
+                    await self?.updateInstallationProgress(progress)
+                }
+                installationProgress = .init(phase: .finishing)
                 if restartHTTP { try await service.start(executable: executable, settings: runningHTTP); httpRunning = true }
             } catch {
                 if restartHTTP { try? await service.start(executable: executable, settings: runningHTTP) }
@@ -274,8 +290,13 @@ final class MCPSettingsModel {
             executable = await installation.executableURL.path
             error = nil; runtimeError = nil; runtimeStatusLoaded = true
             status = AppCopy.current.text("安装完成，协议自检通过；请重新添加旧客户端配置以使用固定启动入口。", "Installed; MCP self-check passed. Update legacy client entries to use the stable launcher.")
-            await checkComponentUpdates()
+            // Optional catalog checks can be slow; installation is already complete.
+            availableVersion = installedVersion
+            scheduleComponentCheck()
         } catch { self.error = error.localizedDescription }
+    }
+    private func updateInstallationProgress(_ progress: MCPComponentInstallationProgress) {
+        installationProgress = progress
     }
     func authorizeCredentials() async {
         guard didLoad, !isBusy else { return }; isBusy = true; defer { isBusy = false }

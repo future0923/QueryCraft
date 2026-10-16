@@ -140,11 +140,57 @@ actor MCPComponentCatalog {
         try validateURL(release.url)
         return release
     }
-    func download(_ release: MCPComponentRelease, to destination: URL) async throws {
+    func download(_ release: MCPComponentRelease, to destination: URL,
+                  onProgress: @escaping @Sendable (MCPComponentInstallationProgress) async -> Void = { _ in }) async throws {
         try validateURL(release.url)
-        let (temporary, response) = try await session.download(for: request(release.url))
-        defer { try? FileManager.default.removeItem(at: temporary) }
+        await onProgress(.init(phase: .downloading, totalBytes: release.size))
+        let (bytes, response) = try await session.bytes(for: request(release.url))
         try validate(response)
+        let temporary = destination.deletingLastPathComponent().appending(path: ".download-" + UUID().uuidString)
+        guard FileManager.default.createFile(atPath: temporary.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+            throw MCPFailure("Cannot create component download file.")
+        }
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let output = try FileHandle(forWritingTo: temporary)
+        defer { try? output.close() }
+        var buffer = Data()
+        buffer.reserveCapacity(65_536)
+        var received: Int64 = 0
+        let clock = ContinuousClock()
+        var sample = clock.now
+        var sampleBytes: Int64 = 0
+        var speed: Double?
+        for try await byte in bytes {
+            buffer.append(byte)
+            received += 1
+            guard received <= release.size else {
+                throw MCPFailure(AppCopy.current.text("组件下载超过清单大小，已保留原版本。", "Component download exceeds its manifest size; the installed version was preserved."))
+            }
+            if buffer.count == 65_536 {
+                try output.write(contentsOf: buffer)
+                buffer.removeAll(keepingCapacity: true)
+            }
+            // Time-based updates also report small chunks on low-bandwidth links.
+            // Buffering disk writes separately avoids waiting for a large buffer to fill.
+            if received.isMultiple(of: 256) {
+                try Task.checkCancellation()
+                let now = clock.now
+                let duration = sample.duration(to: now)
+                if duration >= .milliseconds(200) {
+                    let parts = duration.components
+                    let seconds = Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+                    speed = Double(received - sampleBytes) / seconds
+                    await onProgress(.init(phase: .downloading, receivedBytes: received,
+                                           totalBytes: release.size, bytesPerSecond: speed))
+                    sample = now; sampleBytes = received
+                }
+            }
+        }
+        try Task.checkCancellation()
+        if !buffer.isEmpty { try output.write(contentsOf: buffer) }
+        await onProgress(.init(phase: .downloading, receivedBytes: received,
+                               totalBytes: release.size, bytesPerSecond: speed))
+        await onProgress(.init(phase: .verifying))
         let size = try FileManager.default.attributesOfItem(atPath: temporary.path)[.size] as? NSNumber
         guard size?.int64Value == release.size, try Self.sha256(temporary) == release.sha256.lowercased() else {
             throw MCPFailure(AppCopy.current.text("组件下载大小或摘要校验失败，已保留原版本。", "Component size or checksum verification failed; the installed version was preserved."))

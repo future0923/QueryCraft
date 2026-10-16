@@ -181,6 +181,9 @@ Elasticsearch。未提供凭据的 Kafka / Elasticsearch 默认使用无认证�
 六驱动真实服务验证使用 `scripts/test-mcp-live.py`，需要 Docker，自动创建并清理独立的
 本机测试容器。`scripts/test-mcp-desktop.py` 验证签名安装、更新回滚、launchd 和原生页面
 离屏渲染，并检查宿主退出后服务可用及已保存任务重新启动；加 `--drivers-dir` 可检查桌面加载六类驱动。
+日常验证使用 `--render-only` 或 `--component-checks`，不会注册 launchd 后台服务。
+验证 HTTP 常驻、宿主退出后继续运行及登录恢复时，需显式加 `--launchd-checks`；这类测试会实际注册
+macOS 后台项目，可能触发“App 后台活动”通知。临时项目在测试结束后清理，通知可能仍留在通知中心。
 `scripts/test-mcp-lifecycle.py` 验证客户端退出、并发断开重连及服务重启后的会话失效。
 实库脚本加 `--drivers mysql,doris --stress` 验证两库并发及断开时的事务回滚。
 `scripts/test-mcp-credentials.py` 仅操作新建的临时钥匙串条目并清理；
