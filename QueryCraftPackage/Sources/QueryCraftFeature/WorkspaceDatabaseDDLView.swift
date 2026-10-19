@@ -3,6 +3,8 @@ import SwiftUI
 
 struct WorkspaceDatabaseDDLView: View {
     let ddl: String
+    var wrapsLines = false
+    var usesLocalContentInsets = false
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var editorState = SourceEditorState()
@@ -31,7 +33,7 @@ struct WorkspaceDatabaseDDLView: View {
                     for: colorScheme == .dark ? .darkAqua : .aqua
                 ),
                 font: preferences.editorFont(),
-                wrapLines: false,
+                wrapLines: wrapsLines,
                 tabWidth: preferences.editorIndentationWidth,
                 bracketPairEmphasis: nil
             ),
@@ -43,6 +45,7 @@ struct WorkspaceDatabaseDDLView: View {
                     : .tab
             ),
             layout: .init(
+                contentInsets: usesLocalContentInsets ? NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0) : nil,
                 additionalTextInsets: NSEdgeInsets(
                     top: 8,
                     left: 0,
