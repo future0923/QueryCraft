@@ -44,6 +44,7 @@ Config/LocalLicensingPrivateKey.pem
 # Local browser validation artifacts
 .playwright-cli/
 output/playwright/
+output/schema-comparison-build/
 
 # Local agent instructions
 AGENTS.md

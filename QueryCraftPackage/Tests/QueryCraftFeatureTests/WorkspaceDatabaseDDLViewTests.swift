@@ -24,6 +24,43 @@ private final class SelectionNotificationCounter: @unchecked Sendable {
 @MainActor
 @Suite(.serialized)
 struct WorkspaceDatabaseDDLViewTests {
+    @Test("Embedded comparison editors use local insets without changing other DDL pages")
+    func embeddedComparisonUsesLocalInsets() throws {
+        for local in [false, true] {
+            let host = NSHostingView(rootView: WorkspaceDatabaseDDLView(ddl: "SELECT 1;", usesLocalContentInsets: local))
+            host.frame = NSRect(x: 0, y: 0, width: 600, height: 240)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            host.layoutSubtreeIfNeeded()
+            let editor = try #require(findTextView(in: host))
+            let scroll = try #require(editor.enclosingScrollView)
+            #expect(scroll.automaticallyAdjustsContentInsets == !local)
+            #expect(!editor.isEditable && editor.isSelectable)
+        }
+    }
+
+    @Test("Comparison definitions wrap without changing the default DDL viewer")
+    func comparisonCanOptIntoLineWrapping() throws {
+        let ddl = "SELECT " + String(repeating: "long_column_name, ", count: 25) + "id FROM orders;"
+        for wrapsLines in [false, true] {
+            let host = NSHostingView(rootView: WorkspaceDatabaseDDLView(ddl: ddl, wrapsLines: wrapsLines))
+            host.frame = NSRect(x: 0, y: 0, width: 320, height: 240)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.animationBehavior = .none
+            window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+            window.contentView = host
+            defer { window.close() }
+            host.layoutSubtreeIfNeeded()
+            let editor = try #require(findTextView(in: host))
+            #expect(editor.wrapLines == wrapsLines)
+            #expect(editor.string == ddl)
+            #expect(!editor.isEditable && editor.isSelectable)
+        }
+    }
+
     @Test("Dragging into the sidebar tracks line starts without horizontal autoscroll")
     func draggingIntoSidebarTracksVisibleLineStarts() throws {
         let ddl = (1...40).map { "SELECT column_\($0) FROM table_\($0);" }.joined(separator: "\n")
