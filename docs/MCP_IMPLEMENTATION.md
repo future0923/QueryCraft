@@ -16,8 +16,11 @@ No Superpowers skills are used. User documentation is in [MCP.md](MCP.md).
 - Policy is a private, atomically replaced JSON file reread on tool calls and SQL
   statement boundaries. Missing/corrupt policy fails closed, while session close/
   rollback remains possible. Scope enforcement also applies to resources and plugin routing.
-- Credentials remain in Keychain. MCP has a separately installed, signed caller-checked
-  helper under `QueryCraftCredentials/mcp-v1`; the existing desktop helper is preserved.
+- Credentials remain in Keychain. Desktop and MCP share an immutable, signed,
+  caller-checked v2 helper under `<data-directory>/Credentials/shared-v2`.
+  All connection secrets in a data directory occupy one Keychain item/ACL; Dev,
+  production and isolated test data directories have distinct vault accounts.
+  The old desktop v1 and MCP v1 helper installations are preserved.
 - Settings download an independently signed MCP component from the component catalog,
   then stage, self-check and atomically activate it. The desktop embeds no MCP package
   or Skill resources. HTTP uses a user launchd job; MCP and Skill have independent versions.
@@ -42,6 +45,50 @@ No Superpowers skills are used. User documentation is in [MCP.md](MCP.md).
 - Desktop results reuse the existing native query results view. Display failure preserves
   the already-executed query result and reports display status without suggesting retry.
 - Dev/release scripts sign the host without embedding MCP/Skill. Required licenses are bundled.
+
+## Shared credential authorization (2026-10-16)
+
+- Normal desktop connections and MCP use the same vault and password edits. Only
+  the requested connection's secret is returned from the authenticated helper;
+  vault contents never travel through arguments, environment variables or files.
+- The helper serializes the entire Keychain read/modify/write with a cross-process
+  file lock. The lock contains no secrets. Insert-only imports and deletion markers
+  prevent concurrent password edits or deletion from being overwritten by migration.
+- The desktop authorizer first reads every selected usable saved credential without
+  interaction, then imports into the vault, verifies availability and removes the
+  migrated legacy copies using their original helper. Read failures do not start
+  migration. Later write/cleanup failures report failure and can be retried safely.
+- Normal desktop reads can still use readable legacy credentials without opening
+  per-item dialogs. New saves use the vault, with best-effort removal of obsolete
+  legacy copies; explicit deletion reports failure if an inaccessible legacy copy
+  cannot be removed. Inaccessible historical credentials require unlocking Keychain
+  or restoring the password in the connection editor; old ACLs cannot be silently
+  bypassed. No user Keychain ACL is broadened to arbitrary applications.
+- The settings action checks `--credential-protocol` before migration and asks for
+  both app/runtime updates when necessary. The standalone authorizer validates the
+  vault without interaction. A v2 MCP never falls back to stale legacy passwords.
+- This affects credentials for MySQL, PostgreSQL, Doris, Redis, Elasticsearch and
+  Kafka uniformly; it changes no driver implementation or Driver API. Table and SQL
+  result rendering are unaffected. Real database connection checks remain separate
+  from the temporary Keychain and transport regression checks.
+- `scripts/test-shared-credentials.py` owns eight disposable legacy passwords and
+  one isolated vault. It checks all four desktop/MCP Dev/release caller identities,
+  one Keychain item for all passwords, independent directories, concurrent writes,
+  repeat migration, deletion markers, immutable helper reuse and caller/tampering
+  rejection. It removes the legacy items and vault before exit.
+
+Local Intel validation passed: XcodeBuildMCP Debug build and 46 selected credential,
+MCP, session, settings-loading and desktop connection-model tests; the signed eight-
+password shared-vault integration test; and relocated MCP signature/resources,
+stdio/HTTP authorization and all six existing API 5 driver loads (including separate
+MySQL/Doris loads). The desktop preview and MCP package are under
+`.build/shared-credentials-validation/`; logs are `.build/shared-credentials-*.log`.
+This run did not test live database authentication or simulate a locked login
+Keychain's system dialog. It used no real user connection password or desktop input.
+Before the feature commit, the 13 component/optimization regressions also passed.
+The shared vault source is included in MCP release-scope detection; the associated
+release/workflow fixture suite passed all 15 tests. Release decisions and bilingual
+pending notes are recorded in `docs/releases/pending-shared-credentials.md`.
 
 ## Independent distribution (2026-10-15)
 

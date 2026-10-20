@@ -1,7 +1,10 @@
 import Foundation
 import Security
 
-actor KeychainCredentialStore: CredentialStore {
+/// Legacy desktop helper v1 remains immutable and is used only for unmigrated items.
+actor LegacyKeychainCredentialStore: CredentialStore {
+    private let allowsInteraction: Bool
+    init(allowsInteraction: Bool = true) { self.allowsInteraction = allowsInteraction }
     private let service = "io.github.future0923.QueryCraft.connection-profile"
     private let helper: WorkspaceCredentialHelperClient? =
         Bundle.main.object(forInfoDictionaryKey: "QCCredentialHelperRequired") as? Bool == true
@@ -9,9 +12,9 @@ actor KeychainCredentialStore: CredentialStore {
 
     func password(for profileID: UUID) async throws -> String? {
         if let helper {
-            return try await helper.send(.init(operation: "get", account: profileID))
+            return try await helper.send(.init(operation: "get", account: profileID, allowsInteraction: allowsInteraction))
         }
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: profileID.uuidString,
@@ -19,6 +22,7 @@ actor KeychainCredentialStore: CredentialStore {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
 
+        if !allowsInteraction { query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail }
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound {
@@ -35,7 +39,7 @@ actor KeychainCredentialStore: CredentialStore {
 
     func save(password: String, for profileID: UUID) async throws {
         if let helper {
-            _ = try await helper.send(.init(operation: "save", account: profileID, password: password))
+            _ = try await helper.send(.init(operation: "save", account: profileID, password: password, allowsInteraction: allowsInteraction))
             return
         }
         let account = profileID.uuidString
@@ -60,7 +64,7 @@ actor KeychainCredentialStore: CredentialStore {
 
     func delete(for profileID: UUID) async throws {
         if let helper {
-            _ = try await helper.send(.init(operation: "delete", account: profileID))
+            _ = try await helper.send(.init(operation: "delete", account: profileID, allowsInteraction: allowsInteraction))
             return
         }
         let query: [String: Any] = [
@@ -72,5 +76,40 @@ actor KeychainCredentialStore: CredentialStore {
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError(status: status)
         }
+    }
+}
+
+/// Both desktop and independent MCP use the same immutable, caller-checked helper.
+/// An explicit deletion marker prevents old legacy passwords from resurfacing.
+actor KeychainCredentialStore: CredentialStore {
+    private let legacy: any CredentialStore
+    private let shared: SharedKeychainCredentialStore?
+
+    init(directory: URL = QueryCraftStorageLocation.applicationSupportDirectory, allowsInteraction: Bool = true) {
+        // Old per-item grants must never trigger a sequence of automatic dialogs.
+        legacy = LegacyKeychainCredentialStore(allowsInteraction: false)
+        shared = Bundle.main.object(forInfoDictionaryKey: "QCSharedCredentialHelperRequired") as? Bool == true
+            ? SharedKeychainCredentialStore(directory: directory, allowsInteraction: allowsInteraction) : nil
+    }
+
+    func password(for profileID: UUID) async throws -> String? {
+        if let record = try await shared?.record(for: profileID) { return record.password }
+        return try await legacy.password(for: profileID)
+    }
+
+    func save(password: String, for profileID: UUID) async throws {
+        if let shared {
+            try await shared.save(password: password, for: profileID)
+            // The vault is now authoritative. An inaccessible obsolete legacy copy
+            // must not prevent the user from restoring a password in the editor.
+            try? await legacy.delete(for: profileID)
+        }
+        else { try await legacy.save(password: password, for: profileID) }
+    }
+
+    func delete(for profileID: UUID) async throws {
+        // Remove legacy data first; a failed deletion must not expose stale fallback data.
+        try await legacy.delete(for: profileID)
+        try await shared?.delete(for: profileID)
     }
 }

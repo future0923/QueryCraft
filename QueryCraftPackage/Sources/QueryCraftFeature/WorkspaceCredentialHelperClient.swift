@@ -9,9 +9,24 @@ struct WorkspaceCredentialHelperClient: Sendable {
     static let helperIdentifier = "io.github.future0923.QueryCraft.CredentialHelper"
     private static let worker = DispatchQueue(label: "QueryCraft.credentials", qos: .userInitiated)
     let appURL: URL
+    let bundledHelperName: String
+    let identifier: String
+    let protocolVersion: Int
+
+    static func shared(appURL: URL = Bundle.main.bundleURL, installationRoot: URL? = nil) -> Self {
+        .init(appURL: appURL, installationRoot: installationRoot ?? FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Application Support/QueryCraftCredentials/shared-v2"),
+            bundledHelperName: "QueryCraft Shared Credentials.app",
+            identifier: "io.github.future0923.QueryCraft.SharedCredentialHelper", protocolVersion: 2)
+    }
     let installationRoot: URL
 
-    init(appURL: URL = Bundle.main.bundleURL, installationRoot: URL? = nil) {
+    init(appURL: URL = Bundle.main.bundleURL, installationRoot: URL? = nil,
+         bundledHelperName: String = Self.helperName, identifier: String = Self.helperIdentifier,
+         protocolVersion: Int = 1) {
+        self.bundledHelperName = bundledHelperName
+        self.identifier = identifier
+        self.protocolVersion = protocolVersion
         self.appURL = appURL
         self.installationRoot = installationRoot ?? FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "Library/Application Support/QueryCraftCredentials/v1", directoryHint: .isDirectory)
@@ -22,6 +37,7 @@ struct WorkspaceCredentialHelperClient: Sendable {
         let account: UUID
         var password: String? = nil
         var allowsInteraction = true
+        var vault: String? = nil
     }
     struct Response: Decodable, Sendable {
         let status: OSStatus
@@ -71,13 +87,13 @@ struct WorkspaceCredentialHelperClient: Sendable {
 
     private func installedHelper() throws -> URL {
         let fileManager = FileManager.default
-        let installed = installationRoot.appending(path: Self.helperName, directoryHint: .isDirectory)
+        let installed = installationRoot.appending(path: bundledHelperName, directoryHint: .isDirectory)
         let certificate = try hostCertificate()
         if fileManager.fileExists(atPath: installed.path) {
             try verify(installed, certificate: certificate)
             return installed
         }
-        let bundled = appURL.appending(path: "Contents/Helpers/\(Self.helperName)", directoryHint: .isDirectory)
+        let bundled = appURL.appending(path: "Contents/Helpers/\(bundledHelperName)", directoryHint: .isDirectory)
         try verify(bundled, certificate: certificate)
         try fileManager.createDirectory(at: installationRoot, withIntermediateDirectories: true,
                                         attributes: [.posixPermissions: 0o700])
@@ -109,12 +125,12 @@ struct WorkspaceCredentialHelperClient: Sendable {
     private func verify(_ url: URL, certificate: String) throws {
         var code: SecStaticCode?
         var requirement: SecRequirement?
-        let text = "identifier \"\(Self.helperIdentifier)\" and certificate leaf = H\"\(certificate)\""
+        let text = "identifier \"\(identifier)\" and certificate leaf = H\"\(certificate)\""
         guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess,
               SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
               let code, let requirement,
               SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement) == errSecSuccess,
-              let bundle = Bundle(url: url), bundle.object(forInfoDictionaryKey: "QCCredentialProtocolVersion") as? Int == 1
+              let bundle = Bundle(url: url), bundle.object(forInfoDictionaryKey: "QCCredentialProtocolVersion") as? Int == protocolVersion
         else { throw failure(errSecCSReqFailed) }
     }
 

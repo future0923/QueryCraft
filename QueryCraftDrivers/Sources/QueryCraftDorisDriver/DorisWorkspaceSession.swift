@@ -1,8 +1,8 @@
 import Foundation
 import QueryCraftFeature
-import QueryCraftMariaDBTransport
+import QueryCraftMariaDBTransportV2
 
-actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProviding, WorkspaceSQLObjectOverviewProviding {
+actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProviding, WorkspaceSQLObjectOverviewProviding, WorkspaceNativeRowSourceSession {
     nonisolated let capabilities = WorkspaceSessionCapabilities.dorisReadOnly
 
     private struct FilterPredicate: Sendable {
@@ -432,6 +432,11 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
             columns: columns,
             rowCount: rows.isEmpty ? Int(result.affectedRows) : rows.count
         )
+    }
+
+    func streamTransferRows(sql: String, batchSize: Int,
+                            onBatch: @escaping @Sendable (WorkspaceDatabaseDataBatch) async throws -> Void) async throws -> Int {
+        try await requireClient().streamTransferRows(sql: sql, batchSize: batchSize, onBatch: onBatch)
     }
 
     nonisolated static func dataColumns(

@@ -43,6 +43,7 @@ public enum QueryCraftMCPApplication {
             print("MCP handshake OK")
             return
         }
+        if arguments == ["--credential-protocol"] { print("2"); return }
         if arguments == ["--version"] { print(version); return }
         if arguments == ["--help"] {
             print("querycraft-mcp [--stdio | --http] [--data-dir PATH]\nComponents: --check-updates | --update | --rollback | --update-skill --skill-target shared|codex|claude.\nSettings and credentials are managed in QueryCraft → Settings → MCP.")
@@ -113,11 +114,11 @@ public enum QueryCraftMCPApplication {
             if let httpSettings { try await service.start(executable: await installation.executableURL.path, settings: httpSettings) }
             return
         }
-        SecKeychainSetUserInteractionAllowed(authorizeCredentials)
+        SecKeychainSetUserInteractionAllowed(false)
         if authorizeCredentials {
             let policy = try MCPPolicyStore(directory: directory).load()
             let repository = SQLiteConnectionProfileRepository(databaseURL: directory.appending(path: "QueryCraft.sqlite"))
-            let credentials = MCPCredentialStore(allowsInteraction: true)
+            let credentials = MCPCredentialStore(directory: directory)
             for profile in try await repository.fetchAll() where policy.permits(profile) && profile.storesCredential {
                 do {
                     guard try await credentials.password(for: profile.id) != nil else {

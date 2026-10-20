@@ -49,7 +49,9 @@ actor MCPSkillInstallation {
             .isNewer(than: .init(version: manifest.version, build: manifest.build ?? "0")) { return .updateAvailable }
         return .current
     }
-    func install(at destination: URL, mcpVersion: String? = nil) async throws {
+    func install(at destination: URL, mcpVersion: String? = nil,
+                 onProgress: @escaping @Sendable (MCPComponentInstallationProgress) async -> Void = { _ in }) async throws {
+        await onProgress(.init(phase: .checking))
         let fm = FileManager.default
         try rejectLink(destination.deletingLastPathComponent())
         let lock = try MCPComponentLock(directory: cache); defer { withExtendedLifetime(lock) {} }
@@ -76,7 +78,8 @@ actor MCPSkillInstallation {
             if try status(at: destination) == .current { return }
             try fm.createDirectory(at: working, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let archive = working.appending(path: "download.zip")
-            try await catalog.download(release, to: archive)
+            try await catalog.download(release, to: archive, onProgress: onProgress)
+            await onProgress(.init(phase: .extracting))
             let unpacked = working.appending(path: "unpacked")
             try fm.createDirectory(at: unpacked, withIntermediateDirectories: true)
             try await MCPComponentArchive.extract(archive, into: unpacked, root: "QueryCraftSkill")
@@ -84,10 +87,12 @@ actor MCPSkillInstallation {
             source = unpacked.appending(path: "QueryCraftSkill/querycraft")
             version = release.version; build = release.build; selectedRelease = release
         }
+        await onProgress(.init(phase: .verifying))
         let bundled = try hashes(in: source)
         guard bundled["SKILL.md"] != nil else { throw MCPFailure("QueryCraft skill entrypoint is missing.") }
         if state == .current, let sourceOverride, try hashes(in: sourceOverride) == hashes(in: destination) { return }
         let parent = destination.deletingLastPathComponent()
+        await onProgress(.init(phase: .installing))
         try fm.createDirectory(at: parent, withIntermediateDirectories: true)
         let staged = parent.appending(path: ".querycraft-install-" + UUID().uuidString)
         let backup = parent.appending(path: ".querycraft-backup-" + UUID().uuidString)

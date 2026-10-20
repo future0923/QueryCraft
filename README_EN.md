@@ -22,50 +22,34 @@ license activation. QueryCraft's original source code is available under the
 | Elasticsearch | Indices, aliases, data streams, mappings, documents, and REST requests |
 | Kafka | Topic creation / deletion, message sending, partition / offset / time navigation, raw messages, consumer groups and lag |
 
-Kafka data defaults to JSON Table, with a JSON Table / Raw Value switch in the read bar. Object fields expand into paths such as `value.user.id`; literal dots and backslashes in keys are escaped. Arrays stay intact and numeric tokens retain their exact precision. Original Value and non-JSON content remain available; the inspector and Copy as New Message use the original message. Find, copy and current-data export use the displayed fields; export covers the messages already read. Live columns freeze after the first JSON batch; Rebuild JSON Columns includes later fields. Expansion is limited to 128 columns, 1 MB per value, 32 nesting levels and a parsing budget; unsupported values remain raw.
 
-The read bar's Filter supports Key, Value, or either field, contains/exact matching, and case sensitivity. Scan uses the chosen partition and start position with a default 10,000-message limit (1,000 or 100,000 also available), about 30 seconds, and a 64 MB budget. Progress reports scanned/matched counts and the stopping reason. Results reuse the message grid, raw inspector, and pagination. The shared refresh reruns the scan; cancellation or failure preserves the previous results. Find searches loaded rows only.
+Database drivers install on demand for the current Mac architecture.
 
-Send Message in the topic's data footer supports automatic or explicit partition selection, nullable keys, JSON/text values, and duplicate header names (UTF-8, up to 1 MB total). Disable the workspace safety lock before sending. Success shows the broker-confirmed partition and offset. In-flight sends prevent repeated submission; errors retain the draft. Check the topic before retrying any delivery whose result was not confirmed.
+## What makes QueryCraft different
 
-Live reads start at the current end using the selected partition and filter. Pause closes the reader; Resume continues from its saved next offsets. Stop ends reading, and Live starts a new session from the end. Retention is capped at 10,000 rows or 32 MB with received, matched, and evicted counts. Scrolling up preserves the viewport; Latest returns to the end. Shared refresh reads from the current position, errors retain existing results, and switching tabs pauses reading. No consumer offsets are committed.
+- Native macOS workspaces with multiple connections, restorable documents and tabs, and Light/Dark appearance.
+- SQL highlighting, completion, formatting and batch execution, with customizable editor colors.
+- A virtualized, directly rendered grid for large results, with search, filtering and data editing.
+- SQL previews, Safety Lock and transactional writes for controlled database changes.
+- Import and export across common spreadsheet, text and SQL formats.
+- MySQL schema comparison and synchronization with reviewed deployment SQL.
+- Reusable cross-database transfer tasks with structure/data copying, Upsert, background progress and cancellation.
+- Native MySQL LOAD DATA and PostgreSQL COPY pipelines with bounded streaming memory.
+- Independent MCP integration for AI tools, with scoped database permissions and shared credential authorization.
+- Simplified Chinese and English, plus signed automatic updates.
 
-The librdkafka-based Kafka driver supports unauthenticated connections, SASL/PLAIN,
-SCRAM-SHA-256/512, and TLS. The Consumer Groups view shows committed offsets,
-log boundaries, and lag per partition; missing or unavailable offsets remain unknown.
-The Structure tab shows partition leaders, replicas, ISR, and topic configuration,
-including retention and cleanup policies. Partition metadata remains visible if
-configuration access is denied. Confirmed topic-related consumer groups appear
-first, with total lag and lagging partition counts. Optional 15-second refresh
-updates the selected group; bounded relationship checks leave unconfirmed groups visible.
-The Members tab shows client IDs, hosts, member IDs, static instance IDs, and
-assignments for the current topic, together with group state and assignment strategy.
-It supports manual refresh and the same optional automatic refresh.
+## Measured performance
 
-Right-click a sidebar topic and choose “Delete Topic…” to delete it after entering its exact name and disabling Safety Lock. An acknowledged deletion removes its sidebar entry and open tab; rejection or timeout preserves the page and explains the failure. Unconfirmed results require refreshing the topic list to verify; writes are never retried automatically. Internal Kafka topics cannot be deleted, and pending configuration changes must be committed or discarded first.
+Release measurements transferring **10 million rows**, with every field verified after completion:
 
-Double-click configuration values in Structure to edit all writable properties, including inherited values; edits automatically create topic overrides. Right-click to restore defaults or revert a property. Broker read-only and sensitive properties cannot be edited. Changes are highlighted and use the shared top toolbar to preview, commit or discard. Refresh preserves drafts and their conflict baselines. Commits require safety-lock confirmation, submit only changed properties with IncrementalAlterConfigs, check for conflicts, and reread the result. Writes require Kafka 2.3+ and DescribeConfigs / AlterConfigs permissions. After an unconfirmed result, discard the draft and refresh current server values before editing again.
-Select a partition with known lag and use View Pending Messages to read from its
-committed offset. Navigation is unavailable for caught-up, unknown, or invalid positions.
-Browsing messages and groups never commits offsets. Lag counts offset positions,
-which may differ from actual message counts in compacted topics.
+| Transfer | Time | Peak memory* |
+| --- | ---: | ---: |
+| MySQL → MySQL | 102.06 s | 36.62 MiB |
+| PostgreSQL → PostgreSQL | 45.75 s | 26.34 MiB |
+| MySQL → PostgreSQL | 48.94 s | 40.05 MiB |
+| PostgreSQL → MySQL | 121.81 s | 40.62 MiB |
 
-Database drivers are installed on demand for the current Mac architecture.
-
-## Core experience
-
-- Multiple connections and isolated database workspaces
-- Restorable query documents, tabs, and editing state
-- SQL highlighting, completion, formatting, and statement or batch execution
-- Safety Lock write protection, SQL previews, and unified commits
-- A native virtualized, direct-drawn grid for substantial results
-- Search, copy, paging, server-side sorting, and filtering
-- Automatic local date/time display for timestamp columns in SQL, Kafka, and Elasticsearch grids (enabled by default; toggle in Settings → Data); column-header menus offer raw, Unix seconds, and milliseconds formats, while editing, copying, and exporting preserve raw values
-- Excel, CSV, JSON, JSON Lines, and SQL export
-- Right-click a MySQL, PostgreSQL, or Doris table to export CSV, JSON, SQL INSERT, or XLSX directly; configure defaults in Settings → Data, including a custom INSERT batch size (1,000 rows per statement by default)
-- Right-click a MySQL or PostgreSQL table to import CSV, TSV, delimited text, JSON/JSONL, XLSX/XLSM, or SQL INSERT with preview, column mapping, and transactional writes (InnoDB required for MySQL); defaults to 500 rows per batch
-- Simplified Chinese and English in Light and Dark appearance
-- Signed updates through Sparkle
+*One-second sampled RSS of the transfer test process, not total app/database memory. Local Docker: MySQL 5.7/8.0 and PostgreSQL 17, five mixed-type columns, batches of 1,000; each database container limited to 4 CPUs and 2 GiB. Timings include execution checks and commit, excluding fixture generation and final verification. Results depend on schema, hardware and network conditions.
 
 ## Download and build
 

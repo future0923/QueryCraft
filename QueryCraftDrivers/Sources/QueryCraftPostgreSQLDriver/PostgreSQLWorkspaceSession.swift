@@ -1,7 +1,7 @@
 import Foundation
 import QueryCraftFeature
 
-actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding {
+actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding, WorkspaceNativeBulkTransferSession, WorkspaceNativeCopySourceSession, WorkspaceNativeRowSourceSession {
     private struct ObjectIdentity: Sendable {
         let schema: String
         let name: String
@@ -50,6 +50,23 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
 
     func isConnected() async -> Bool {
         await client?.isConnected() == true
+    }
+
+    func nativeBulkTransferFormat() async throws -> WorkspaceNativeBulkFormat? { .postgresqlCopyText }
+
+    func executeNativeBulkTransfer(sql: String, token: String,
+                                   stream: WorkspaceNativeBulkStream) async throws -> Int {
+        try await requireClient().copyFrom(sql: sql, stream: stream)
+    }
+
+    func executeNativeCopyOut(sql: String, stream: WorkspaceNativeBulkStream,
+                              onProgress: @escaping @Sendable (Int) async -> Void) async throws -> Int {
+        try await requireClient().copyTo(sql: sql, stream: stream, onProgress: onProgress)
+    }
+
+    func streamTransferRows(sql: String, batchSize: Int,
+                            onBatch: @escaping @Sendable (WorkspaceDatabaseDataBatch) async throws -> Void) async throws -> Int {
+        try await requireClient().streamTransferRows(sql: sql, batchSize: batchSize, onBatch: onBatch)
     }
 
     func fetchDatabases() async throws -> [String] {

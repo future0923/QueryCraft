@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import QueryCraftMariaDBTransport
+import QueryCraftMariaDBTransportV2
 
 @testable import QueryCraftFeature
 @testable import QueryCraftMySQLDriver

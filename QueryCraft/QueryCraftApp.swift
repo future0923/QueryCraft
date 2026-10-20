@@ -45,6 +45,6 @@ struct QueryCraftApp: App {
             WorkspaceDataExportCommands()
             WorkspaceDatabaseDataFilterCommands()
         }
-        .commands { WorkspaceSchemaComparisonCommands() }
+        .commands { WorkspaceToolsCommands() }
     }
 }

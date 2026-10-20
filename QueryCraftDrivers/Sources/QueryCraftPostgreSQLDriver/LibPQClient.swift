@@ -52,12 +52,216 @@ final class LibPQClient: @unchecked Sendable {
     }
 
     func query(_ sql: String) async throws -> PostgreSQLCQueryResult {
-        try await runOnQueue {
-            guard let connection = self.connection else {
-                throw WorkspaceSessionError.notConnected
+        if sql == "ROLLBACK" || sql == "ROLLBACK;" {
+            return try await runOnQueue {
+                guard let connection = self.connection else { throw WorkspaceSessionError.notConnected }
+                return try self.query(sql, connection: connection)
             }
-            return try self.query(sql, connection: connection)
         }
+        let cancellation = LibPQCopyCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            do {
+                let result = try await runOnQueue {
+                    guard let connection = self.connection else { throw WorkspaceSessionError.notConnected }
+                    try cancellation.install(connection)
+                    defer { cancellation.finish() }
+                    return try self.query(sql, connection: connection)
+                }
+                try Task.checkCancellation(); return result
+            } catch {
+                if Task.isCancelled { throw CancellationError() }; throw error
+            }
+        } onCancel: { cancellation.cancel() }
+    }
+
+    func copyFrom(sql: String, stream: WorkspaceNativeBulkStream) async throws -> Int {
+        let cancellation = LibPQCopyCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await runOnQueue {
+                guard let connection = self.connection else { throw WorkspaceSessionError.notConnected }
+                try cancellation.install(connection)
+                defer { cancellation.finish() }
+                guard let result = sql.withCString({ PQexec(connection, $0) }) else {
+                    throw self.connectionError(from: connection)
+                }
+                let status = PQresultStatus(result)
+                let error = status == PGRES_COPY_IN ? nil : self.resultError(from: result)
+                PQclear(result)
+                if let error { throw error }
+                var copyEnded = false
+                do {
+                    var bytes = [UInt8](repeating: 0, count: 64 * 1024)
+                    while true {
+                        let count = try bytes.withUnsafeMutableBytes { try stream.read(into: $0) }
+                        if count == 0 { break }
+                        let sent = bytes.withUnsafeBytes {
+                            PQputCopyData(connection, $0.baseAddress!.assumingMemoryBound(to: CChar.self), Int32(count))
+                        }
+                        guard sent == 1 else { throw self.connectionError(from: connection) }
+                    }
+                    try stream.checkFailure()
+                    guard PQputCopyEnd(connection, nil) == 1 else { throw self.connectionError(from: connection) }
+                    copyEnded = true
+                    var rows: Int?, failure: PostgreSQLClientError?
+                    // Drain every result before returning the connection to SQL/ROLLBACK.
+                    while let final = PQgetResult(connection) {
+                        if PQresultStatus(final) == PGRES_COMMAND_OK { rows = self.affectedRows(from: final) }
+                        else { failure = self.resultError(from: final) }
+                        PQclear(final)
+                    }
+                    try stream.checkFailure()
+                    if let failure { throw failure }
+                    guard let rows else { throw self.connectionError(from: connection) }
+                    return rows
+                } catch {
+                    if !copyEnded {
+                        _ = "QueryCraft transfer aborted".withCString { PQputCopyEnd(connection, $0) }
+                    }
+                    while let final = PQgetResult(connection) { PQclear(final) }
+                    throw error
+                }
+            }
+        } onCancel: {
+            stream.fail(CancellationError()); cancellation.cancel()
+        }
+    }
+
+    func copyTo(sql: String, stream: WorkspaceNativeBulkStream,
+                onProgress: @escaping @Sendable (Int) async -> Void) async throws -> Int {
+        let cancellation = LibPQCopyCancellation()
+        defer { cancellation.finish() }
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await runOnQueue {
+                guard let connection = self.connection else { throw WorkspaceSessionError.notConnected }
+                try cancellation.install(connection)
+                guard let result = sql.withCString({ PQexec(connection, $0) }) else { throw self.connectionError(from: connection) }
+                defer { PQclear(result) }
+                guard PQresultStatus(result) == PGRES_COPY_OUT else { throw self.resultError(from: result) }
+            }
+            do {
+                var rows = 0
+                while true {
+                    try Task.checkCancellation(); try stream.checkFailure()
+                    let batch: (Data, Int, Bool) = try await runOnQueue {
+                        guard let connection = self.connection else { throw WorkspaceSessionError.notConnected }
+                        var data = Data(); data.reserveCapacity(256 * 1024)
+                        var count = 0
+                        while data.count < 256 * 1024 {
+                            var pointer: UnsafeMutablePointer<CChar>?
+                            let length = PQgetCopyData(connection, &pointer, 0)
+                            if length == -1 {
+                                var failure: PostgreSQLClientError?
+                                while let result = PQgetResult(connection) {
+                                    if PQresultStatus(result) != PGRES_COMMAND_OK { failure = self.resultError(from: result) }
+                                    PQclear(result)
+                                }
+                                if let failure { throw failure }
+                                return (data, count, true)
+                            }
+                            guard length > 0, let pointer else { throw self.connectionError(from: connection) }
+                            data.append(UnsafeRawPointer(pointer).assumingMemoryBound(to: UInt8.self), count: Int(length))
+                            PQfreemem(pointer)
+                            // COPY text returns one complete escaped row per message.
+                            count += 1
+                        }
+                        return (data, count, false)
+                    }
+                    try await stream.send(batch.0)
+                    rows += batch.1; await onProgress(rows)
+                    if batch.2 { break }
+                }
+                cancellation.finish()
+                return rows
+            } catch {
+                // A failed target must also terminate a producer blocked in COPY OUT.
+                cancellation.cancel()
+                await runOnQueueIgnoringError {
+                    guard let connection = self.connection else { return }
+                    cancellation.finish()
+                    // This read-only source connection is dedicated to the transfer.
+                    // Closing avoids draining an entire remaining table on failure.
+                    PQfinish(connection); self.connection = nil
+                }
+                throw error
+            }
+        } onCancel: { stream.fail(CancellationError()); cancellation.cancel() }
+    }
+
+    func streamTransferRows(sql: String, batchSize: Int,
+                            onBatch: @escaping @Sendable (WorkspaceDatabaseDataBatch) async throws -> Void) async throws -> Int {
+        let channel = WorkspaceTransferBatchChannel(), cancellation = LibPQCopyCancellation()
+        return try await withTaskCancellationHandler {
+            try await withThrowingTaskGroup(of: Int.self) { group in
+                group.addTask {
+                    do {
+                        return try await self.runOnQueue {
+                            guard let connection = self.connection else { throw WorkspaceSessionError.notConnected }
+                            try cancellation.install(connection)
+                            defer { cancellation.finish() }
+                            do {
+                                guard sql.withCString({ PQsendQuery(connection, $0) }) == 1,
+                                      PQsetSingleRowMode(connection) == 1 else { throw self.connectionError(from: connection) }
+                                var columns: [WorkspaceDatabaseDataColumn] = [], rows: [WorkspaceDatabaseDataRow] = []
+                                var total = 0, bytes = 0, finished = false
+                                let limit = max(1, min(batchSize, 10_000)); rows.reserveCapacity(limit)
+                                while let result = PQgetResult(connection) {
+                                    let status = PQresultStatus(result)
+                                    guard status == PGRES_SINGLE_TUPLE || status == PGRES_TUPLES_OK else {
+                                        let error = self.resultError(from: result); PQclear(result); throw error
+                                    }
+                                    if columns.isEmpty {
+                                        columns = (0..<Int(PQnfields(result))).map { index in
+                                            WorkspaceDatabaseDataColumn(id: index, name: self.string(from: PQfname(result, Int32(index))) ?? "column_\(index)")
+                                        }
+                                    }
+                                    if status == PGRES_SINGLE_TUPLE {
+                                        var cells: [WorkspaceDatabaseDataCell] = []; cells.reserveCapacity(columns.count)
+                                        for index in columns.indices {
+                                            if PQgetisnull(result, 0, Int32(index)) == 1 { cells.append(.null) }
+                                            else {
+                                                cells.append(.text(self.string(from: PQgetvalue(result, 0, Int32(index))) ?? ""))
+                                                bytes += Int(PQgetlength(result, 0, Int32(index)))
+                                            }
+                                        }
+                                        rows.append(.init(id: total, values: cells)); total += 1
+                                    } else { finished = true }
+                                    PQclear(result)
+                                    if rows.count == limit || bytes >= 1_048_576 {
+                                        try channel.send(.init(columns: columns, rows: rows)); rows = []; rows.reserveCapacity(limit); bytes = 0
+                                    }
+                                }
+                                guard finished else { throw self.connectionError(from: connection) }
+                                if !rows.isEmpty || total == 0 { try channel.send(.init(columns: columns, rows: rows)) }
+                                channel.finish(); return total
+                            } catch {
+                                cancellation.finish()
+                                // A dedicated read-only connection can be discarded rather
+                                // than draining the rest of an unbounded source query.
+                                PQfinish(connection); self.connection = nil; throw error
+                            }
+                        }
+                    } catch { channel.fail(error); throw error }
+                }
+                group.addTask {
+                    do {
+                        var total = 0
+                        while let batch = try await channel.next() {
+                            try Task.checkCancellation(); try await onBatch(batch); total += batch.rows.count
+                        }
+                        return total
+                    } catch { channel.fail(error); throw error }
+                }
+                do {
+                    var counts: [Int] = []
+                    for try await count in group { counts.append(count) }
+                    guard counts.count == 2, counts[0] == counts[1] else { throw WorkspaceNativeBulkError.invalidStreamState }
+                    try Task.checkCancellation(); return counts[0]
+                } catch { channel.fail(error); group.cancelAll(); throw error }
+            }
+        } onCancel: { channel.fail(CancellationError()); cancellation.cancel() }
     }
 
     func close() async {
@@ -329,5 +533,33 @@ final class LibPQClient: @unchecked Sendable {
         _ operation: @escaping @Sendable () throws -> String
     ) async -> String {
         (try? await runOnQueue(operation)) ?? ""
+    }
+}
+
+/// PQcancel is explicitly safe on a different thread. All pointer lifetime and
+/// cancellation state is serialized by this lock; finish prevents late cancellation
+/// from accidentally cancelling the following ROLLBACK/COMMIT.
+private final class LibPQCopyCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handle: OpaquePointer?
+    private var cancelled = false
+
+    func install(_ connection: OpaquePointer) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard !cancelled else { throw CancellationError() }
+        handle = PQgetCancel(connection)
+    }
+    func finish() {
+        lock.lock(); defer { lock.unlock() }
+        if let handle { PQfreeCancel(handle) }; handle = nil
+    }
+    func cancel() {
+        lock.lock(); cancelled = true; lock.unlock()
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.lock.lock(); defer { self.lock.unlock() }
+            guard let handle = self.handle else { return }
+            var error = [CChar](repeating: 0, count: 256)
+            _ = PQcancel(handle, &error, Int32(error.count))
+        }
     }
 }

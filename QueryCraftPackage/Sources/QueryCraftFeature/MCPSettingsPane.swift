@@ -42,21 +42,26 @@ struct MCPSettingsPane: View {
                 ProgressView().controlSize(.small).frame(width: 16, height: 16).opacity(isWorking ? 1 : 0)
                     .accessibilityLabel(copy("正在处理", "Working"))
                     .accessibilityHidden(!isWorking)
-                Text(feedback)
-                    .font(MCPSettingsType.detail).foregroundStyle(model.error == nil && model.runtimeError == nil ? Color.secondary : .red)
-                    .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-                    .help(feedback)
+                Group {
+                    if let progress = model.installationProgress {
+                        MCPInstallationProgressView(progress: progress)
+                    } else {
+                        Text(feedback)
+                            .font(MCPSettingsType.detail).foregroundStyle(model.error == nil && model.runtimeError == nil ? Color.secondary : .red)
+                            .lineLimit(2).textSelection(.enabled)
+                            .help(feedback)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
                 Button { Task { await model.recheck() } } label: {
                     Text(copy("重新检查", "Check again"))
-                }.buttonStyle(.bordered).disabled(model.isLoading || model.isCheckingRuntime)
+                }.buttonStyle(.bordered).disabled(model.isBusy || model.isLoading || model.isCheckingRuntime)
                 Button { model.save() } label: { Text(copy("保存", "Save")) }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut("s", modifiers: .command)
-                    .disabled(!model.didLoad)
+                    .disabled(model.isBusy || !model.didLoad)
             }
             .frame(height: 44)
             .padding(.horizontal, 16)
-            .disabled(model.isBusy)
         }
         .font(MCPSettingsType.body)
         .controlSize(.regular)
@@ -97,7 +102,7 @@ struct MCPSettingsPane: View {
             }
             HStack {
                 MCPSettingsControlLabel(title: copy("已保存的密码", "Saved credentials"),
-                    description: copy("首次接入时，允许独立程序读取钥匙串密码。", "Authorize Keychain access when connecting for the first time."))
+                    description: copy("一次授权已选连接，主程序与 MCP 共用安全凭据助手。", "Authorize selected connections once through the shared secure credential helper."))
                 Spacer(minLength: 8)
                 Button { Task { await model.authorizeCredentials() } } label: {
                     Text(copy("授权…", "Authorize…"))
@@ -222,8 +227,10 @@ struct MCPSettingsPane: View {
     private var skillSection: some View {
         Section(copy("可选 QueryCraft Skill", "Optional QueryCraft skill")) {
             Group {
-                Text(copy("为支持 Skill 的客户端补充数据库工作流；MCP 可独立使用。", "Adds database workflows for clients that support skills. MCP works independently."))
-                    .font(MCPSettingsType.detail).foregroundStyle(.secondary)
+                Text(skillFeedback)
+                    .font(MCPSettingsType.detail)
+                    .foregroundStyle(model.skillError == nil && model.componentError == nil ? Color.secondary : .red)
+                    .lineLimit(2, reservesSpace: true).help(skillFeedback)
                 Picker(copy("安装位置", "Destination"), selection: $model.skillTarget) {
                     ForEach(MCPSkillTarget.allCases, id: \.self) { Text($0.title).tag($0) }
                 }.pickerStyle(.menu)
@@ -237,11 +244,15 @@ struct MCPSettingsPane: View {
                         Task { await model.changeSkillInstallation(install: true) }
                     }.disabled(model.skillStatus == nil || model.skillStatus == .modified || model.skillStatus == .current)
                 }
-                Text(model.skillError ?? "").font(MCPSettingsType.detail).foregroundStyle(.red).lineLimit(3).frame(minHeight: 16, alignment: .leading)
             }
-                Text(model.componentError ?? (model.checkingComponents ? copy("正在检查独立组件目录…", "Checking component catalogs…") : ""))
-                    .font(MCPSettingsType.detail).foregroundStyle(.secondary).lineLimit(2).frame(height: 32, alignment: .leading)
         }.task(id: model.skillTarget) { await model.inspectSkill() }
+    }
+
+    private var skillFeedback: String {
+        let errors = [model.skillError, model.componentError].compactMap { $0 }
+        if !errors.isEmpty { return errors.joined(separator: "\n") }
+        if model.checkingComponents { return copy("正在检查独立组件目录…", "Checking component catalogs…") }
+        return copy("为支持 Skill 的客户端补充数据库工作流；MCP 可独立使用。", "Adds database workflows for clients that support skills. MCP works independently.")
     }
 
     private var skillStatusText: String {
@@ -278,5 +289,27 @@ struct MCPSettingsPane: View {
 
     private func split(_ value: String) -> [String] {
         value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+}
+
+private struct MCPInstallationProgressView: View {
+    let progress: MCPComponentInstallationProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Text(progress.phase.title)
+                Spacer(minLength: 0)
+                if let detail = progress.detail { Text(detail).monospacedDigit() }
+            }
+            .font(MCPSettingsType.detail)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            ProgressView(value: progress.fractionCompleted)
+                .progressViewStyle(.linear)
+                .controlSize(.small)
+                .accessibilityLabel(progress.phase.title)
+        }
+        .help([progress.phase.title, progress.detail].compactMap { $0 }.joined(separator: " "))
     }
 }

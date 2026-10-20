@@ -1,5 +1,5 @@
 import QueryCraftFeature
-import QueryCraftMariaDBTransport
+import QueryCraftMariaDBTransportV2
 
 struct DorisConnectionConfiguration: Equatable, Sendable {
     let product: DatabaseProduct

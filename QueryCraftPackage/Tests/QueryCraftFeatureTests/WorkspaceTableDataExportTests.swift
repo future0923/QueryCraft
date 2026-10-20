@@ -108,6 +108,24 @@ struct WorkspaceTableDataExportTests {
     @Test("SQL literals preserve backslashes and reject incomplete binary previews")
     func literalEncoding() throws {
         #expect(try WorkspaceSQLExportDialect.mysql.literal(.text("a\\b")) == "CONVERT(X'615C62' USING utf8mb4)")
+        let special = "中文🙂\n'\\\0"
+        let hex = special.utf8.map { String(format: "%02X", $0) }.joined()
+        #expect(try WorkspaceSQLExportDialect.mysql.literal(.text(special)) == "CONVERT(X'\(hex)' USING utf8mb4)")
+        #expect(try WorkspaceSQLExportDialect.doris.literal(.text(special)) == "UNHEX('\(hex)')")
+        let controls = String(decoding: Array(UInt8(0)...UInt8(127)), as: UTF8.self)
+        let controlHex = controls.utf8.map { String(format: "%02X", $0) }.joined()
+        #expect(try WorkspaceSQLExportDialect.mysql.literal(.text(controls)) == "CONVERT(X'\(controlHex)' USING utf8mb4)")
+        #expect(try WorkspaceSQLExportDialect.doris.literal(.text(controls)) == "UNHEX('\(controlHex)')")
+        let combining = "\\\u{0301}'\u{0301}中文🙂"
+        let combiningHex = combining.utf8.map { String(format: "%02X", $0) }.joined()
+        #expect(try WorkspaceSQLExportDialect.mysql.literal(.text(combining)) == "CONVERT(X'\(combiningHex)' USING utf8mb4)")
+        let postgresText = String(controls.dropFirst())
+        let postgresEscaped = postgresText.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "''")
+        #expect(try WorkspaceSQLExportDialect.postgresql.literal(.text(postgresText)) == "E'\(postgresEscaped)'")
+        // Foundation's substring replacement skips these combining clusters.
+        // PostgreSQL parses ASCII quote/backslash bytes regardless of grapheme boundaries.
+        #expect(try WorkspaceSQLExportDialect.postgresql.literal(.text(combining)) == "E'\\\\\u{0301}''\u{0301}中文🙂'")
+        #expect(throws: WorkspaceDataExportError.self) { try WorkspaceSQLExportDialect.postgresql.literal(.text(controls)) }
         #expect(try WorkspaceSQLExportDialect.postgresql.literal(.text("a\\b'c")) == "E'a\\\\b''c'")
         #expect(throws: WorkspaceDataExportError.self) {
             try WorkspaceSQLExportDialect.mysql.literal(.binary(byteCount: 100, preview: [1]))

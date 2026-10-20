@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Install an isolated, persistently signed Dev app from a completed Debug build."""
+"""Install an isolated, persistently signed Dev app from a completed local build."""
 from pathlib import Path
+import argparse
 import datetime
 import importlib.util
 import plistlib
@@ -11,7 +12,10 @@ import time
 import uuid
 
 root = Path(__file__).resolve().parent.parent
-products = root / '.build/DerivedData/Build/Products/Debug'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--configuration', choices=['Debug', 'Release'], default='Debug')
+args = parser.parse_args()
+products = root / ('.build/DerivedData/Build/Products/' + args.configuration)
 installed = Path('/Applications/QueryCraftDev.app')
 dev_id = 'io.github.future0923.QueryCraft.Dev'
 token = datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8]
@@ -23,7 +27,7 @@ subprocess.run(['ditto', str(products / 'QueryCraft.app'), str(staged)], check=T
 info_path = staged / 'Contents/Info.plist'
 info = plistlib.loads(info_path.read_bytes())
 info.update(CFBundleIdentifier=dev_id, CFBundleName='QueryCraft Dev',
-            CFBundleDisplayName='QueryCraft Dev', QCDevelopmentBuild=token)
+            CFBundleDisplayName='QueryCraft Dev', QCDevelopmentBuild=token, QCDevelopmentConfiguration=args.configuration)
 info_path.write_bytes(plistlib.dumps(info))
 sparkle = staged / 'Contents/Frameworks/Sparkle.framework'
 shutil.rmtree(sparkle)

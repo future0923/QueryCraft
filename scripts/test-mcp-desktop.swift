@@ -46,6 +46,10 @@ func check(_ condition: Bool, _ message: String) throws {
             return
         }
 
+        guard ProcessInfo.processInfo.environment["QC_MCP_LAUNCHD_CHECKS"] == "1" else {
+            throw CheckFailure(message: "Persistent HTTP lifecycle checks require --launchd-checks; macOS may show background-activity notifications.")
+        }
+
         if args.count > 6 {
             let loader = DatabaseDriverPackageInstaller(
                 driversDirectory: URL(fileURLWithPath: args[6]),
@@ -447,6 +451,14 @@ func check(_ condition: Bool, _ message: String) throws {
         model.client = "Codex"
         await model.inspectClientRegistration()
         try await render(model, dark: true, width: 790, height: 818, url: previews.appending(path: "reference-codex.png"))
+        model.isBusy = true
+        for (phase, name) in [(MCPComponentInstallationProgress.Phase.checking, "checking"), (.downloading, "downloading"), (.verifying, "verifying"), (.selfTesting, "self-testing")] {
+            model.installationProgress = .init(phase: phase, receivedBytes: 4_194_304, totalBytes: 10_485_760, bytesPerSecond: 32_768)
+            try await render(model, dark: true, width: 790, height: 818, url: previews.appending(path: "install-\(name).png"))
+            try await render(model, dark: false, width: 490, height: 500, url: previews.appending(path: "narrow-install-\(name).png"))
+        }
+        model.isBusy = false; model.installationProgress = nil
+        try await render(model, dark: true, width: 790, height: 818, url: previews.appending(path: "skill-section.png"), scrollFraction: 0.55)
         model.client = "Claude Code"
         await model.inspectClientRegistration()
         try await render(model, dark: true, width: 1050, height: 800, url: previews.appending(path: "wide-access.png"))

@@ -10,8 +10,12 @@ QueryCraft 主窗口；只有 `open_table` 和 `execute_and_show` 需要打开�
 1. 打开 QueryCraft「设置 → MCP」，点击「安装」。安装器验证签名和签名者、
    在暂存目录执行 MCP 握手与资源自检，再替换本地安装；更新失败恢复旧包。
 2. 启用 MCP，在「权限管理」选择连接或分组，限定数据库范围和执行权限，保存。
-3. 使用已保存密码的连接，可点击「授权访问已保存的密码」，按系统钥匙串提示授权。
-   后续后台 MCP 请求不会自动弹出钥匙串授权窗口。
+3. 使用已保存密码的连接，可点击「已保存的密码 → 授权」。主程序统一迁移已选连接的旧凭据，
+   不再由 MCP 按连接逐条请求系统权限。主程序与 MCP 共用同一钥匙串保险库；新增、修改密码
+   继续使用同一份系统访问权限，连接数量不影响授权次数。MCP 的连接和数据库权限仍分别生效。
+   后台 MCP 请求不会自动弹出钥匙串窗口。此功能需要同时更新主程序和 MCP；旧 MCP 会提示升级。
+   若登录钥匙串未解锁，或原有程序尚无权限读取某条旧密码，迁移会明确失败，
+   不会连续弹窗。请先解锁钥匙串；仍不可读时，在连接编辑器重新保存该密码。
 4. 选择 stdio 或 HTTP，选择客户端后点击「一键添加」，重新连接 MCP 或重启客户端。
    Codex、Claude Code、Cursor、VS Code、OpenCode 支持自动添加和移除。
    其他客户端可复制配置；共提供 Claude Code、Cursor、CodeBuddy Code、ZCode、TRAE、VS Code、Windsurf、Codex、DeepSeek Harness、OpenCode、Pi、Cherry Studio 12 个配置入口。
@@ -181,6 +185,9 @@ Elasticsearch。未提供凭据的 Kafka / Elasticsearch 默认使用无认证�
 六驱动真实服务验证使用 `scripts/test-mcp-live.py`，需要 Docker，自动创建并清理独立的
 本机测试容器。`scripts/test-mcp-desktop.py` 验证签名安装、更新回滚、launchd 和原生页面
 离屏渲染，并检查宿主退出后服务可用及已保存任务重新启动；加 `--drivers-dir` 可检查桌面加载六类驱动。
+日常验证使用 `--render-only` 或 `--component-checks`，不会注册 launchd 后台服务。
+验证 HTTP 常驻、宿主退出后继续运行及登录恢复时，需显式加 `--launchd-checks`；这类测试会实际注册
+macOS 后台项目，可能触发“App 后台活动”通知。临时项目在测试结束后清理，通知可能仍留在通知中心。
 `scripts/test-mcp-lifecycle.py` 验证客户端退出、并发断开重连及服务重启后的会话失效。
 实库脚本加 `--drivers mysql,doris --stress` 验证两库并发及断开时的事务回滚。
 `scripts/test-mcp-credentials.py` 仅操作新建的临时钥匙串条目并清理；

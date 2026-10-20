@@ -17,8 +17,12 @@ def main():
     parser.add_argument('--language',choices=['en','zh-Hans'],default='en',help='Language for native layout validation')
     parser.add_argument('--render-only',action='store_true',help='Only render isolated native settings; skip runtime lifecycle checks')
     parser.add_argument('--component-checks',action='store_true',help='Verify independent signed catalog install/update/rollback and standalone CLI')
+    parser.add_argument('--launchd-checks',action='store_true',help='Opt in to real macOS background-service registration; may show system background-activity notifications')
     parser.add_argument('--measure-only',action='store_true',help='With --render-only, measure layout and retained pages without capturing screenshots')
-    args=parser.parse_args(); dd=args.build_dir.resolve(); products=dd/'Build/Products/Debug'; frameworks=products/'PackageFrameworks'
+    args=parser.parse_args()
+    if not (args.render_only or args.component_checks or args.launchd_checks):
+        parser.error('Choose --render-only or --component-checks for routine checks. Persistent HTTP lifecycle checks require --launchd-checks and may show macOS background-activity notifications.')
+    dd=args.build_dir.resolve(); products=dd/'Build/Products/Debug'; frameworks=products/'PackageFrameworks'
     args.output.mkdir(parents=True,exist_ok=True)
     spec=importlib.util.spec_from_file_location('signer',ROOT/'scripts/code-signing.py');signer=importlib.util.module_from_spec(spec);spec.loader.exec_module(signer)
     identity=signer.activate()
@@ -27,7 +31,7 @@ def main():
         binary=host/'Contents/MacOS/Verifier'
         (host/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'io.github.future0923.QueryCraft.MCP.Verifier','CFBundleExecutable':'Verifier','CFBundlePackageType':'APPL','CFBundleLocalizations':[args.language],'CFBundleDevelopmentRegion':args.language,'LSUIElement':True}))
         sdk=subprocess.check_output(['/usr/bin/xcode-select','-p'],text=True).strip()+'/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk'
-        command=['/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc','-parse-as-library','-target',platform.machine()+'-apple-macosx15.0','-sdk',sdk,ROOT/'scripts/test-mcp-desktop.swift',ROOT/'scripts/test-mcp-components.swift','-I',products,'-F',frameworks,'-framework','QueryCraftFeature','-o',binary,'-Xlinker','-rpath','-Xlinker',frameworks]
+        command=['/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc','-parse-as-library','-target',platform.machine()+'-apple-macosx15.0','-sdk',sdk,ROOT/'scripts/test-mcp-desktop.swift',ROOT/'scripts/test-mcp-components.swift',ROOT/'scripts/test-mcp-download-progress.swift','-I',products,'-F',frameworks,'-framework','QueryCraftFeature','-o',binary,'-Xlinker','-rpath','-Xlinker',frameworks]
         for name in ['TreeSitterJSON','TreeSitterSQL','TreeSitter','Internal','CNIODarwin','CNIOLinux','CNIOOpenBSD','CNIOPosix','CNIOAtomics','CNIOLLHTTP','CNIOSHA1','CNIOWindows','CNIOWASI','_AtomicsShims']:
             modulemap=dd/f'Build/Intermediates.noindex/GeneratedModuleMaps/{name}.modulemap'
             if modulemap.exists():command+=['-Xcc','-fmodule-map-file='+str(modulemap)]
@@ -64,6 +68,24 @@ def main():
             serving=args.output.resolve()/'catalog';serving.mkdir(parents=True,exist_ok=True)
             class QuietHandler(http.server.SimpleHTTPRequestHandler):
                 def log_message(self,*args):pass
+                def do_GET(self):
+                    if not self.path.startswith('/progress-'):
+                        return super().do_GET()
+                    payload = b'q' * 524288
+                    self.send_response(503 if self.path == '/progress-error' else 200)
+                    if self.path != '/progress-unknown-size':
+                        self.send_header('Content-Length', str(len(payload)))
+                    self.end_headers()
+                    if self.path == '/progress-error':
+                        self.close_connection = True
+                        return
+                    try:
+                        for offset in range(0, len(payload), 4096):
+                            self.wfile.write(payload[offset:offset+4096])
+                            self.wfile.flush()
+                            time.sleep(.01)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
             component_server=http.server.ThreadingHTTPServer(('127.0.0.1',0),functools.partial(QuietHandler,directory=str(serving)))
             threading.Thread(target=component_server.serve_forever,daemon=True).start();port=component_server.server_port
         try:
@@ -75,7 +97,7 @@ def main():
                     for name in ['MySQL-'+platform.machine()+'.querycraftdriver','Doris-'+platform.machine()+'.querycraftdriver']:
                         shutil.copytree(args.drivers_dir/name,driver_root/'DriverUpdates'/name,symlinks=True)
                 command.append(driver_root/'Drivers')
-            run(command,env=dict(os.environ,DYLD_FRAMEWORK_PATH=str(frameworks),QC_MCP_COMPONENT_HTTP_PORT=str(component_http_port),QC_MCP_COMPONENT_CHECKS='1' if args.component_checks else '0',QC_MCP_COMPONENT_BASE_URL=f'http://127.0.0.1:{port}/',QC_MCP_SIGNING_IDENTITY=identity,QC_MCP_SIGNING_KEYCHAIN=str(signer.KEYCHAIN),QC_MCP_RENDER_ONLY='1' if args.render_only else '0',QC_MCP_MEASURE_ONLY='1' if args.measure_only else '0',QC_MCP_DELAYED_EXECUTABLE=str(delayed)),timeout=600)
+            run(command,env=dict(os.environ,DYLD_FRAMEWORK_PATH=str(frameworks),QC_MCP_COMPONENT_HTTP_PORT=str(component_http_port),QC_MCP_COMPONENT_CHECKS='1' if args.component_checks else '0',QC_MCP_LAUNCHD_CHECKS='1' if args.launchd_checks else '0',QC_MCP_COMPONENT_BASE_URL=f'http://127.0.0.1:{port}/',QC_MCP_SIGNING_IDENTITY=identity,QC_MCP_SIGNING_KEYCHAIN=str(signer.KEYCHAIN),QC_MCP_RENDER_ONLY='1' if args.render_only else '0',QC_MCP_MEASURE_ONLY='1' if args.measure_only else '0',QC_MCP_DELAYED_EXECUTABLE=str(delayed)),timeout=600)
             if args.render_only or args.component_checks:return
             if args.previous_drivers_dir:
                 assert not list((driver_root/'DriverUpdates').glob('*.querycraftdriver')),'Pending driver updates were not adopted'
@@ -116,10 +138,11 @@ def main():
         finally:
             if component_server:
                 component_server.shutdown();component_server.server_close()
-                owned_plist=Path.home()/'Library/LaunchAgents'/f'io.github.future0923.QueryCraft.MCP.{storage.name}.plist'
+            if args.launchd_checks:
                 # This exact random fixture label belongs to this harness only.
                 subprocess.run(['/bin/launchctl','bootout',f'gui/{os.getuid()}/io.github.future0923.QueryCraft.MCP.{storage.name}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                owned_plist=Path.home()/'Library/LaunchAgents'/f'io.github.future0923.QueryCraft.MCP.{storage.name}.plist'
                 if owned_plist.exists():owned_plist.unlink()
-            subprocess.run(['/bin/launchctl','bootout',f'gui/{os.getuid()}/io.github.future0923.QueryCraft.MCP.{storage.name}'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
 
 if __name__=='__main__':main()
