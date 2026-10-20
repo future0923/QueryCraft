@@ -1,8 +1,8 @@
 import Foundation
 import QueryCraftFeature
-import QueryCraftMariaDBTransport
+import QueryCraftMariaDBTransportV2
 
-actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding {
+actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding, WorkspaceNativeBulkTransferSession, WorkspaceNativeRowSourceSession {
     private struct FilterPredicate: Sendable {
         let sql: String
         let bindings: [WorkspaceDatabaseDataCell]
@@ -32,6 +32,21 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
 
     func isConnected() async -> Bool {
         await client?.isConnected() == true
+    }
+
+    func nativeBulkTransferFormat() async throws -> WorkspaceNativeBulkFormat? {
+        let result = try await requireClient().query("SELECT @@GLOBAL.local_infile")
+        return result.rows.first?.first == "1" ? .mysqlLocalTSV : nil
+    }
+
+    func streamTransferRows(sql: String, batchSize: Int,
+                            onBatch: @escaping @Sendable (WorkspaceDatabaseDataBatch) async throws -> Void) async throws -> Int {
+        try await requireClient().streamTransferRows(sql: sql, batchSize: batchSize, onBatch: onBatch)
+    }
+
+    func executeNativeBulkTransfer(sql: String, token: String,
+                                   stream: WorkspaceNativeBulkStream) async throws -> Int {
+        try await requireClient().loadLocal(sql: sql, token: token, stream: stream)
     }
 
     func fetchDatabases() async throws -> [String] {

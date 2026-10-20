@@ -1,5 +1,5 @@
 import QueryCraftFeature
-import QueryCraftMariaDBTransport
+import QueryCraftMariaDBTransportV2
 
 struct DorisConnectionTester {
     func test(_ configuration: DatabaseConnectionConfiguration) async throws {

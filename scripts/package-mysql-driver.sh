@@ -3,7 +3,9 @@
 set -euo pipefail
 
 project_root="${0:A:h:h}"
+# Additive native-transfer symbols require the 0.1.11 host (API 5 ABI is retained).
 source "$project_root/scripts/driver-package-common.sh"
+querycraft_driver_minimum_app_version="${DRIVER_MINIMUM_APP_VERSION:-0.1.11}"
 configuration="${CONFIGURATION:-Debug}"
 driver_version="${DRIVER_VERSION:-1.0.6}"
 driver_build="${DRIVER_BUILD:-7}"

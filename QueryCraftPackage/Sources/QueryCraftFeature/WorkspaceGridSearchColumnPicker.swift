@@ -99,69 +99,37 @@ struct WorkspaceGridSearchColumnPicker: View {
     }
 
     private var pickerContent: some View {
-        VStack(spacing: 0) {
-            WorkspaceGridSearchField(
-                text: $query,
-                placeholder: AppCopy.current.text(
-                    "搜索字段",
-                    "Search Columns"
-                ),
-                focusRequest: focusRequest,
-                submit: selectHighlightedOption,
-                cancel: dismiss,
-                accessibilityIdentifier: "gridSearchColumnField",
-                moveUp: { moveHighlight(by: -1) },
-                moveDown: { moveHighlight(by: 1) }
-            )
-            .padding()
-
-            ScrollViewReader { proxy in
-                List(selection: $highlightedOption) {
-                    if includesAllColumns {
-                        optionButton(
-                            title: AppCopy.current.text(
-                                "所有列",
-                                "All Columns"
-                            ),
-                            option: Self.allColumnsOption,
-                            isSelected: selectedDataColumnIndex == nil
-                        )
-                    }
-
-                    if filteredColumnIndices.isEmpty {
-                        Text(
-                            AppCopy.current.text(
-                                "没有匹配的字段",
-                                "No Matching Columns"
-                            )
-                        )
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .listRowSeparator(.hidden)
-                        .accessibilityIdentifier(
-                            "gridSearchColumnNoMatches"
-                        )
-                    } else {
-                        ForEach(
-                            filteredColumnIndices,
-                            id: \.self
-                        ) { columnIndex in
-                            optionButton(
-                                title: columns[columnIndex].name,
-                                option: columnIndex,
-                                isSelected:
-                                    selectedDataColumnIndex == columnIndex
-                            )
-                        }
-                    }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.visible)
-                .onChange(of: highlightedOption) { _, option in
-                    guard let option else { return }
-                    withAnimation {
-                        proxy.scrollTo(option, anchor: .center)
-                    }
+        WorkspaceSearchPickerContent(
+            query: $query,
+            highlightedOption: $highlightedOption,
+            focusRequest: focusRequest,
+            placeholder: AppCopy.current.text("搜索字段", "Search Columns"),
+            accessibilityIdentifier: "gridSearchColumnField",
+            submit: selectHighlightedOption,
+            cancel: dismiss,
+            moveUp: { moveHighlight(by: -1) },
+            moveDown: { moveHighlight(by: 1) }
+        ) {
+            if includesAllColumns {
+                optionButton(
+                    title: AppCopy.current.text("所有列", "All Columns"),
+                    option: Self.allColumnsOption,
+                    isSelected: selectedDataColumnIndex == nil
+                )
+            }
+            if filteredColumnIndices.isEmpty {
+                Text(AppCopy.current.text("没有匹配的字段", "No Matching Columns"))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .listRowSeparator(.hidden)
+                    .accessibilityIdentifier("gridSearchColumnNoMatches")
+            } else {
+                ForEach(filteredColumnIndices, id: \.self) { columnIndex in
+                    optionButton(
+                        title: columns[columnIndex].name,
+                        option: columnIndex,
+                        isSelected: selectedDataColumnIndex == columnIndex
+                    )
                 }
             }
         }

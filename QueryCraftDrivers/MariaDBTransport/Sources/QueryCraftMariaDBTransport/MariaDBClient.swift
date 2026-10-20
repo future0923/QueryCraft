@@ -52,28 +52,189 @@ public final class MariaDBConnection: @unchecked Sendable {
     }
 
     public func query(_ sql: String) async throws -> CDatabaseQueryResult {
-        try await runOnQueue {
-            guard let handle = self.handle else {
-                throw WorkspaceSessionError.notConnected
+        try await cancellableQuery(sql, bindings: nil)
+    }
+
+    public func loadLocal(sql: String, token: String, stream: WorkspaceNativeBulkStream) async throws -> Int {
+        let cancellation = MariaDBLoadCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await runOnQueue {
+                guard let handle = self.handle else { throw WorkspaceSessionError.notConnected }
+                try cancellation.install(Int(mysql_thread_id(handle)))
+                defer { cancellation.finish() }
+                let input = MariaDBLocalInput(token: token, stream: stream)
+                let pointer = Unmanaged.passUnretained(input).toOpaque()
+                self.installLocalHandler(handle, context: pointer)
+                // Never restore the library's default handler, which opens files.
+                defer { self.installLocalHandler(handle, context: nil); withExtendedLifetime(input) {} }
+                let result: CDatabaseQueryResult
+                do { result = try self.query(sql, handle: handle) }
+                catch { try stream.checkFailure(); throw error }
+                try stream.checkFailure()
+                if let error = input.error { throw error }
+                if mysql_warning_count(handle) != 0 {
+                    let warnings = try self.query("SHOW WARNINGS LIMIT 5", handle: handle)
+                    throw WorkspaceNativeBulkError.serverWarning(warnings.rows.map { $0.compactMap { $0 }.joined(separator: ": ") }.joined(separator: "; "))
+                }
+                guard let rows = Int(exactly: result.affectedRows) else {
+                    throw WorkspaceNativeBulkError.invalidStreamState
+                }
+                return rows
             }
-            return try self.query(sql, handle: handle)
+        } onCancel: {
+            stream.fail(CancellationError())
+            cancellation.cancel { id in
+                // A separate connection interrupts lock waits / blocked server work.
+                // finish waits for this request before allowing the subsequent rollback.
+                guard let killer = try? self.openConnection(database: nil) else { return }
+                defer { mysql_close(killer) }
+                _ = try? self.query("KILL QUERY \(id)", handle: killer)
+            }
         }
+    }
+
+    public func streamTransferRows(sql: String, batchSize: Int,
+                                    onBatch: @escaping @Sendable (WorkspaceDatabaseDataBatch) async throws -> Void) async throws -> Int {
+        let channel = WorkspaceTransferBatchChannel(), cancellation = MariaDBLoadCancellation()
+        return try await withTaskCancellationHandler {
+            try await withThrowingTaskGroup(of: Int.self) { group in
+                group.addTask {
+                    do {
+                        return try await self.runOnQueue {
+                            guard let handle = self.handle else { throw WorkspaceSessionError.notConnected }
+                            try cancellation.install(Int(mysql_thread_id(handle)))
+                            defer { cancellation.finish() }
+                            guard sql.withCString({ mysql_real_query(handle, $0, UInt(sql.utf8.count)) }) == 0 else { throw self.error(from: handle) }
+                            guard let result = mysql_use_result(handle) else { throw self.error(from: handle) }
+                            defer { mysql_free_result(result) }
+                            let count = Int(mysql_num_fields(result)), fields = mysql_fetch_fields(result)
+                            let columns = (0..<count).map { index in
+                                WorkspaceDatabaseDataColumn(id: index, name: fields.map { String(cString: $0[index].name) } ?? "column_\(index)")
+                            }
+                            var rows: [WorkspaceDatabaseDataRow] = [], total = 0, bytes = 0
+                            let limit = max(1, min(batchSize, 10_000))
+                            rows.reserveCapacity(limit)
+                            do {
+                                while let values = mysql_fetch_row(result) {
+                                    let lengths = mysql_fetch_lengths(result)
+                                    var cells: [WorkspaceDatabaseDataCell] = []; cells.reserveCapacity(count)
+                                    for index in 0..<count {
+                                        guard let value = values[index] else { cells.append(.null); continue }
+                                        let length = Int(clamping: lengths?[index] ?? 0)
+                                        guard let text = String(bytes: UnsafeRawBufferPointer(start: value, count: length), encoding: .utf8) else {
+                                            throw WorkspaceNativeBulkError.invalidTextEncoding
+                                        }
+                                        cells.append(.text(text)); bytes += length
+                                    }
+                                    rows.append(.init(id: total, values: cells)); total += 1
+                                    if rows.count == limit || bytes >= 1_048_576 {
+                                        try channel.send(.init(columns: columns, rows: rows)); rows = []; rows.reserveCapacity(limit); bytes = 0
+                                    }
+                                }
+                                guard mysql_errno(handle) == 0 else { throw self.error(from: handle) }
+                                // Even an empty table must expose its actual result columns.
+                                if !rows.isEmpty || total == 0 { try channel.send(.init(columns: columns, rows: rows)) }
+                                channel.finish(); return total
+                            } catch {
+                                // Do not drain a multi-billion-row unbuffered result on failure.
+                                cancellation.finish()
+                                if let killer = try? self.openConnection(database: nil) {
+                                    _ = try? self.query("KILL QUERY \(mysql_thread_id(handle))", handle: killer); mysql_close(killer)
+                                }
+                                throw error
+                            }
+                        }
+                    } catch { channel.fail(error); throw error }
+                }
+                group.addTask {
+                    do {
+                        var total = 0
+                        while let batch = try await channel.next() {
+                            try Task.checkCancellation(); try await onBatch(batch); total += batch.rows.count
+                        }
+                        return total
+                    } catch { channel.fail(error); throw error }
+                }
+                do {
+                    var counts: [Int] = []
+                    for try await count in group { counts.append(count) }
+                    guard counts.count == 2, counts[0] == counts[1] else { throw WorkspaceNativeBulkError.invalidStreamState }
+                    try Task.checkCancellation(); return counts[0]
+                } catch { channel.fail(error); group.cancelAll(); throw error }
+            }
+        } onCancel: {
+            channel.fail(CancellationError())
+            cancellation.cancel { id in
+                guard let killer = try? self.openConnection(database: nil) else { return }
+                defer { mysql_close(killer) }; _ = try? self.query("KILL QUERY \(id)", handle: killer)
+            }
+        }
+    }
+
+    private func installLocalHandler(_ handle: UnsafeMutablePointer<MYSQL>, context: UnsafeMutableRawPointer?) {
+        mysql_set_local_infile_handler(handle, { output, filename, user in
+            output?.pointee = user
+            guard let user, let filename else { return 1 }
+            let input = Unmanaged<MariaDBLocalInput>.fromOpaque(user).takeUnretainedValue()
+            guard String(cString: filename) == input.token else {
+                input.error = WorkspaceNativeBulkError.invalidLocalRequest; return 1
+            }
+            return 0
+        }, { user, bytes, length in
+            guard let user, let bytes else { return -1 }
+            let input = Unmanaged<MariaDBLocalInput>.fromOpaque(user).takeUnretainedValue()
+            do { return Int32(try input.stream.read(into: .init(start: bytes, count: Int(length)))) }
+            catch { input.error = error; return -1 }
+        }, { _ in }, { user, buffer, length in
+            let message: String
+            if let user {
+                message = Unmanaged<MariaDBLocalInput>.fromOpaque(user).takeUnretainedValue().error?.localizedDescription ?? "LOCAL INFILE stream failed."
+            } else { message = "LOCAL INFILE filesystem access is disabled." }
+            if let buffer, length > 0 {
+                let bytes = Array(message.utf8.prefix(Int(length) - 1))
+                for index in bytes.indices { buffer[index] = CChar(bitPattern: bytes[index]) }
+                buffer[bytes.count] = 0
+            }
+            return 1
+        }, context)
     }
 
     public func query(
         _ sql: String,
         bindings: [WorkspaceDatabaseDataCell]
     ) async throws -> CDatabaseQueryResult {
-        try await runOnQueue {
-            guard let handle = self.handle else {
-                throw WorkspaceSessionError.notConnected
+        try await cancellableQuery(sql, bindings: bindings)
+    }
+
+    private func cancellableQuery(_ sql: String, bindings: [WorkspaceDatabaseDataCell]?) async throws -> CDatabaseQueryResult {
+        // Driver catch/defer cleanup must still roll back a cancelled task.
+        if bindings == nil && (sql == "ROLLBACK" || sql == "ROLLBACK;") {
+            return try await runOnQueue {
+                guard let handle = self.handle else { throw WorkspaceSessionError.notConnected }
+                return try self.query(sql, handle: handle)
             }
-            let resolvedSQL = try self.resolvePlaceholders(
-                in: sql,
-                bindings: bindings,
-                handle: handle
-            )
-            return try self.query(resolvedSQL, handle: handle)
+        }
+        let cancellation = MariaDBLoadCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            do {
+                let result = try await runOnQueue {
+                    guard let handle = self.handle else { throw WorkspaceSessionError.notConnected }
+                    try cancellation.install(Int(mysql_thread_id(handle)))
+                    defer { cancellation.finish() }
+                    let statement = try bindings.map { try self.resolvePlaceholders(in: sql, bindings: $0, handle: handle) } ?? sql
+                    return try self.query(statement, handle: handle)
+                }
+                try Task.checkCancellation(); return result
+            } catch {
+                if Task.isCancelled { throw CancellationError() }; throw error
+            }
+        } onCancel: {
+            cancellation.cancel { id in
+                guard let killer = try? self.openConnection(database: nil) else { return }
+                defer { mysql_close(killer) }; _ = try? self.query("KILL QUERY \(id)", handle: killer)
+            }
         }
     }
 
@@ -108,6 +269,11 @@ public final class MariaDBConnection: @unchecked Sendable {
         var protocolTCP = UInt32(MYSQL_PROTOCOL_TCP.rawValue)
         mysql_options(mysql, MYSQL_OPT_PROTOCOL, &protocolTCP)
         mysql_options(mysql, MYSQL_SET_CHARSET_NAME, "utf8mb4")
+        // Negotiate LOCAL support, but deny all resource requests by default.
+        // Only loadLocal temporarily installs a token-scoped memory stream.
+        var local: UInt32 = 1
+        mysql_options(mysql, MYSQL_OPT_LOCAL_INFILE, &local)
+        installLocalHandler(mysql, context: nil)
 
         switch configuration.tlsMode {
         case .disabled:
@@ -387,5 +553,33 @@ public final class MariaDBConnection: @unchecked Sendable {
         _ operation: @escaping @Sendable () throws -> Value?
     ) async -> Value? {
         (try? await runOnQueue(operation)) ?? nil
+    }
+}
+
+// Confined to the MariaDB serial transport queue, including the synchronous C callbacks.
+private final class MariaDBLocalInput {
+    let token: String
+    let stream: WorkspaceNativeBulkStream
+    var error: (any Error)?
+    init(token: String, stream: WorkspaceNativeBulkStream) { self.token = token; self.stream = stream }
+}
+
+/// All state is locked, and a late cancellation cannot target the next statement.
+private final class MariaDBLoadCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var id: Int?
+    private var cancelled = false
+    func install(_ id: Int) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard !cancelled else { throw CancellationError() }
+        self.id = id
+    }
+    func finish() { lock.lock(); id = nil; lock.unlock() }
+    func cancel(_ operation: @escaping @Sendable (Int) -> Void) {
+        lock.lock(); cancelled = true; lock.unlock()
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.lock.lock(); defer { self.lock.unlock() }
+            if let id = self.id { operation(id) }
+        }
     }
 }

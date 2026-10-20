@@ -15,8 +15,15 @@ enum WorkspaceSQLExportDialect: Equatable, Sendable {
     }
 
     func identifier(_ value: String) -> String {
-        let quote = self == .postgresql ? "\"" : "`"
-        return quote + value.replacingOccurrences(of: quote, with: quote + quote) + quote
+        let quote: UInt8 = self == .postgresql ? 34 : 96
+        var bytes: [UInt8] = [quote]
+        bytes.reserveCapacity(value.utf8.count + 2)
+        for byte in value.utf8 {
+            bytes.append(byte)
+            if byte == quote { bytes.append(byte) }
+        }
+        bytes.append(quote)
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     func literal(_ value: WorkspaceDatabaseDataCell) throws -> String {
@@ -26,17 +33,38 @@ enum WorkspaceSQLExportDialect: Equatable, Sendable {
             throw WorkspaceDataExportError.incompleteBinaryValue
         case let .text(text):
             if self == .postgresql {
-                guard !text.contains("\0") else { throw WorkspaceDataExportError.unsupportedSQLValue }
-                let escaped = text.replacingOccurrences(of: "\\", with: "\\\\")
-                    .replacingOccurrences(of: "'", with: "''")
-                return "E'\(escaped)'"
+                if !text.utf8.contains(where: { $0 == 0 || $0 == 39 || $0 == 92 }) { return "E'\(text)'" }
+                var bytes: [UInt8] = [69, 39]
+                bytes.reserveCapacity(text.utf8.count + 8)
+                for byte in text.utf8 {
+                    guard byte != 0 else { throw WorkspaceDataExportError.unsupportedSQLValue }
+                    if byte == 39 || byte == 92 { bytes.append(byte) }
+                    bytes.append(byte)
+                }
+                bytes.append(39)
+                return String(decoding: bytes, as: UTF8.self)
             }
             // Hex text is independent of MySQL's NO_BACKSLASH_ESCAPES mode.
-            if text.contains("\\") || text.unicodeScalars.contains(where: { $0.value < 32 }) {
-                let hex = text.utf8.map { String(format: "%02X", $0) }.joined()
+            if text.utf8.contains(where: { $0 == 92 || $0 < 32 }) {
+                let digits = Array("0123456789ABCDEF".utf8)
+                var bytes: [UInt8] = []
+                bytes.reserveCapacity(text.utf8.count * 2)
+                for byte in text.utf8 {
+                    bytes.append(digits[Int(byte >> 4)])
+                    bytes.append(digits[Int(byte & 15)])
+                }
+                let hex = String(decoding: bytes, as: UTF8.self)
                 return self == .doris ? "UNHEX('\(hex)')" : "CONVERT(X'\(hex)' USING utf8mb4)"
             }
-            return "'\(text.replacingOccurrences(of: "'", with: "''"))'"
+            if !text.utf8.contains(39) { return "'\(text)'" }
+            var bytes: [UInt8] = [39]
+            bytes.reserveCapacity(text.utf8.count + 8)
+            for byte in text.utf8 {
+                bytes.append(byte)
+                if byte == 39 { bytes.append(byte) }
+            }
+            bytes.append(39)
+            return String(decoding: bytes, as: UTF8.self)
         }
     }
 }
