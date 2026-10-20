@@ -7,14 +7,14 @@ let package = Package(
     name: "QueryCraftMariaDBTransport",
     platforms: [.macOS(.v15)],
     products: [
-        .library(name: "QueryCraftMariaDBTransportV2", type: .dynamic, targets: ["QueryCraftMariaDBTransportV2"]),
+        .library(name: "QueryCraftMariaDBTransportV3", type: .dynamic, targets: ["QueryCraftMariaDBTransportV3"]),
         .library(name: "CMariaDB", targets: ["CMariaDB"]),
     ],
     dependencies: [.package(path: "../../QueryCraftPackage")],
     targets: [
         .systemLibrary(name: "CMariaDB"),
         .target(
-            name: "QueryCraftMariaDBTransportV2",
+            name: "QueryCraftMariaDBTransportV3",
             dependencies: [
                 .product(name: "QueryCraftFeature", package: "QueryCraftPackage"),
                 "CMariaDB",

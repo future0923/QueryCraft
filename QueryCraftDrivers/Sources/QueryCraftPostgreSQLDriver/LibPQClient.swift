@@ -359,18 +359,30 @@ final class LibPQClient: @unchecked Sendable {
         switch PQresultStatus(result) {
         case PGRES_COMMAND_OK:
             return PostgreSQLCQueryResult(
-                affectedRows: affectedRows(from: result)
+                affectedRows: affectedRows(from: result),
+                transactionState: try Self.transactionState(status: PQtransactionStatus(connection))
             )
         case PGRES_TUPLES_OK:
-            return fetchRows(from: result, connection: connection)
+            // Snapshot before the metadata queries performed by fetchRows.
+            let state = try Self.transactionState(status: PQtransactionStatus(connection))
+            return fetchRows(from: result, connection: connection, transactionState: state)
         default:
             throw resultError(from: result)
         }
     }
 
+    static func transactionState(status: PGTransactionStatusType) throws -> WorkspaceQueryTransactionState {
+        switch status {
+        case PQTRANS_IDLE: .autoCommit
+        case PQTRANS_INTRANS, PQTRANS_INERROR: .inTransaction
+        default: throw WorkspaceSessionError.transactionStateUnavailable
+        }
+    }
+
     private func fetchRows(
         from result: OpaquePointer,
-        connection: OpaquePointer
+        connection: OpaquePointer,
+        transactionState: WorkspaceQueryTransactionState
     ) -> PostgreSQLCQueryResult {
         let columnCount = Int(PQnfields(result))
         let rowCount = Int(PQntuples(result))
@@ -406,7 +418,8 @@ final class LibPQClient: @unchecked Sendable {
             columns: columns,
             columnTypes: columnTypes,
             columnOrigins: columnOrigins,
-            rows: rows
+            rows: rows,
+            transactionState: transactionState
         )
     }
 

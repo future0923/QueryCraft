@@ -13,19 +13,22 @@ struct PostgreSQLCQueryResult: Sendable, Equatable {
     let columnOrigins: [ColumnOrigin?]
     let rows: [[String?]]
     let affectedRows: Int
+    let transactionState: WorkspaceQueryTransactionState
 
     init(
         columns: [String] = [],
         columnTypes: [String?] = [],
         columnOrigins: [ColumnOrigin?] = [],
         rows: [[String?]] = [],
-        affectedRows: Int = 0
+        affectedRows: Int = 0,
+        transactionState: WorkspaceQueryTransactionState = .autoCommit
     ) {
         self.columns = columns
         self.columnTypes = columnTypes
         self.columnOrigins = columnOrigins
         self.rows = rows
         self.affectedRows = affectedRows
+        self.transactionState = transactionState
     }
 }
 

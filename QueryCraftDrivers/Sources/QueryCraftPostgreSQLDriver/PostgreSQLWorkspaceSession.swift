@@ -15,7 +15,6 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
     private var client: LibPQClient?
     private var capabilities = PostgreSQLCapabilities.unknown
     private var currentDatabase: String
-    private var transactionState = WorkspaceQueryTransactionState.disconnected
     private var objectIdentities: [String: ObjectIdentity] = [:]
 
     init(configuration: PostgreSQLConnectionConfiguration) {
@@ -44,7 +43,6 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         try Task.checkCancellation()
 
         capabilities = PostgreSQLCapabilities(serverVersion: Int(serverVersion))
-        transactionState = .autoCommit
         client = newClient
     }
 
@@ -724,7 +722,6 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
             boundedSQL = sql
         }
         return try await executeQuery(boundedSQL, onBatch: onBatch)
-            .withTransactionState(.autoCommit)
     }
 
     func executeStatement(
@@ -758,9 +755,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
             )
         }
         try requireCurrentDatabase(database ?? currentDatabase)
-        let result = try await executeQuery(sql, onBatch: onBatch)
-        transactionState = try transactionState.afterSuccessfulStatement(kind)
-        return result.withTransactionState(transactionState)
+        return try await executeQuery(sql, onBatch: onBatch)
     }
 
     func cancelQuery(connectionID: Int) async throws {
@@ -773,7 +768,6 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
     }
 
     func close() async {
-        transactionState = .disconnected
         capabilities = .unknown
         objectIdentities.removeAll()
         let client = self.client
@@ -819,7 +813,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         return WorkspaceQueryExecutionResult(
             columns: columns,
             rowCount: rows.isEmpty ? result.affectedRows : rows.count,
-            transactionState: transactionState
+            transactionState: result.transactionState
         )
     }
 
@@ -1084,17 +1078,5 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
 
     private static func quotedQualified(_ identity: ObjectIdentity) -> String {
         "\(identifier(identity.schema)).\(identifier(identity.name))"
-    }
-}
-
-private extension WorkspaceQueryExecutionResult {
-    func withTransactionState(
-        _ transactionState: WorkspaceQueryTransactionState
-    ) -> WorkspaceQueryExecutionResult {
-        WorkspaceQueryExecutionResult(
-            columns: columns,
-            rowCount: rowCount,
-            transactionState: transactionState
-        )
     }
 }

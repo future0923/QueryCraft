@@ -1,6 +1,6 @@
 import Foundation
 import QueryCraftFeature
-import QueryCraftMariaDBTransportV2
+import QueryCraftMariaDBTransportV3
 
 actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding, WorkspaceNativeBulkTransferSession, WorkspaceNativeRowSourceSession {
     private struct FilterPredicate: Sendable {
@@ -10,7 +10,6 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
 
     private let configuration: MySQLConnectionConfiguration
     private var client: MariaDBClient?
-    private var transactionState = WorkspaceQueryTransactionState.disconnected
     private var cachedSchemaChoices: WorkspaceDatabaseSchemaChoices?
 
     init(configuration: MySQLConnectionConfiguration) {
@@ -27,7 +26,6 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
         try await newClient.connect()
         try Task.checkCancellation()
         client = newClient
-        transactionState = .autoCommit
     }
 
     func isConnected() async -> Bool {
@@ -741,13 +739,11 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
         if let database, !database.isEmpty {
             _ = try await requireClient().query("USE \(quoteIdentifier(database))")
         }
-        let result = try await executeQuery(
+        return try await executeQuery(
             sql,
             maximumRows: kind == .read ? maximumRows : nil,
             onBatch: onBatch
         )
-        transactionState = try transactionState.afterSuccessfulStatement(kind)
-        return result.withTransactionState(transactionState)
     }
 
     func cancelQuery(connectionID: Int) async throws {
@@ -758,7 +754,6 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
     }
 
     func close() async {
-        transactionState = .disconnected
         cachedSchemaChoices = nil
         let client = self.client
         self.client = nil
@@ -794,7 +789,8 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
             )
         }
         do {
-            let result = try await client.query(sql)
+            let execution = try await client.queryWithTransactionState(sql)
+            let result = execution.result
             try Task.checkCancellation()
             if maximumRows != nil {
                 _ = try await client.query("SET SESSION SQL_SELECT_LIMIT = DEFAULT")
@@ -816,7 +812,8 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
             }
             return WorkspaceQueryExecutionResult(
                 columns: columns,
-                rowCount: rows.isEmpty ? Int(result.affectedRows) : rows.count
+                rowCount: rows.isEmpty ? Int(result.affectedRows) : rows.count,
+                transactionState: execution.transactionState
             )
         } catch {
             if maximumRows != nil {

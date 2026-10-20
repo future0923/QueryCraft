@@ -2,9 +2,8 @@ import CMariaDB
 import Foundation
 import QueryCraftFeature
 
-// Keep the original source-facing name, but give the dynamic implementation a
-// new runtime identity so it can coexist with an older, statically linked driver
-// while MySQL and Doris are upgraded independently.
+// Keep the source-facing name. The V3 module can coexist with V2 when an older
+// Doris/MySQL bundle loads first; V2 does not export queryWithTransactionState.
 public typealias MariaDBClient = MariaDBConnection
 
 public final class MariaDBConnection: @unchecked Sendable {
@@ -53,6 +52,18 @@ public final class MariaDBConnection: @unchecked Sendable {
 
     public func query(_ sql: String) async throws -> CDatabaseQueryResult {
         try await cancellableQuery(sql, bindings: nil)
+    }
+
+    /// Capture status on the transport queue together with the completed result.
+    /// Keep the existing result ABI intact for independently upgraded drivers.
+    public func queryWithTransactionState(
+        _ sql: String
+    ) async throws -> (result: CDatabaseQueryResult, transactionState: WorkspaceQueryTransactionState) {
+        try await cancellableQueryWithTransactionState(sql, bindings: nil)
+    }
+
+    public static func transactionState(serverStatus: UInt32) -> WorkspaceQueryTransactionState {
+        serverStatus & UInt32(SERVER_STATUS_IN_TRANS) == 0 ? .autoCommit : .inTransaction
     }
 
     public func loadLocal(sql: String, token: String, stream: WorkspaceNativeBulkStream) async throws -> Int {
@@ -208,11 +219,18 @@ public final class MariaDBConnection: @unchecked Sendable {
     }
 
     private func cancellableQuery(_ sql: String, bindings: [WorkspaceDatabaseDataCell]?) async throws -> CDatabaseQueryResult {
+        try await cancellableQueryWithTransactionState(sql, bindings: bindings).result
+    }
+
+    private func cancellableQueryWithTransactionState(
+        _ sql: String, bindings: [WorkspaceDatabaseDataCell]?
+    ) async throws -> (result: CDatabaseQueryResult, transactionState: WorkspaceQueryTransactionState) {
         // Driver catch/defer cleanup must still roll back a cancelled task.
         if bindings == nil && (sql == "ROLLBACK" || sql == "ROLLBACK;") {
             return try await runOnQueue {
                 guard let handle = self.handle else { throw WorkspaceSessionError.notConnected }
-                return try self.query(sql, handle: handle)
+                let result = try self.query(sql, handle: handle)
+                return (result, Self.transactionState(serverStatus: handle.pointee.server_status))
             }
         }
         let cancellation = MariaDBLoadCancellation()
@@ -224,7 +242,8 @@ public final class MariaDBConnection: @unchecked Sendable {
                     try cancellation.install(Int(mysql_thread_id(handle)))
                     defer { cancellation.finish() }
                     let statement = try bindings.map { try self.resolvePlaceholders(in: sql, bindings: $0, handle: handle) } ?? sql
-                    return try self.query(statement, handle: handle)
+                    let result = try self.query(statement, handle: handle)
+                    return (result, Self.transactionState(serverStatus: handle.pointee.server_status))
                 }
                 try Task.checkCancellation(); return result
             } catch {

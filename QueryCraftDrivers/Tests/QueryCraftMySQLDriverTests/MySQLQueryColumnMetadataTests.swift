@@ -1,5 +1,5 @@
 import CMariaDB
-import QueryCraftMariaDBTransportV2
+import QueryCraftMariaDBTransportV3
 import Testing
 
 struct MySQLQueryColumnMetadataTests {
