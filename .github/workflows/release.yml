@@ -47,6 +47,9 @@ concurrency:
 
 jobs:
   metadata:
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.release.outputs.version }}
@@ -57,6 +60,11 @@ jobs:
       build_client: ${{ steps.release.outputs.build_client }}
       rebuild_driver: ${{ steps.release.outputs.rebuild_driver }}
       driver_matrix: ${{ steps.release.outputs.driver_matrix }}
+      client_build_matrix: ${{ steps.artifacts.outputs.client_build_matrix }}
+      driver_build_matrix: ${{ steps.artifacts.outputs.driver_build_matrix }}
+      build_update: ${{ steps.artifacts.outputs.build_update }}
+      has_new_artifacts: ${{ steps.artifacts.outputs.has_new_artifacts }}
+      build_ref: ${{ steps.artifacts.outputs.build_ref }}
       mcp_changed: ${{ steps.components.outputs.mcp_changed }}
       skill_changed: ${{ steps.components.outputs.skill_changed }}
       publish_components: ${{ steps.release.outputs.publish_components }}
@@ -65,9 +73,19 @@ jobs:
         with:
           fetch-depth: 0
       - name: Check component and driver release rules
-        run: python3 scripts/test-component-release-plan.py
+        run: |
+          python3 scripts/test-component-release-plan.py
+          python3 scripts/test-release-artifact-plan.py
       - id: components
-        run: python3 scripts/component-release-plan.py --require-notes --github-output "$GITHUB_OUTPUT" --output component-plan.json
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          args=(--require-notes --github-output "$GITHUB_OUTPUT" --output component-plan.json)
+          if [[ -n "$SOURCE_RUN_ID" ]]; then
+            version="$(awk -F ' = ' '/^MARKETING_VERSION = / { print $2; exit }' Config/Shared.xcconfig)"
+            args+=(--head "v$version")
+          fi
+          python3 scripts/component-release-plan.py "${args[@]}"
       - id: release
         env:
           REQUESTED_PUBLISH_COMPONENTS: ${{ github.event_name == 'push' || inputs.publish_components || false }}
@@ -141,19 +159,30 @@ jobs:
           echo "rebuild_driver=$rebuild_driver" >> "$GITHUB_OUTPUT"
           echo "driver_matrix=$driver_matrix" >> "$GITHUB_OUTPUT"
 
+      - id: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          BUILD: ${{ steps.release.outputs.build }}
+          SELECTED_DRIVERS: ${{ steps.release.outputs.driver_matrix }}
+          PUBLISH_DRIVERS: ${{ steps.release.outputs.publish_drivers }}
+          SOURCE_RUN_ID: ${{ steps.release.outputs.source_run_id }}
+          REBUILD_DRIVER: ${{ steps.release.outputs.rebuild_driver }}
+        run: |
+          python3 scripts/ci/release-artifact-plan.py --version "$VERSION" --build "$BUILD" \
+            --drivers "$SELECTED_DRIVERS" --publish-drivers "$PUBLISH_DRIVERS" \
+            --source-run "$SOURCE_RUN_ID" --rebuild-driver "$REBUILD_DRIVER" \
+            --github-output "$GITHUB_OUTPUT"
+
   build_client:
     needs: metadata
-    if: needs.metadata.outputs.source_run_id == '' && needs.metadata.outputs.build_client == 'true'
+    if: needs.metadata.outputs.client_build_matrix != '[]'
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - architecture: x86_64
-            runner: macos-15-intel
-          - architecture: arm64
-            runner: macos-15
+        include: ${{ fromJSON(needs.metadata.outputs.client_build_matrix) }}
     env:
       QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
       QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
@@ -164,6 +193,8 @@ jobs:
       QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: false
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.build_ref }}
 
       - name: Select Xcode 26.2
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
@@ -191,18 +222,30 @@ jobs:
         if: always()
         run: python3 scripts/code-signing.py cleanup-ci
 
-      - uses: actions/upload-artifact@v7
+      - id: upload
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
         with:
           name: querycraft-release-client-${{ matrix.architecture }}
           path: artifacts/${{ matrix.architecture }}/
           if-no-files-found: error
           retention-days: 14
 
+      - name: Retry artifact upload
+        if: steps.upload.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: querycraft-release-client-${{ matrix.architecture }}
+          path: artifacts/${{ matrix.architecture }}/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+
   build_update:
     needs: metadata
-    if: needs.metadata.outputs.source_run_id == '' && needs.metadata.outputs.build_client == 'true'
+    if: needs.metadata.outputs.build_update == 'true'
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
       QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
@@ -212,6 +255,8 @@ jobs:
       QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: true
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.build_ref }}
 
       - name: Select Xcode 26.2
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
@@ -251,31 +296,35 @@ jobs:
         if: always()
         run: python3 scripts/code-signing.py cleanup-ci
 
-      - uses: actions/upload-artifact@v7
+      - id: upload
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
         with:
           name: querycraft-release-client-update
           path: artifacts/update/
           if-no-files-found: error
           retention-days: 14
 
+      - name: Retry artifact upload
+        if: steps.upload.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: querycraft-release-client-update
+          path: artifacts/update/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+
   build_drivers:
     needs: metadata
-    if: needs.metadata.outputs.publish_drivers == 'true'
+    if: needs.metadata.outputs.driver_build_matrix != '[]'
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       max-parallel: 10
       matrix:
-        database: ${{ fromJSON(needs.metadata.outputs.driver_matrix) }}
-        architecture:
-          - x86_64
-          - arm64
-        include:
-          - architecture: x86_64
-            runner: macos-15-intel
-          - architecture: arm64
-            runner: macos-15
+        include: ${{ fromJSON(needs.metadata.outputs.driver_build_matrix) }}
     env:
       QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
       QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
@@ -285,6 +334,8 @@ jobs:
       QUERYCRAFT_DRIVER_TARGET: ${{ matrix.database }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.build_ref }}
 
       - name: Select Xcode 26.2
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
@@ -307,21 +358,35 @@ jobs:
           DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
         run: scripts/ci/build-release-artifacts.sh "${{ matrix.architecture }}" "artifacts/${{ matrix.database }}-${{ matrix.architecture }}"
 
-      - uses: actions/upload-artifact@v7
+      - id: upload
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
         with:
           name: querycraft-release-driver-${{ matrix.database }}-${{ matrix.architecture }}
           path: artifacts/${{ matrix.database }}-${{ matrix.architecture }}/
           if-no-files-found: error
           retention-days: 14
 
+      - name: Retry artifact upload
+        if: steps.upload.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: querycraft-release-driver-${{ matrix.database }}-${{ matrix.architecture }}
+          path: artifacts/${{ matrix.database }}-${{ matrix.architecture }}/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+
   verify_runtime:
     needs: [metadata, build_client, build_drivers]
     if: >-
       ${{ always() && needs.metadata.result == 'success' &&
           needs.metadata.outputs.mcp_changed == 'true' &&
-          needs.metadata.outputs.source_run_id == '' &&
-          needs.build_client.result == 'success' &&
-          (needs.metadata.outputs.publish_drivers != 'true' || needs.build_drivers.result == 'success') }}
+          contains(fromJSON('["success","skipped"]'), needs.build_client.result) &&
+          contains(fromJSON('["success","skipped"]'), needs.build_drivers.result) }}
+    permissions:
+      contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -335,13 +400,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
+        if: needs.metadata.outputs.source_run_id != ''
         with:
-          name: querycraft-release-client-${{ matrix.architecture }}
+          pattern: querycraft-release-*
           path: runtime-artifacts
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.metadata.outputs.source_run_id }}
       - uses: actions/download-artifact@v8
-        if: needs.metadata.outputs.publish_drivers == 'true'
+        if: needs.metadata.outputs.has_new_artifacts == 'true'
         with:
-          pattern: querycraft-release-driver-*-${{ matrix.architecture }}
+          pattern: querycraft-release-*
           path: runtime-artifacts
           merge-multiple: true
       - name: Verify standalone MCP and all six driver families
@@ -355,42 +424,14 @@ jobs:
       - build_drivers
       - verify_runtime
     if: >-
-      ${{
-        always() &&
-        needs.metadata.result == 'success' &&
-        (
-          needs.metadata.outputs.mcp_changed != 'true' ||
-          needs.metadata.outputs.source_run_id != '' ||
-          needs.verify_runtime.result == 'success'
-        ) &&
-        (
-          needs.metadata.outputs.publish == 'true' ||
-          needs.metadata.outputs.publish_drivers == 'true' ||
-          needs.metadata.outputs.publish_components == 'true'
-        ) &&
-        (
-          (
-            needs.metadata.outputs.source_run_id != '' &&
-            (
-              needs.metadata.outputs.publish_drivers != 'true' ||
-              needs.build_drivers.result == 'success'
-            )
-          ) ||
-          (
-            (
-              needs.metadata.outputs.build_client != 'true' ||
-              (
-                needs.build_client.result == 'success' &&
-                needs.build_update.result == 'success'
-              )
-            ) &&
-            (
-              needs.metadata.outputs.publish_drivers != 'true' ||
-              needs.build_drivers.result == 'success'
-            )
-          )
-        )
-      }}
+      ${{ always() && needs.metadata.result == 'success' &&
+          (needs.metadata.outputs.publish == 'true' ||
+           needs.metadata.outputs.publish_drivers == 'true' ||
+           needs.metadata.outputs.publish_components == 'true') &&
+          contains(fromJSON('["success","skipped"]'), needs.build_client.result) &&
+          contains(fromJSON('["success","skipped"]'), needs.build_update.result) &&
+          contains(fromJSON('["success","skipped"]'), needs.build_drivers.result) &&
+          (needs.metadata.outputs.mcp_changed != 'true' || needs.verify_runtime.result == 'success') }}
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -427,11 +468,11 @@ jobs:
           github-token: ${{ github.token }}
           run-id: ${{ needs.metadata.outputs.source_run_id }}
 
-      - name: Download selected driver artifacts
+      - name: Download newly completed artifacts
         uses: actions/download-artifact@v8
-        if: needs.metadata.outputs.source_run_id != '' && needs.metadata.outputs.publish_drivers == 'true'
+        if: needs.metadata.outputs.source_run_id != '' && needs.metadata.outputs.has_new_artifacts == 'true'
         with:
-          pattern: querycraft-release-driver-*
+          pattern: querycraft-release-*
           path: dist
           merge-multiple: true
 

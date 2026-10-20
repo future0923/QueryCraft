@@ -107,6 +107,20 @@ gh workflow run release.yml --ref main \
 
 每个待发布驱动必须检查：数据库类型、版本、build、Driver API、最低主程序版本、架构、压缩包摘要和下载地址一致；Intel 与 Apple Silicon 都成功；Dev 能加载；线上目录 manifest 与压缩包摘要一致。
 
+### 部分构建失败后的恢复
+
+客户端、Universal 更新及驱动构建上限为 90 分钟；产物上传失败会在同一任务内重试一次，避免为临时网络失败重新编译。
+
+以 `source_run_id` 恢复时，工作流先核对来源 run 已结束、属于本仓库的发布工作流，且源码提交与当前版本 tag 完全一致。按未过期产物清单只构建缺失项；源码仍固定在原 tag，不移动 tag，也不混用 main 后续功能。明确指定 `rebuild_driver` 时才强制重建该驱动。
+
+```bash
+gh workflow run release.yml --ref main \
+  -f publish=true -f publish_components=true -f publish_drivers=true \
+  -f source_run_id=<部分成功的发布run-id> -f rebuild_driver=none
+```
+
+独立 MCP 有变化时，即使复用全部构建产物，也必须重新完成两个架构的实际运行目录与六驱动检查。发布前合并来源 run 与恢复 run 的产物，客户端与驱动一并补齐；成功缓存不等于跳过运行验证。
+
 ## 5. 发布后验收
 
 ```bash

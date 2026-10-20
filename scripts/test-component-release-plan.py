@@ -75,7 +75,7 @@ class WorkflowSelectionTests(unittest.TestCase):
             DRIVER_REQUIREMENTS=json.dumps({d: ['mysql','doris'] if d in ['mysql','doris'] else [d] for d in PLAN.DRIVERS}),
             GITHUB_OUTPUT=str(self.root/'output'),GITHUB_REF_TYPE='branch',GITHUB_REF_NAME='main')
     def metadata(self,**environment):
-        block=self.workflow.split('      - id: release\n',1)[1].split('\n  build_client:',1)[0]
+        block=self.workflow.split('      - id: release\n',1)[1].split('\n      - id: artifacts',1)[0].split('\n  build_client:',1)[0]
         script=textwrap.dedent(block.split('        run: |\n',1)[1])
         return subprocess.run(['bash','-c',script],cwd=self.root,env=dict(self.environment,**environment),capture_output=True,text=True)
     def test_actual_changed_driver_matrix_and_shared_group_enforcement(self):
