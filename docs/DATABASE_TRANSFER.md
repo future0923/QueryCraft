@@ -136,7 +136,7 @@ MySQL LOCAL 会把部分数据错误转换为警告，因此任何导入警告�
 
 Doris 继续仅作为来源，支持原生协议的流式读取。补齐 STRING、DECIMALV2/DECIMALV3、DATEV2/DATETIMEV2 的标准类型映射，并修正旧版来源的 keyless 排序语法。PostgreSQL TEXT、无长度 VARCHAR 和 Doris STRING 自动建 MySQL 表时映射为 LONGTEXT，避免 64 KiB 容量限制；目标已有字段容量不足时不会静默接受 MySQL LOAD 的截断警告。Doris 仍要求来源静止；聚合状态及复杂类型继续明确拒绝。
 
-现有 Driver API 5 的协议表及公共模型布局保持不变，新增可选能力协议。新 MySQL/PostgreSQL/Doris 包要求主程序至少 0.1.10。MySQL 与 Doris 使用独立名称的 `QueryCraftMariaDBTransportV2`，可与旧 V1 动态库同时加载，支持两类驱动独立升级。Redis、Elasticsearch、Kafka 不适用本次关系表通道，保持原有实现。
+现有 Driver API 5 的协议表及公共模型布局保持不变，新增可选能力协议。正式发布的新 MySQL/PostgreSQL/Doris 包要求主程序至少 0.1.11。MySQL 与 Doris 使用独立名称的 `QueryCraftMariaDBTransportV2`，可与旧 V1 动态库同时加载，支持两类驱动独立升级。Redis、Elasticsearch、Kafka 不适用本次关系表通道，保持原有实现。
 
 本轮主引擎和修改的 MySQL/PostgreSQL/Doris 驱动均使用 Release `-O`，关闭覆盖率插桩。固定每批 1000 行；硬件、Docker 限额、五字段数据及全行校验规则沿用上节基线。追加包含创建目标表和最终提交；Upsert 预先在目标准备同样数量的旧值，要求每行全部更新正确，预置夹具及验证时间不计入传输耗时。
 

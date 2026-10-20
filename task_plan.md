@@ -58,3 +58,10 @@ Data transfer progress checkpoint:
 2. Complete: bounded streaming COPY / controlled in-memory LOCAL INFILE, lossless encoders, transactional Upsert, permission fallback and native cancellation.
 3. Complete: 45 regression methods; six-driver loading; four-direction live edges; disabled LOCAL and denied TEMP fallback; three Doris/mixed-version combinations; eight million-row append/Upsert, four ten-million transfers and six cancellation/rollback cases passed with full-row verification. Owned fixtures and volumes removed.
 4. Complete: documented actual results and fingerprints in docs/DATABASE_TRANSFER.md; signed Release Dev 20261020-114655-8a63b4d1 installed and launched with matching MySQL/PostgreSQL/Doris drivers. Verified installed-host loading, hashes/UUID and actual Dev loaded paths; old app and drivers backed up. No commit, tag or public release.
+
+## QueryCraft 0.1.11 release — 2026-10-20
+
+1. Complete: reread release rules; merge all main changes, unify Tools menu, allocate app/MCP/three-driver versions; README reduced to capabilities and measured performance.
+2. Complete: 227 integrated Release regressions and 15 release-scope checks passed; all 12 online API5 driver packages verified against size/hash/bundle metadata.
+3. Complete: final Release build, relocated Release MCP/stdio/HTTP/six-driver/mixed-upgrade checks and Debug isolated lifecycle passed. Added and locally exercised the dual-architecture runtime gate for Actions.
+4. In progress: commit and push all main changes and v0.1.11, monitor architecture/runtime/publish jobs; verify live catalogs/assets/appcast and unchanged components.

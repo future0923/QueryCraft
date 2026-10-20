@@ -53,15 +53,8 @@ Release measurements transferring **10 million rows**, with every field verified
 
 ## Download and build
 
-GitHub Releases provides separate DMGs for Apple Silicon and Intel Macs.
-QueryCraft requires **macOS 15 or later**. The free distribution channel uses
-ad-hoc signing. If macOS blocks the first launch, verify the source under
-**System Settings > Privacy & Security** and choose **Open Anyway**.
-
-Building from source does not require a paid Apple Developer account. Open
-`QueryCraft.xcworkspace` and select the `QueryCraft` scheme, or follow
-[BUILDING.md](BUILDING.md) to build the app and all six drivers with
-XcodeBuildMCP.
+Supports **macOS 15 or later**, with separate DMGs for Apple Silicon and Intel Macs.
+See [BUILDING.md](BUILDING.md) for source builds; a paid Apple Developer account is not required.
 
 ## Repository layout
 

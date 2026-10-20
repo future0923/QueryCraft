@@ -11,6 +11,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('app',type=Path)
     parser.add_argument('--build-dir',type=Path,default=ROOT/'.build/DerivedData')
+    parser.add_argument('--configuration',choices=['Debug','Release'],default='Debug')
     parser.add_argument('--output',type=Path,default=ROOT/'.build/mcp-desktop-check')
     parser.add_argument('--drivers-dir',type=Path,help='Also verify six-driver loading through the signed desktop host')
     parser.add_argument('--previous-drivers-dir',type=Path,help='Exercise desktop startup adoption of staged MySQL/Doris updates in isolated storage')
@@ -20,9 +21,11 @@ def main():
     parser.add_argument('--launchd-checks',action='store_true',help='Opt in to real macOS background-service registration; may show system background-activity notifications')
     parser.add_argument('--measure-only',action='store_true',help='With --render-only, measure layout and retained pages without capturing screenshots')
     args=parser.parse_args()
+    if args.component_checks and args.configuration == 'Release':
+        parser.error('Component lifecycle fixtures use loopback HTTP and require Debug host/runtime builds. Release packages enforce HTTPS; verify them with test-mcp-package.py.')
     if not (args.render_only or args.component_checks or args.launchd_checks):
         parser.error('Choose --render-only or --component-checks for routine checks. Persistent HTTP lifecycle checks require --launchd-checks and may show macOS background-activity notifications.')
-    dd=args.build_dir.resolve(); products=dd/'Build/Products/Debug'; frameworks=products/'PackageFrameworks'
+    dd=args.build_dir.resolve(); products=dd/'Build/Products'/args.configuration; frameworks=products/'PackageFrameworks'
     args.output.mkdir(parents=True,exist_ok=True)
     spec=importlib.util.spec_from_file_location('signer',ROOT/'scripts/code-signing.py');signer=importlib.util.module_from_spec(spec);spec.loader.exec_module(signer)
     identity=signer.activate()

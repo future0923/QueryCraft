@@ -51,14 +51,8 @@ Release 模式传输 **1000 万行**，完成后逐字段全量校验：
 
 ## 下载与构建
 
-Release 页面提供 Apple Silicon 与 Intel Mac 对应的 DMG。QueryCraft 要求
-**macOS 15 或更高版本**。当前免费分发采用 ad-hoc 签名，首次打开若被
-macOS 阻止，请在 **系统设置 > 隐私与安全性** 中确认来源并选择
-**仍要打开**。
-
-源码构建无需付费 Apple Developer 账号。请打开 `QueryCraft.xcworkspace`
-并选择 `QueryCraft` scheme，或按照 [BUILDING.md](BUILDING.md) 使用
-XcodeBuildMCP 构建应用和六类驱动。
+支持 **macOS 15 及以上版本**，提供 Apple Silicon 与 Intel Mac 对应的 DMG。
+源码构建见 [BUILDING.md](BUILDING.md)，无需付费 Apple Developer 账号。
 
 ## 仓库结构
 

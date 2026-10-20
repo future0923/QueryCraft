@@ -314,16 +314,55 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  verify_runtime:
+    needs: [metadata, build_client, build_drivers]
+    if: >-
+      ${{ always() && needs.metadata.result == 'success' &&
+          needs.metadata.outputs.mcp_changed == 'true' &&
+          needs.metadata.outputs.source_run_id == '' &&
+          needs.build_client.result == 'success' &&
+          (needs.metadata.outputs.publish_drivers != 'true' || needs.build_drivers.result == 'success') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: macos-15-intel
+          - architecture: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: querycraft-release-client-${{ matrix.architecture }}
+          path: runtime-artifacts
+      - uses: actions/download-artifact@v8
+        if: needs.metadata.outputs.publish_drivers == 'true'
+        with:
+          pattern: querycraft-release-driver-*-${{ matrix.architecture }}
+          path: runtime-artifacts
+          merge-multiple: true
+      - name: Verify standalone MCP and all six driver families
+        run: python3 scripts/ci/verify-release-runtime.py runtime-artifacts
+
   publish:
     needs:
       - metadata
       - build_client
       - build_update
       - build_drivers
+      - verify_runtime
     if: >-
       ${{
         always() &&
         needs.metadata.result == 'success' &&
+        (
+          needs.metadata.outputs.mcp_changed != 'true' ||
+          needs.metadata.outputs.source_run_id != '' ||
+          needs.verify_runtime.result == 'success'
+        ) &&
         (
           needs.metadata.outputs.publish == 'true' ||
           needs.metadata.outputs.publish_drivers == 'true' ||
