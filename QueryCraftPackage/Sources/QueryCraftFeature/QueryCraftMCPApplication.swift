@@ -55,6 +55,7 @@ public enum QueryCraftMCPApplication {
         var authorizeCredentials = false
         var componentAction: String?
         var skillDestination: URL?
+        var skillTarget: MCPSkillTarget?
         var index = 0
         while index < arguments.count {
             switch arguments[index] {
@@ -66,7 +67,7 @@ public enum QueryCraftMCPApplication {
             case "--skill-target":
                 index += 1
                 guard index < arguments.count, let target = MCPSkillTarget(rawValue: arguments[index]) else { throw MCPFailure("--skill-target requires shared, codex or claude.") }
-                skillDestination = target.directory
+                skillTarget = target
             case "--check-drivers": checkDrivers = true
             case "--authorize-credentials": authorizeCredentials = true
             case "--stdio": break
@@ -79,10 +80,13 @@ public enum QueryCraftMCPApplication {
             }
             index += 1
         }
+        if skillDestination == nil, let skillTarget {
+            skillDestination = skillTarget.directory(in: FileManager.default.homeDirectoryForCurrentUser, identity: MCPServerIdentity(directory: directory))
+        }
         if let componentAction {
             let componentRoot = directory.appending(path: "MCP")
             let host = (try? JSONDecoder().decode(MCPComponentHost.self, from: Data(contentsOf: componentRoot.appending(path: "host.json")))) ?? .current
-            let catalog = MCPComponentCatalog()
+            let catalog = MCPComponentCatalog(identity: MCPServerIdentity(directory: directory))
             let installation = MCPInstallation(root: componentRoot, catalog: catalog, host: host)
             let service = MCPServiceManager(directory: directory)
             let wasRunningHTTP = await service.isRunning()
@@ -152,7 +156,7 @@ public enum QueryCraftMCPApplication {
 
     static func makeServer(runtime: MCPRuntime) async -> Server {
         await runtime.startMaintenance()
-        let server = Server(name: "QueryCraft", version: version, instructions: MCPToolCatalog.guidedInstructions,
+        let server = Server(name: runtime.serverIdentity.displayName, version: version, instructions: MCPToolCatalog.guidedInstructions,
             capabilities: .init(resources: .init(), tools: .init()))
         await server.withMethodHandler(ListTools.self) { _ in .init(tools: try await runtime.tools()) }
         await server.withMethodHandler(CallTool.self) { params in

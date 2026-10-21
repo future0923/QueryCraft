@@ -12,6 +12,7 @@ actor MCPRuntime {
         var transaction = false
         let mode: MCPExecutionMode
     }
+    let serverIdentity: MCPServerIdentity
     let store: MCPPolicyStore
     let repository: SQLiteConnectionProfileRepository
     let credentials: any CredentialStore
@@ -26,6 +27,7 @@ actor MCPRuntime {
     private var maintenance: Task<Void, Never>?
 
     init(directory: URL, credentials: (any CredentialStore)? = nil, registry: DatabaseDriverRegistry = .shared) {
+        serverIdentity = MCPServerIdentity(directory: directory)
         store = MCPPolicyStore(directory: directory)
         history = MCPHistoryStore(directory: directory)
         repository = SQLiteConnectionProfileRepository(databaseURL: directory.appending(path: "QueryCraft.sqlite"))

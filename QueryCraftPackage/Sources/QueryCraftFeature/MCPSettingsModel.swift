@@ -19,12 +19,17 @@ final class MCPSettingsModel {
     var checkingComponents = false
     @ObservationIgnored private var componentTask: Task<Void, Never>?
     private let skillHomeDirectory: URL
-    var skillDirectory: URL { skillTarget.directory(in: skillHomeDirectory) }
+    var serverIdentity: MCPServerIdentity { MCPServerIdentity(directory: directory) }
+    var skillDirectory: URL { skillTarget.directory(in: skillHomeDirectory, identity: serverIdentity) }
     private let historyStore: MCPHistoryStore
     var profiles: [ConnectionProfile] = []
     var groups: [ConnectionGroup] = []
     var installedVersion: String?
     var availableVersion: String?
+    var runtimeUpdateAvailable: Bool {
+        guard let installedVersion, let availableVersion else { return false }
+        return availableVersion.compare(installedVersion, options: .numeric) == .orderedDescending
+    }
     var executable = ""
     var error: String?
     var status = ""
@@ -57,6 +62,14 @@ final class MCPSettingsModel {
     var transport = "stdio"
     var section = "access"
     var authorizationStep = "connections"
+    var connectionFilterVisible = false
+    var scopeEditorConnection: ConnectionProfile?
+    var showsHTTPSettings = false
+    var databaseNameDrafts: [UUID: String] = [:]
+    var databaseSearches: [UUID: String] = [:]
+    var lastRestrictedMode: MCPExecutionMode = .readOnly
+    var settingsScrollTarget: String?
+    var settingsNavigationRevision = 0
     private let store: MCPPolicyStore
     private let directory: URL
     private let installation: MCPInstallation
@@ -64,19 +77,23 @@ final class MCPSettingsModel {
     private let settingsLoader: @Sendable () async throws -> MCPSettingsSnapshot
     private let checksRemoteComponents: Bool
     private let runtimeChecker: @Sendable () async throws -> MCPSettingsRuntimeStatus
+    private let databaseDiscoverer: (@Sendable (ConnectionProfile) async throws -> [String])?
+    @ObservationIgnored private var databaseDiscoveryRequests: [UUID: UUID] = [:]
     @ObservationIgnored private var activationTask: Task<Void, Never>?
     init(directory: URL = QueryCraftStorageLocation.applicationSupportDirectory,
          installation: MCPInstallation = .shared, service: MCPServiceManager = .shared,
          skillHomeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
-         clientRegistrar: MCPClientRegistration = MCPClientRegistration(),
+         clientRegistrar: MCPClientRegistration? = nil,
          skillInstaller: MCPSkillInstallation? = nil,
          settingsLoader: (@Sendable () async throws -> MCPSettingsSnapshot)? = nil,
-         runtimeChecker: (@Sendable () async throws -> MCPSettingsRuntimeStatus)? = nil) {
+         runtimeChecker: (@Sendable () async throws -> MCPSettingsRuntimeStatus)? = nil,
+         databaseDiscoverer: (@Sendable (ConnectionProfile) async throws -> [String])? = nil) {
+        self.databaseDiscoverer = databaseDiscoverer
         self.checksRemoteComponents = runtimeChecker == nil
         self.skillInstaller = skillInstaller ?? MCPSkillInstallation(cache: directory.appending(path: "SkillPackages"))
         self.directory = directory; self.installation = installation; self.service = service
         self.skillHomeDirectory = skillHomeDirectory
-        self.clientRegistrar = clientRegistrar
+        self.clientRegistrar = clientRegistrar ?? MCPClientRegistration(identity: MCPServerIdentity(directory: directory))
         store = MCPPolicyStore(directory: directory)
         historyStore = MCPHistoryStore(directory: directory)
         let loader = MCPSettingsLoader(directory: directory)
@@ -94,8 +111,11 @@ final class MCPSettingsModel {
     var availableProfiles: [ConnectionProfile] { filteredProfiles.filter { !policy.includesConnection($0) } }
     var allowedProfiles: [ConnectionProfile] { filteredProfiles.filter { policy.includesConnection($0) } }
     func removeConnection(_ profile: ConnectionProfile) {
-        // Expand group/all grants before removing a member so it cannot remain implicitly allowed.
-        policy.connectionIDs = Set(authorizedProfiles.map(\.id)); policy.groupIDs = []; policy.allConnections = false
+        guard policy.includesConnection(profile) else { return }
+        // Materialize current grants, but keep unrelated groups' future-member grants intact.
+        policy.connectionIDs.formUnion(authorizedProfiles.map(\.id))
+        policy.allConnections = false
+        if let groupID = profile.groupID { policy.groupIDs.remove(groupID) }
         policy.connectionIDs.remove(profile.id)
     }
     func captureQueryTimeout() {
@@ -162,6 +182,7 @@ final class MCPSettingsModel {
             let (snapshot, executable) = try await (loaded, path)
             try Task.checkCancellation()
             policy = snapshot.policy; profiles = snapshot.connections.profiles; groups = snapshot.connections.groups
+            if policy.mode != .fullAccess { lastRestrictedMode = policy.mode }
             self.executable = executable
             didLoad = true; error = nil
         } catch is CancellationError {
@@ -211,7 +232,17 @@ final class MCPSettingsModel {
             await checkRuntimeStatus()
             let snapshot = try await refreshed
             // Refresh the connection catalog without replacing unsaved authorization edits.
-            profiles = snapshot.connections.profiles; groups = snapshot.connections.groups
+            let refreshedProfiles = snapshot.connections.profiles
+            let oldProfiles = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+            let currentProfiles = Dictionary(uniqueKeysWithValues: refreshedProfiles.map { ($0.id, $0) })
+            let cachedIDs = Set(databaseChoices.keys).union(databaseChoiceErrors.keys).union(loadingDatabaseChoices)
+            for id in cachedIDs where oldProfiles[id] != currentProfiles[id] {
+                databaseChoices[id] = nil
+                databaseChoiceErrors[id] = nil
+                databaseDiscoveryRequests[id] = nil
+                loadingDatabaseChoices.remove(id)
+            }
+            profiles = refreshedProfiles; groups = snapshot.connections.groups
             await inspectSkill()
             await inspectClientRegistration()
             if section == "activity" { await loadHistory() }
@@ -237,9 +268,9 @@ final class MCPSettingsModel {
     func inspectSkill() async {
         let target = skillTarget
         do {
-            let state = try await skillInstaller.status(at: target.directory(in: skillHomeDirectory))
+            let state = try await skillInstaller.status(at: target.directory(in: skillHomeDirectory, identity: serverIdentity))
             guard skillTarget == target else { return }
-            skillStatus = state; installedSkillVersion = await skillInstaller.installedVersion(at: target.directory(in: skillHomeDirectory)); skillError = nil
+            skillStatus = state; installedSkillVersion = await skillInstaller.installedVersion(at: target.directory(in: skillHomeDirectory, identity: serverIdentity)); skillError = nil
         } catch { if skillTarget == target { skillError = error.localizedDescription; skillStatus = nil } }
     }
     func changeSkillInstallation(install: Bool) async {
@@ -250,11 +281,11 @@ final class MCPSettingsModel {
         do {
             if install {
                 installationProgress = .init(phase: .checking)
-                try await skillInstaller.install(at: target.directory(in: skillHomeDirectory), mcpVersion: installedVersion) { [weak self] progress in
+                try await skillInstaller.install(at: target.directory(in: skillHomeDirectory, identity: serverIdentity), mcpVersion: installedVersion) { [weak self] progress in
                     await self?.updateInstallationProgress(progress)
                 }
             }
-            else { try await skillInstaller.uninstall(at: target.directory(in: skillHomeDirectory)) }
+            else { try await skillInstaller.uninstall(at: target.directory(in: skillHomeDirectory, identity: serverIdentity)) }
             await inspectSkill()
             status = AppCopy.current.text("Skill 已更新，重新打开客户端后生效", "Skill updated; reopen your client to load it")
         } catch { skillError = error.localizedDescription }
@@ -347,8 +378,31 @@ final class MCPSettingsModel {
     func copyConfiguration() { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(configuration, forType: .string) }
     func discoverDatabases(for id: UUID) async {
         guard !loadingDatabaseChoices.contains(id), let profile = profiles.first(where: { $0.id == id }) else { return }
+        let requestID = UUID()
+        databaseDiscoveryRequests[id] = requestID
         loadingDatabaseChoices.insert(id)
-        defer { loadingDatabaseChoices.remove(id) }
+        defer {
+            if databaseDiscoveryRequests[id] == requestID {
+                loadingDatabaseChoices.remove(id)
+                databaseDiscoveryRequests[id] = nil
+            }
+        }
+        do {
+            let choices: [String]
+            if let databaseDiscoverer { choices = try await databaseDiscoverer(profile) }
+            else { choices = try await fetchDatabaseChoices(profile) }
+            try Task.checkCancellation()
+            guard databaseDiscoveryRequests[id] == requestID, profiles.first(where: { $0.id == id }) == profile else { return }
+            databaseChoices[id] = Array(Set(choices)).sorted()
+            databaseChoiceErrors[id] = nil
+        } catch {
+            if !(error is CancellationError), databaseDiscoveryRequests[id] == requestID,
+               profiles.first(where: { $0.id == id }) == profile {
+                databaseChoiceErrors[id] = error.localizedDescription
+            }
+        }
+    }
+    private func fetchDatabaseChoices(_ profile: ConnectionProfile) async throws -> [String] {
         let runtime = MCPRuntime(directory: directory, credentials: KeychainCredentialStore(directory: directory))
         do {
             let session = try await runtime.connect(profile, database: profile.defaultDatabase, mode: .readOnly)
@@ -358,12 +412,14 @@ final class MCPSettingsModel {
                     choices = try await session.fetchObjects(in: profile.defaultDatabase ?? (profile.databaseType == .kafka ? "Kafka" : "")).map(\.name)
                 } else { choices = try await session.fetchDatabases() }
                 try Task.checkCancellation()
-                databaseChoices[id] = Array(Set(choices)).sorted()
-                databaseChoiceErrors[id] = nil
                 await session.close()
+                await runtime.shutdown()
+                return choices
             } catch { await session.close(); throw error }
-        } catch { databaseChoiceErrors[id] = error.localizedDescription }
-        await runtime.shutdown()
+        } catch {
+            await runtime.shutdown()
+            throw error
+        }
     }
     func rule(for id: UUID) -> MCPConnectionPolicy { policy.connections[id.uuidString] ?? .init() }
     func updateRule(for id: UUID, _ update: (inout MCPConnectionPolicy) -> Void) {

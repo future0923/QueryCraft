@@ -5,25 +5,28 @@ enum MCPSkillTarget: String, CaseIterable, Sendable {
     case shared, codex, claude
     var title: String { switch self { case .shared: "Shared (.agents)"; case .codex: "Codex"; case .claude: "Claude Code" } }
     var directory: URL { directory(in: FileManager.default.homeDirectoryForCurrentUser) }
-    func directory(in homeDirectory: URL) -> URL {
+    func directory(in homeDirectory: URL, identity: MCPServerIdentity = .production) -> URL {
         let folder = switch self { case .shared: ".agents"; case .codex: ".codex"; case .claude: ".claude" }
-        return homeDirectory.appending(path: "\(folder)/skills/querycraft")
+        return homeDirectory.appending(path: "\(folder)/skills/\(identity.skillName)")
     }
 }
 actor MCPSkillInstallation {
     enum Status: String, Sendable { case notInstalled, current, updateAvailable, modified }
-    struct Manifest: Codable { let version: String; let files: [String: String]; var build: String?; var release: MCPComponentRelease? }
+    struct Manifest: Codable { let version: String; let files: [String: String]; var build: String?; var release: MCPComponentRelease?; var environment: String? = nil }
     static let version = "1.0.0" // Local fixture compatibility; published versions come from the catalog.
     static let manifestName = ".querycraft-managed.json"
+    private let identity: MCPServerIdentity
     private let sourceOverride: URL?
     private let catalog: MCPComponentCatalog
     private let host: MCPComponentHost
     private let cache: URL
     private var available: MCPComponentRelease?
     private var checkedMCPVersion: String?
-    init(source: URL? = nil, catalog: MCPComponentCatalog = MCPComponentCatalog(),
-         host: MCPComponentHost = .current, cache: URL = QueryCraftStorageLocation.applicationSupportDirectory.appending(path: "SkillPackages")) {
-        sourceOverride = source; self.catalog = catalog; self.host = host; self.cache = source.map { $0.deletingLastPathComponent().appending(path: ".skill-cache") } ?? cache
+    init(source: URL? = nil, catalog: MCPComponentCatalog? = nil,
+         host: MCPComponentHost = .current, cache: URL = QueryCraftStorageLocation.applicationSupportDirectory.appending(path: "SkillPackages"),
+         identity: MCPServerIdentity? = nil) {
+        self.identity = identity ?? MCPServerIdentity(directory: cache.deletingLastPathComponent())
+        sourceOverride = source; self.catalog = catalog ?? MCPComponentCatalog(identity: self.identity); self.host = host; self.cache = source.map { $0.deletingLastPathComponent().appending(path: ".skill-cache") } ?? cache
     }
     func checkForUpdates(mcpVersion: String?) async throws -> String {
         if sourceOverride != nil { return Self.version }
@@ -42,7 +45,8 @@ actor MCPSkillInstallation {
         let actual = try hashes(in: destination)
         guard let data = try? Data(contentsOf: destination.appending(path: Self.manifestName)),
               let manifest = try? JSONDecoder().decode(Manifest.self, from: data), manifest.files == actual else { return .modified }
-        if let sourceOverride { return actual == (try hashes(in: sourceOverride)) ? .current : .updateAvailable }
+        if identity == .development && manifest.environment != identity.clientName { return .updateAvailable }
+        if let sourceOverride { return actual == (try expectedHashes(in: sourceOverride)) ? .current : .updateAvailable }
         if let release = manifest.release, let checkedMCPVersion,
            (try? release.validate(host: host, mcpVersion: checkedMCPVersion)) == nil { return .updateAvailable }
         if let available, DatabaseDriverReleaseIdentity(version: available.version, build: available.build)
@@ -88,9 +92,9 @@ actor MCPSkillInstallation {
             version = release.version; build = release.build; selectedRelease = release
         }
         await onProgress(.init(phase: .verifying))
-        let bundled = try hashes(in: source)
+        let bundled = try expectedHashes(in: source)
         guard bundled["SKILL.md"] != nil else { throw MCPFailure("QueryCraft skill entrypoint is missing.") }
-        if state == .current, let sourceOverride, try hashes(in: sourceOverride) == hashes(in: destination) { return }
+        if state == .current, let sourceOverride, try expectedHashes(in: sourceOverride) == hashes(in: destination) { return }
         let parent = destination.deletingLastPathComponent()
         await onProgress(.init(phase: .installing))
         try fm.createDirectory(at: parent, withIntermediateDirectories: true)
@@ -98,7 +102,9 @@ actor MCPSkillInstallation {
         let backup = parent.appending(path: ".querycraft-backup-" + UUID().uuidString)
         defer { try? fm.removeItem(at: staged) }
         try fm.copyItem(at: source, to: staged)
-        let manifest = Manifest(version: version, files: bundled, build: build, release: selectedRelease)
+        if identity == .development { try developmentEntrypoint(in: source).write(to: staged.appending(path: "SKILL.md"), options: .atomic) }
+        let manifest = Manifest(version: version, files: bundled, build: build, release: selectedRelease,
+            environment: identity == .development ? identity.clientName : nil)
         try JSONEncoder().encode(manifest).write(to: staged.appending(path: Self.manifestName), options: .atomic)
         guard try hashes(in: staged) == bundled else { throw MCPFailure("Skill staging verification failed.") }
         // Recheck after the network await, preserving edits made during download.
@@ -116,6 +122,29 @@ actor MCPSkillInstallation {
         guard state != .modified else { throw MCPFailure("This skill has local or unmanaged changes and was preserved.") }
         if state != .notInstalled { try FileManager.default.removeItem(at: destination) }
     }
+    private func expectedHashes(in source: URL) throws -> [String: String] {
+        var files = try hashes(in: source)
+        if identity == .development {
+            files["SKILL.md"] = SHA256.hash(data: try developmentEntrypoint(in: source)).map { String(format: "%02x", $0) }.joined()
+        }
+        return files
+    }
+    private func developmentEntrypoint(in source: URL) throws -> Data {
+        let text = try String(contentsOf: source.appending(path: "SKILL.md"), encoding: .utf8)
+        var lines = text.components(separatedBy: "\n")
+        guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---"),
+              let name = lines[1..<end].firstIndex(where: { $0 == "name: querycraft" }),
+              let description = lines[1..<end].firstIndex(where: { $0.hasPrefix("description:") }) else {
+            throw MCPFailure("Cannot identify the QueryCraft skill entrypoint; the downloaded source was preserved.")
+        }
+        lines[name] = "name: querycraft-dev"
+        lines[description] = "description: Use QueryCraft Dev MCP for database work explicitly targeting the development environment. Requires the querycraft-dev MCP server; use the querycraft skill for the production environment."
+        var body = lines[(end + 1)...].joined(separator: "\n")
+        body = body.replacingOccurrences(of: "# QueryCraft\n", with: "# QueryCraft Dev\n")
+        body = "\nUse only the `querycraft-dev` MCP server (`QueryCraft Dev`) for this skill. Clients may normalize its server prefix. If this server is unavailable, reconnect it; do not fall back to `querycraft`. Database permissions still come from the selected server.\n" + body
+        return Data((lines[...end].joined(separator: "\n") + "\n" + body).utf8)
+    }
+
     private func rejectLink(_ url: URL) throws {
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         if attributes?[.type] as? FileAttributeType == .typeSymbolicLink {

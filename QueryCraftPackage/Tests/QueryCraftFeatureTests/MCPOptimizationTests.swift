@@ -172,6 +172,35 @@ struct MCPOptimizationTests {
         #expect(await driver.createdCount == 1)
         await runtime.shutdown()
     }
+    @Test func developmentSkillIsIndependentAndPreservesProductionAndSource() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appending(path: "source"), home = root.appending(path: "Home")
+        try FileManager.default.createDirectory(at: source.appending(path: "references"), withIntermediateDirectories: true)
+        let original = Data("---\nname: querycraft\ndescription: QueryCraft database tools.\n---\n\n# QueryCraft\n\nRead [SQL](references/sql.md).\n".utf8)
+        try original.write(to: source.appending(path: "SKILL.md"))
+        try Data("SQL guide".utf8).write(to: source.appending(path: "references/sql.md"))
+        let production = MCPSkillInstallation(source: source, identity: .production)
+        let development = MCPSkillInstallation(source: source, identity: .development)
+        for target in MCPSkillTarget.allCases {
+            let prod = target.directory(in: home), dev = target.directory(in: home, identity: .development)
+            #expect(prod.lastPathComponent == "querycraft" && dev.lastPathComponent == "querycraft-dev")
+            try await production.install(at: prod)
+            try await development.install(at: dev)
+            #expect(try Data(contentsOf: prod.appending(path: "SKILL.md")) == original)
+            #expect(try Data(contentsOf: source.appending(path: "SKILL.md")) == original)
+            #expect(try await development.status(at: dev) == .current)
+            let entry = try String(contentsOf: dev.appending(path: "SKILL.md"), encoding: .utf8)
+            #expect(entry.contains("name: querycraft-dev") && entry.contains("`querycraft-dev` MCP server"))
+            #expect(try String(contentsOf: dev.appending(path: "references/sql.md"), encoding: .utf8) == "SQL guide")
+            try await development.install(at: dev)
+            try Data((entry + "User workflow\n").utf8).write(to: dev.appending(path: "SKILL.md"))
+            #expect(try await development.status(at: dev) == .modified)
+            await #expect(throws: MCPFailure.self) { try await development.install(at: dev) }
+            await #expect(throws: MCPFailure.self) { try await development.uninstall(at: dev) }
+            #expect(try Data(contentsOf: prod.appending(path: "SKILL.md")) == original)
+        }
+    }
     @Test func installedSkillRefusesSymlinkAndUnmanagedFiles() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

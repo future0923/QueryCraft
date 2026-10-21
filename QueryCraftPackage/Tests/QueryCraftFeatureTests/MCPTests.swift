@@ -121,6 +121,21 @@ struct MCPTests {
             if client == "Cherry Studio" { #expect(server["isActive"] as? Bool == true); #expect(server["type"] as? String == "stdio") }
         }
     }
+    @Test func developmentClientTemplatesUseSeparateNames() throws {
+        for client in MCPClientConfiguration.clients {
+            for http in [false, true] where !http || MCPClientConfiguration.supportsHTTP(client) {
+                let config = MCPClientConfiguration.make(client: client, executable: "/tmp/QueryCraftDev/MCP/bin/querycraft-mcp",
+                    dataDirectory: "/tmp/QueryCraftDev/", http: http ? MCPHTTPSettings() : nil)
+                if client == "Codex" { #expect(config.hasPrefix("[mcp_servers.querycraft-dev]")); continue }
+                if client == "DeepSeek Harness" { #expect(config.contains("serverName: querycraft-dev")); continue }
+                let root = try #require(JSONSerialization.jsonObject(with: Data(config.utf8)) as? [String: [String: [String: Any]]])
+                let key = client == "VS Code" ? "servers" : client == "OpenCode" ? "mcp" : "mcpServers"
+                let server = try #require(root[key]?["querycraft-dev"])
+                #expect(root[key]?["querycraft"] == nil)
+                if client == "Cherry Studio" { #expect(server["name"] as? String == "QueryCraft Dev") }
+            }
+        }
+    }
     @Test func revocationIsReadFromDisk() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

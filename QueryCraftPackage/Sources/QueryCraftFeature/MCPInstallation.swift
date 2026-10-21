@@ -5,6 +5,7 @@ actor MCPInstallation {
     static let shared = MCPInstallation()
     private var installing = false
     let root: URL
+    private let identity: MCPServerIdentity
     private let localPackage: URL?
     let catalog: MCPComponentCatalog
     let host: MCPComponentHost
@@ -18,8 +19,9 @@ actor MCPInstallation {
             ? root.appending(path: "bin/querycraft-mcp") : appURL.appending(path: "Contents/MacOS/querycraft-mcp")
     }
     init(root: URL = QueryCraftStorageLocation.applicationSupportDirectory.appending(path: "MCP"),
-         localPackage: URL? = nil, catalog: MCPComponentCatalog = MCPComponentCatalog(), host: MCPComponentHost = .current) {
-        self.root = root; self.localPackage = localPackage; self.catalog = catalog; self.host = host
+         localPackage: URL? = nil, catalog: MCPComponentCatalog? = nil, host: MCPComponentHost = .current) {
+        self.identity = MCPServerIdentity(directory: root.deletingLastPathComponent())
+        self.root = root; self.localPackage = localPackage; self.catalog = catalog ?? MCPComponentCatalog(identity: self.identity); self.host = host
     }
     func installedVersion() async throws -> String? {
         let binary = appURL.appending(path: "Contents/MacOS/querycraft-mcp")
@@ -71,7 +73,7 @@ actor MCPInstallation {
             try await MCPComponentArchive.extract(archive, into: unpacked, root: "QueryCraftMCP")
             try selected.verifyPayload(at: unpacked.appending(path: "QueryCraftMCP/component.json"))
             app = unpacked.appending(path: "QueryCraftMCP/QueryCraft MCP.app")
-            identity = selected.identity
+            identity = selected.identity + (self.identity == .development ? "-dev" : "")
             release = selected
         }
         await onProgress(.init(phase: .verifying))
@@ -94,28 +96,28 @@ actor MCPInstallation {
                   (try? JSONDecoder().decode(MCPComponentRelease.self, from: data)) == release else {
                 throw MCPFailure("A different package already uses this MCP version and build.")
             }
-            try verify(versionRoot.appending(path: "QueryCraft MCP.app"))
+            try verify(versionRoot.appending(path: self.identity.runtimeAppName))
         } else {
             try fm.createDirectory(at: versionRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             do {
-                try fm.moveItem(at: app, to: versionRoot.appending(path: "QueryCraft MCP.app"))
+                try fm.moveItem(at: app, to: versionRoot.appending(path: self.identity.runtimeAppName))
                 if let release { try JSONEncoder().encode(release).write(to: versionRoot.appending(path: "release.json"), options: .atomic) }
-                _ = try await MCPProcess.run(versionRoot.appending(path: "QueryCraft MCP.app/Contents/MacOS/querycraft-mcp"), arguments: ["--self-test"])
+                _ = try await MCPProcess.run(versionRoot.appending(path: self.identity.runtimeAppName + "/Contents/MacOS/querycraft-mcp"), arguments: ["--self-test"])
             } catch { try? fm.removeItem(at: versionRoot); throw error }
         }
         let bin = root.appending(path: "bin")
         try fm.createDirectory(at: bin, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let launcherStage = bin.appending(path: ".launcher-" + UUID().uuidString)
         defer { try? fm.removeItem(at: launcherStage) }
-        try fm.copyItem(at: versionRoot.appending(path: "QueryCraft MCP.app/Contents/Helpers/querycraft-mcp-launcher"), to: launcherStage)
+        try fm.copyItem(at: versionRoot.appending(path: self.identity.runtimeAppName + "/Contents/Helpers/querycraft-mcp-launcher"), to: launcherStage)
         try MCPComponentArchive.verifySignature(launcherStage)
         guard rename(launcherStage.path, bin.appending(path: "querycraft-mcp").path) == 0 else { throw MCPFailure("Cannot install the MCP launcher.") }
         try JSONEncoder().encode(host).write(to: root.appending(path: "host.json"), options: .atomic)
         if let old = try? fm.destinationOfSymbolicLink(atPath: root.appending(path: "Current").path),
-           old != "Versions/" + identity + "/QueryCraft MCP.app" {
+           old != "Versions/" + identity + "/" + self.identity.runtimeAppName {
             try MCPComponentArchive.replaceLink(at: root.appending(path: "Previous"), with: old)
         }
-        try MCPComponentArchive.replaceLink(at: root.appending(path: "Current"), with: "Versions/" + identity + "/QueryCraft MCP.app")
+        try MCPComponentArchive.replaceLink(at: root.appending(path: "Current"), with: "Versions/" + identity + "/" + self.identity.runtimeAppName)
         // Keep old versions and the legacy app until clients/sessions no longer use them.
     }
     func rollback() async throws {
@@ -224,17 +226,19 @@ enum MCPClientConfiguration {
             let encoder = JSONEncoder(); encoder.outputFormatting = .withoutEscapingSlashes
             return String(decoding: (try? encoder.encode(s)) ?? Data(), as: UTF8.self)
         }
+        let identity = MCPServerIdentity(directory: URL(fileURLWithPath: dataDirectory, isDirectory: true))
+        let name = identity.clientName
         let args = ["--stdio", "--data-dir", dataDirectory]
         let array = "[" + args.map(quoted).joined(separator: ", ") + "]"
         if http != nil && !supportsHTTP(client) {
             return AppCopy.current.text("此客户端当前提供本地 stdio 配置，请切换至「本地 stdio」。", "Select Local stdio for this client's supported template.")
         }
         if client == "Codex" {
-            if let http { return "[mcp_servers.querycraft]\nurl = \(quoted(http.endpoint))\n\n[mcp_servers.querycraft.http_headers]\nAuthorization = \(quoted("Bearer " + http.token))" }
-            return "[mcp_servers.querycraft]\ncommand = \(quoted(executable))\nargs = \(array)"
+            if let http { return "[mcp_servers.\(name)]\nurl = \(quoted(http.endpoint))\n\n[mcp_servers.\(name).http_headers]\nAuthorization = \(quoted("Bearer " + http.token))" }
+            return "[mcp_servers.\(name)]\ncommand = \(quoted(executable))\nargs = \(array)"
         }
         if client == "DeepSeek Harness" {
-            return "- insert:\n    - id: mcp-querycraft\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: querycraft\n        transport: stdio\n        command: \(quoted(executable))\n        args: \(array)"
+            return "- insert:\n    - id: mcp-\(name)\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: \(name)\n        transport: stdio\n        command: \(quoted(executable))\n        args: \(array)"
         }
         var config: [String: Any]
         if let http { config = ["url": http.endpoint, "headers": ["Authorization": "Bearer " + http.token], "type": "http"] }
@@ -248,14 +252,14 @@ enum MCPClientConfiguration {
         } else {
             root = "mcpServers"
             if client == "Cherry Studio" {
-                config["name"] = "QueryCraft"; config["description"] = ""; config["isActive"] = true
+                config["name"] = identity.displayName; config["description"] = ""; config["isActive"] = true
                 config["baseUrl"] = http?.endpoint ?? ""
                 config["type"] = http == nil ? "stdio" : "streamableHttp"
                 config.removeValue(forKey: "url")
                 if http == nil { config["env"] = [String: String]() }
             }
         }
-        let data = try? JSONSerialization.data(withJSONObject: [root: ["querycraft": config]], options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        let data = try? JSONSerialization.data(withJSONObject: [root: [name: config]], options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         return String(decoding: data ?? Data(), as: UTF8.self)
     }
 }

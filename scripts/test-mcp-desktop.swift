@@ -1,4 +1,4 @@
-// Run via test-mcp-desktop.py in an isolated, signed harness. No desktop input is simulated.
+// Routine rendering is offscreen. The optional scoped mouse check requires verified screen/input shielding.
 import AppKit
 import Foundation
 import SwiftUI
@@ -29,18 +29,168 @@ func check(_ condition: Bool, _ message: String) throws {
             let model = MCPSettingsModel(directory: root, skillHomeDirectory: root.appending(path: "SkillHome"), clientRegistrar: MCPClientRegistration(home: root.appending(path: "ClientHome"), environment: [:]), skillInstaller: MCPSkillInstallation(source: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appending(path: "Components/Skill/querycraft")))
             model.didLoad = true; model.runtimeStatusLoaded = true; model.policy.enabled = true; model.installedVersion = "0.1.0"; model.availableVersion = "0.1.0"
             model.executable = source.appending(path: "Contents/MacOS/querycraft-mcp").path
-            model.profiles = DatabaseType.allCases.map { type in
-                ConnectionProfile(id: UUID(), name: type.rawValue + " 测试连接", groupID: nil, databaseType: type,
+            model.groups = ["生产环境", "测试环境", "开发环境"].enumerated().map { index, name in
+                ConnectionGroup(id: UUID(), name: name, sortIndex: index, createdAt: Date())
+            }
+            model.profiles = DatabaseType.allCases.enumerated().map { index, type in
+                ConnectionProfile(id: UUID(), name: type.rawValue + " 测试连接", groupID: model.groups[index % 3].id, databaseType: type,
                     host: "127.0.0.1", port: 3306, username: "test", defaultDatabase: nil, tlsMode: .disabled,
                     storesCredential: false, createdAt: Date())
             }
-            model.policy.connectionIDs = Set(model.profiles.prefix(3).map(\.id))
+            model.policy.mode = .fullAccess
+            model.policy.groupIDs = Set(model.groups.map(\.id))
+            for (index, group) in model.groups.enumerated() {
+                model.policy.groupModes[group.id.uuidString] = MCPExecutionMode.allCases[index]
+            }
             model.selectedConnection = model.profiles.first?.id
             for profile in model.profiles {
                 model.policy.connections[profile.id.uuidString] = .init(databases: ["demo"], databaseAccess: .selected)
                 model.databaseChoices[profile.id] = ["demo", "archive", "analytics"]
             }
+            if ProcessInfo.processInfo.environment["QC_MCP_PERMISSION_PERFORMANCE_ONLY"] == "1" {
+                model.groups = []
+                model.profiles = model.profiles.prefix(5).map { profile in
+                    ConnectionProfile(id: profile.id, name: profile.name, groupID: nil, databaseType: profile.databaseType,
+                        host: profile.host, port: profile.port, username: profile.username, defaultDatabase: nil,
+                        tlsMode: .disabled, storesCredential: false, createdAt: profile.createdAt)
+                }
+                model.policy.groupIDs = []; model.policy.connectionIDs = Set(model.profiles.map(\.id))
+                for profile in model.profiles { model.policy.connections[profile.id.uuidString] = .init(mode: .dataWrite) }
+                model.selectSettingsPage("connections")
+                let host = NSHostingView(rootView: MCPSettingsPane(model: model))
+                let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 790, height: 818),
+                    styleMask: [.borderless], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false; window.contentView = host; window.orderBack(nil)
+                defer { window.orderOut(nil); window.contentView = nil; window.close() }
+                try await Task.sleep(for: .milliseconds(300)); host.layoutSubtreeIfNeeded()
+                func popups(_ view: NSView) -> [NSPopUpButton] {
+                    (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap(popups)
+                }
+                print("POPUPS", popups(host).count)
+                let initialPolicy = model.policy
+                if let native = popups(host).first(where: { $0.itemArray.first?.representedObject as? String == "custom" }),
+                   let index = native.itemArray.firstIndex(where: { $0.representedObject as? String == "readOnly" }),
+                   let action = native.action {
+                    native.selectItem(at: index)
+                    NSApp.sendAction(action, to: native.target, from: native)
+                    try check(model.groupSelection(model.permissionGroups[0]) == .readOnly, "native group action did not update policy")
+                    try check(model.profiles.allSatisfy { model.rule(for: $0.id).mode == .readOnly }, "group action skipped a connection")
+                    print("PASS native permission action updates all members without input simulation")
+                    host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield(); host.layoutSubtreeIfNeeded()
+                }
+                if let native = popups(host).first(where: { $0.itemArray.first?.representedObject as? String == "inherited" }),
+                   let index = native.itemArray.firstIndex(where: { $0.representedObject as? String == "fullAccess" }),
+                   let action = native.action {
+                    native.selectItem(at: index)
+                    NSApp.sendAction(action, to: native.target, from: native)
+                    try check(model.profiles.filter { model.rule(for: $0.id).mode == .fullAccess }.count == 1,
+                              "native row action did not update exactly one connection")
+                    print("PASS native row action updates exactly one connection")
+                }
+                model.policy = initialPolicy
+                host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield(); host.layoutSubtreeIfNeeded()
+                model.isBusy = true
+                host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield(); host.layoutSubtreeIfNeeded()
+                let permissionButtons = popups(host).filter { ["custom", "inherited"].contains($0.itemArray.first?.representedObject as? String ?? "") }
+                try check(!permissionButtons.isEmpty && permissionButtons.allSatisfy { !$0.isEnabled }, "busy settings left native permission controls enabled")
+                if let button = permissionButtons.first, let action = button.action {
+                    button.selectItem(at: button.numberOfItems - 1)
+                    NSApp.sendAction(action, to: button.target, from: button)
+                    try check(model.policy == initialPolicy, "disabled native permission control changed policy")
+                }
+                model.isBusy = false
+                host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield(); host.layoutSubtreeIfNeeded()
+                print("PASS native permission controls honor disabled settings")
+                let group = model.permissionGroups[0], profile = model.profiles[0]
+                var timings: [[String: Any]] = []
+                for selection in [MCPPermissionSelection.readOnly, .dataWrite, .fullAccess, .denied, .dataWrite] {
+                    for grouped in [true, false] {
+                        let actualSelection = grouped ? selection : (selection == .readOnly ? .fullAccess : selection == .dataWrite ? .denied : .readOnly)
+                        let start = ContinuousClock.now
+                        if grouped { model.setGroupSelection(actualSelection, for: group) }
+                        else { model.setConnectionSelection(actualSelection, for: profile) }
+                        let setter = start.duration(to: .now)
+                        host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield(); host.layoutSubtreeIfNeeded()
+                        let elapsed = start.duration(to: .now)
+                        func ms(_ d: Duration) -> Double { Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15 }
+                        timings.append(["group": grouped, "selection": actualSelection.rawValue, "setter_ms": ms(setter), "layout_ms": ms(elapsed)])
+                    }
+                }
+                try FileManager.default.createDirectory(at: previews, withIntermediateDirectories: true)
+                try JSONSerialization.data(withJSONObject: timings, options: [.prettyPrinted, .sortedKeys]).write(to: previews.appending(path: "permission-performance.json"))
+                print("PERMISSION_TIMINGS", String(decoding: try JSONSerialization.data(withJSONObject: timings), as: UTF8.self))
+                return
+            }
+            if ProcessInfo.processInfo.environment["QC_MCP_SCOPE_PREVIEW_ONLY"] == "1" {
+                try FileManager.default.createDirectory(at: previews, withIntermediateDirectories: true)
+                model.selectSettingsPage("connections")
+                try await render(model, dark: true, width: 790, height: 818, url: previews.appending(path: "connections.png"))
+                try await render(model, dark: false, width: 490, height: 800, url: previews.appending(path: "narrow-connections.png"))
+                let profile = model.profiles[0]
+                for dark in [false, true] {
+                    try await renderContent(MCPConnectionScopeEditor(model: model, profile: profile), dark: dark,
+                        width: 640, height: 610, url: previews.appending(path: "scope-\(dark ? "dark" : "light").png"))
+                }
+                model.policy.connections[profile.id.uuidString] = .init(databases: [], databaseAccess: .selected)
+                model.databaseChoices[profile.id] = []
+                model.loadingDatabaseChoices.insert(profile.id)
+                try await renderContent(MCPConnectionScopeEditor(model: model, profile: profile), dark: true,
+                    width: 640, height: 610, url: previews.appending(path: "scope-loading.png"))
+                model.loadingDatabaseChoices.remove(profile.id)
+                model.databaseChoiceErrors[profile.id] = "连接暂时不可用，请重试。"
+                try await renderContent(MCPConnectionScopeEditor(model: model, profile: profile), dark: true,
+                    width: 640, height: 610, url: previews.appending(path: "scope-error.png"))
+                model.databaseChoiceErrors[profile.id] = nil
+                try await renderContent(MCPConnectionScopeEditor(model: model, profile: profile), dark: false,
+                    width: 640, height: 610, url: previews.appending(path: "scope-empty.png"))
+                let policy = model.policy
+                let host = NSHostingView(rootView: MCPSettingsPane(model: model))
+                let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 790, height: 818),
+                    styleMask: [.borderless], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false; window.contentView = host; window.orderBack(nil)
+                try await Task.sleep(for: .milliseconds(300))
+                model.navigate(to: .objects)
+                try await Task.sleep(for: .milliseconds(600))
+                try check(window.attachedSheet != nil, "object settings did not open a native sheet")
+                model.scopeEditorConnection = nil
+                try await Task.sleep(for: .milliseconds(600))
+                try check(window.attachedSheet == nil && model.policy == policy, "closing scope sheet changed policy")
+                window.orderOut(nil); window.contentView = nil; window.close()
+                print("PASS scope sheet presents, cancels without changing policy, and renders stable light/dark/loading/error/empty states")
+                return
+            }
+            if ProcessInfo.processInfo.environment["QC_MCP_NAVIGATION_PREVIEW_ONLY"] == "1" {
+                try FileManager.default.createDirectory(at: previews, withIntermediateDirectories: true)
+                model.selectSettingsPage("connections")
+                try await render(model, dark: true, width: 790, height: 818,
+                                 url: previews.appending(path: "single-tabbar-connections.png"))
+                model.groups = []
+                model.profiles = model.profiles.map { profile in
+                    ConnectionProfile(id: profile.id, name: profile.name, groupID: nil, databaseType: profile.databaseType,
+                        host: profile.host, port: profile.port, username: profile.username, defaultDatabase: profile.defaultDatabase,
+                        tlsMode: profile.tlsMode, storesCredential: false, createdAt: profile.createdAt)
+                }
+                model.policy.groupIDs = []; model.policy.connectionIDs = Set(model.profiles.prefix(1).map(\.id))
+                try await render(model, dark: true, width: 790, height: 950,
+                                 url: previews.appending(path: "ungrouped-connection-rows.png"))
+                try await render(model, dark: false, width: 490, height: 800,
+                                 url: previews.appending(path: "narrow-connection-rows.png"))
+                model.connectionFilterVisible = true; model.search = "mysql"
+                try await render(model, dark: false, width: 790, height: 818,
+                                 url: previews.appending(path: "connection-filter.png"))
+                model.connectionFilterVisible = false; model.search = ""
+                model.selectSettingsPage("execution")
+                try await render(model, dark: true, width: 790, height: 818,
+                                 url: previews.appending(path: "single-tabbar-limits.png"))
+                try await render(model, dark: false, width: 490, height: 700,
+                                 url: previews.appending(path: "single-tabbar-narrow.png"))
+                print("PASS focused single-tabbar native previews rendered")
+                return
+            }
             try await measureSettingsLayout(model, previews: previews)
+            if ProcessInfo.processInfo.environment["QC_MCP_INDEX_ISOLATION"] != nil {
+                try await checkSettingsIndexAction(model)
+            }
             if ProcessInfo.processInfo.environment["QC_MCP_MEASURE_ONLY"] == "1" { return }
             try await captureSettings(model, previews: previews)
             return
@@ -243,6 +393,7 @@ func check(_ condition: Bool, _ message: String) throws {
         try FileManager.default.createDirectory(at: previews, withIntermediateDirectories: true)
         model.section = "permissions"; model.authorizationStep = "connections"
         let originalPolicy = model.policy
+        model.historyLoading = true // Directory navigation must not load fixture history from storage.
         let host = NSHostingView(rootView: MCPSettingsPane(model: model))
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 790, height: 818),
                               styleMask: [.borderless], backing: .buffered, defer: false)
@@ -251,102 +402,36 @@ func check(_ condition: Bool, _ message: String) throws {
         try await Task.sleep(for: .milliseconds(300))
         host.layoutSubtreeIfNeeded()
         var timings: [[String: Any]] = []
-        var retainedPages: [String: NSView] = [:]
-        func permissionTabs(_ view: NSView) -> NSTabView? {
-            if let tabs = view as? NSTabView,
-               tabs.tabViewItems.contains(where: { $0.identifier as? String == "connections" }) { return tabs }
-            return view.subviews.lazy.compactMap(permissionTabs).first
-        }
-        if let page = permissionTabs(host)?.selectedTabViewItem?.view {
-            retainedPages["connections"] = page
-        }
-        var toolsScroll: NSScrollView?
-        var toolsScrollOrigin: NSPoint?
-        func pageScroll(_ view: NSView) -> NSScrollView? {
-            if let scroll = view as? NSScrollView,
-               (scroll.documentView?.bounds.height ?? 0) > scroll.contentSize.height { return scroll }
-            return view.subviews.lazy.compactMap(pageScroll).first
-        }
-        let repeats = Int(ProcessInfo.processInfo.environment["QC_MCP_BENCHMARK_REPEAT"] ?? "1") ?? 1
-        print("BEGIN permission layout measurement pid=\(ProcessInfo.processInfo.processIdentifier)")
-        for step in Array(repeating: ["tools", "connections", "tools", "databases", "tools", "overrides", "tools", "connections", "tools"], count: repeats).flatMap({ $0 }) {
+        print("BEGIN grouped permission layout measurement pid=\(ProcessInfo.processInfo.processIdentifier)")
+        for step in ["tools", "execution", "tuning", "ceiling", "tools"] {
             let start = Date()
             model.authorizationStep = step
             host.needsLayout = true; host.layoutSubtreeIfNeeded()
             await Task.yield()
             host.layoutSubtreeIfNeeded()
-            let milliseconds = Date().timeIntervalSince(start) * 1000
-            guard let tabs = permissionTabs(host), let item = tabs.selectedTabViewItem, let page = item.view else {
-                throw CheckFailure(message: "permission category has no native retained host")
-            }
-            try check(item.identifier as? String == step, "permission category selection is stale")
-            let reused = retainedPages[step] != nil
-            if let oldPage = retainedPages[step] {
-                try check(oldPage === page, "permission category rebuilt its native form")
-            }
-            if step == "tools", let scroll = pageScroll(page) {
-                if let toolsScroll, let toolsScrollOrigin {
-                    try check(scroll === toolsScroll && abs(scroll.contentView.bounds.origin.y - toolsScrollOrigin.y) < 1,
-                              "permission category lost its scroll position")
-                } else {
-                    let maximum = max(0, (scroll.documentView?.bounds.height ?? 0) - scroll.contentSize.height)
-                    scroll.contentView.scroll(to: NSPoint(x: 0, y: min(maximum, 120)))
-                    scroll.reflectScrolledClipView(scroll.contentView)
-                    toolsScroll = scroll
-                    toolsScrollOrigin = scroll.contentView.bounds.origin
-                }
-            }
-            retainedPages[step] = page
-            try check(tabs.tabViewItems.count <= 4, "permission page cache is unbounded")
-            timings.append(["step": step, "milliseconds": milliseconds, "reused": reused])
-            try await Task.sleep(for: .milliseconds(30))
+            timings.append(["step": step, "milliseconds": Date().timeIntervalSince(start) * 1000])
         }
-        try check(model.policy == originalPolicy, "permission navigation changed policy")
-        // Revisit after editing the shared model; retained pages must stay live.
-        let disabledProbe = MCPToolCatalog.definitions[0].name
-        model.policy.disabledTools.insert(disabledProbe)
-        model.policy.mode = .dataWrite
-        model.authorizationStep = "connections"
-        host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield(); host.layoutSubtreeIfNeeded()
+        for destination in MCPSettingsDestination.allCases {
+            model.navigate(to: destination)
+            model.scopeEditorConnection = nil // Scope sheets are rendered and checked separately.
+            host.needsLayout = true; host.layoutSubtreeIfNeeded()
+            await Task.yield()
+            host.layoutSubtreeIfNeeded()
+        }
+        try check(model.policy == originalPolicy, "settings directory navigation changed policy")
+        model.section = "permissions"
         model.authorizationStep = "tools"
-        host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield(); host.layoutSubtreeIfNeeded()
-        try check(model.policy.disabledTools.contains(disabledProbe) && model.policy.mode == .dataWrite,
-                  "retained permission category overwrote unsaved edits")
-        func buttons(_ view: NSView) -> [NSButton] {
-            ((view as? NSButton).map { [$0] } ?? []) + view.subviews.flatMap(buttons)
-        }
-        guard let toolsPage = retainedPages["tools"] else { throw CheckFailure(message: "missing tools page") }
-        // SwiftUI exposes AX roles through its own elements; the underlying
-        // NSButtons have AXUnknown. Exclude native popup menus, then use the
-        // form's control order (execution choices followed by tool checkboxes).
-        let choiceButtons = buttons(toolsPage).filter { !($0 is NSPopUpButton) }
-        let radios = Array(choiceButtons.prefix(3))
-        try check(radios.count == 3 && radios.map(\.state) == [.off, .on, .off],
-                  "cached execution picker did not reflect changed permission mode")
-        let checkboxes = Array(choiceButtons.dropFirst(3))
-        let groupedTools = MCPPermissionToolGroup.allCases.flatMap(\.tools)
-        try check(checkboxes.count == groupedTools.count, "cached tools page lost native checkbox controls")
-        for (button, tool) in zip(checkboxes, groupedTools) {
-            try check((button.state == .on) == !model.policy.disabledTools.contains(tool.name),
-                      "cached checkbox has stale policy for \(tool.name)")
-        }
-        model.isBusy = true
-        host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield(); host.layoutSubtreeIfNeeded()
-        try check(buttons(toolsPage).allSatisfy { !$0.isEnabled }, "busy state did not disable cached permission controls")
-        model.isBusy = false
-        model.authorizationStep = "connections"
-        host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield(); host.layoutSubtreeIfNeeded()
-        func editableField(_ view: NSView) -> NSTextField? {
-            if let field = view as? NSTextField, field.isEditable && field.isEnabled { return field }
-            return view.subviews.lazy.compactMap(editableField).first
-        }
-        if let page = retainedPages["connections"], let field = editableField(page), window.makeFirstResponder(field) {
-            model.authorizationStep = "tools"
-            host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield(); host.layoutSubtreeIfNeeded()
-            try check(field.currentEditor() == nil, "hidden permission page retained the field editor")
-        } else { throw CheckFailure(message: "could not verify permission field-editor cleanup") }
+        let probe = MCPToolCatalog.definitions[0].name
+        model.policy.disabledTools.insert(probe)
+        model.policy.mode = .dataWrite
+        model.section = "access"
+        host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield()
+        model.section = "permissions"
+        host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield()
+        try check(model.policy.disabledTools.contains(probe) && model.policy.mode == .dataWrite,
+                  "settings navigation overwrote unsaved permission edits")
         model.policy = originalPolicy
-        print("PASS retained native permission controls reflect policy edits, respect busy state and release field focus")
+        print("PASS complete settings navigation preserves policy and unsaved permission edits")
         model.historyLoading = true // Keep the fixture independent of the pane's history task.
         model.historyLoaded = true
         model.historyRows = (0..<500).map { index in
@@ -410,24 +495,109 @@ func check(_ condition: Bool, _ message: String) throws {
         print("PASS isolated native layout measurement; navigation preserved unsaved policy")
     }
 
+    @MainActor static func checkSettingsIndexAction(_ model: MCPSettingsModel) async throws {
+        guard let isolation = ProcessInfo.processInfo.environment["QC_MCP_INDEX_ISOLATION"] else {
+            throw CheckFailure(message: "settings index interaction requires screen/input isolation")
+        }
+        func requireIsolation() throws {
+            try check(FileManager.default.fileExists(atPath: isolation + "/shield.ready"), "screen/input isolation ended")
+        }
+        try requireIsolation()
+        let originalPolicy = model.policy
+        model.section = "activity"; model.settingsScrollTarget = nil
+        let host = NSHostingView(rootView: MCPSettingsPane(model: model))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 790, height: 818),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "QueryCraft 设置跳转验证 · Esc 退出"
+        window.isReleasedWhenClosed = false; window.contentView = host
+        NSApplication.shared.setActivationPolicy(.accessory)
+        window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()) + 2)
+        window.center(); window.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        defer {
+            window.orderOut(nil); window.contentView = nil; window.close()
+            NSApplication.shared.setActivationPolicy(.prohibited)
+        }
+        func click(_ target: NSWindow, x: CGFloat, fromTop: CGFloat) throws {
+            try requireIsolation()
+            guard let content = target.contentView else { throw CheckFailure(message: "missing interaction content") }
+            let location = NSPoint(x: x, y: content.bounds.height - fromTop)
+            // Deliver only to this synthetic window, without posting global HID events or moving the cursor.
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                guard let event = NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: target.windowNumber,
+                    context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0) else {
+                    throw CheckFailure(message: "could not create scoped mouse event")
+                }
+                target.sendEvent(event)
+            }
+        }
+        try await Task.sleep(for: .milliseconds(400)); host.layoutSubtreeIfNeeded()
+        try click(window, x: 65, fromTop: host.bounds.height - 22)
+        try await Task.sleep(for: .milliseconds(500))
+        guard let sheet = window.attachedSheet, let content = sheet.contentView else {
+            throw CheckFailure(message: "one click did not open the settings index")
+        }
+        // First directory row, deliberately in its blank middle rather than on its text or chevron.
+        try click(sheet, x: content.bounds.width / 2, fromTop: 164)
+        try await Task.sleep(for: .milliseconds(700))
+        try requireIsolation()
+        try check(window.attachedSheet == nil, "single row click did not dismiss the index")
+        try check(model.section == "access" && model.settingsScrollTarget == "access-runtime",
+                  "single row click did not navigate after dismissal")
+        try check(model.policy == originalPolicy, "index action changed the policy")
+        print("PASS one scoped mouse click on a directory row closes the sheet and navigates without changing policy, under verified isolation")
+    }
+
     @MainActor static func captureSettings(_ model: MCPSettingsModel, previews: URL) async throws {
         try FileManager.default.createDirectory(at: previews, withIntermediateDirectories: true)
         let scenarios = [("access", "connections", "stdio"), ("access", "connections", "http"),
-            ("permissions", "connections", "stdio"), ("permissions", "databases", "stdio"),
-            ("permissions", "overrides", "stdio"), ("permissions", "tools", "stdio"), ("activity", "connections", "stdio")]
+            ("permissions", "connections", "stdio"), ("permissions", "objects", "stdio"),
+            ("permissions", "ceiling", "stdio"), ("permissions", "tools", "stdio"),
+            ("permissions", "execution", "stdio"), ("permissions", "tuning", "stdio"),
+            ("activity", "connections", "stdio")]
         for (section, step, transport) in scenarios {
-            model.section = section; model.authorizationStep = step; model.transport = transport
+            model.section = section; model.authorizationStep = step == "objects" ? "connections" : step; model.transport = transport
+            model.showsHTTPSettings = false; model.connectionFilterVisible = false
+            model.settingsScrollTarget = nil
+
+            model.scopeEditorConnection = nil
             for dark in [false, true] {
                 try await render(model, dark: dark, width: 540, height: 660,
                     url: previews.appending(path: "\(section)-\(step)-\(transport)-\(dark ? "dark" : "light").png"))
             }
         }
-        model.section = "permissions"; model.authorizationStep = "databases"
-        try await render(model, dark: false, width: 490, height: 500, url: previews.appending(path: "narrow-databases.png"))
-        model.authorizationStep = "overrides"
-        try await render(model, dark: true, width: 490, height: 500, url: previews.appending(path: "narrow-overrides.png"))
-        model.authorizationStep = "tools"
-        try await render(model, dark: false, width: 490, height: 500, url: previews.appending(path: "narrow-tools.png"))
+        model.section = "permissions"; model.authorizationStep = "connections"; model.scopeEditorConnection = nil; model.settingsScrollTarget = nil
+        try await render(model, dark: true, width: 790, height: 818,
+                         url: previews.appending(path: "flat-connections.png"))
+        model.showPermissionPage("execution")
+        try await render(model, dark: true, width: 790, height: 818,
+                         url: previews.appending(path: "flat-execution.png"))
+        try await render(model, dark: false, width: 490, height: 700,
+                         url: previews.appending(path: "narrow-flat-tabs.png"))
+        model.settingsScrollTarget = nil
+        model.section = "permissions"; model.authorizationStep = "connections"
+
+        model.scopeEditorConnection = nil
+        try await render(model, dark: false, width: 790, height: 950,
+                         url: previews.appending(path: "permissions-aligned.png"))
+        try await render(model, dark: false, width: 490, height: 700,
+                         url: previews.appending(path: "narrow-objects.png"))
+        model.section = "permissions"
+        for step in ["tools", "execution", "tuning", "ceiling"] {
+            model.authorizationStep = step
+            try await render(model, dark: false, width: 490, height: 500, url: previews.appending(path: "narrow-\(step).png"), scrollFraction: 1)
+        }
+        try await renderContent(MCPSettingsIndexView(select: { _ in }), dark: false, width: 640, height: 620,
+                                url: previews.appending(path: "all-settings.png"))
+        let installedVersion = model.installedVersion, availableVersion = model.availableVersion
+        model.section = "access"
+        model.installedVersion = "0.1.0"; model.availableVersion = "0.1.1"
+        try await render(model, dark: true, width: 790, height: 818, url: previews.appending(path: "runtime-update-available.png"))
+        try await render(model, dark: false, width: 490, height: 500, url: previews.appending(path: "narrow-runtime-update.png"))
+        model.installedVersion = installedVersion; model.availableVersion = availableVersion
+        try await renderContent(MCPSettingsReviewView(policy: model.policy, profiles: model.profiles, groups: model.groups, save: {}),
+                                dark: false, width: 660, height: 660, url: previews.appending(path: "save-review.png"))
         model.section = "activity"
         try await render(model, dark: true, width: 490, height: 500, url: previews.appending(path: "narrow-activity.png"))
         try await render(model, dark: false, width: 790, height: 818, url: previews.appending(path: "activity-bottom.png"), scrollFraction: 1)

@@ -13,6 +13,7 @@ actor MCPClientRegistration {
         let root: String
         var isCodex: Bool { root == "mcp_servers" }
     }
+    private let identity: MCPServerIdentity
     private let home: URL
     private let environment: [String: String]
     private let receipts: URL
@@ -21,7 +22,8 @@ actor MCPClientRegistration {
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser,
          environment: [String: String] = ProcessInfo.processInfo.environment,
-         receipts: URL? = nil, codexExecutable: URL? = nil) {
+         receipts: URL? = nil, codexExecutable: URL? = nil, identity: MCPServerIdentity = .production) {
+        self.identity = identity
         self.home = home; self.environment = environment
         self.receipts = receipts ?? home.appending(path: "Library/Application Support/QueryCraft/MCPClientRegistrations")
         self.codexExecutable = codexExecutable
@@ -64,13 +66,18 @@ actor MCPClientRegistration {
         let existing = try await entry(in: original, target: target)
         let desired = try await desiredEntry(configuration, target: target)
         let desiredHash = try hash(desired)
+        let legacy = adding && identity == .development
+            ? try await entry(in: original, target: target, name: "querycraft") : nil
+        let migrateLegacy: Bool
+        if let legacy { migrateLegacy = try ownsLegacyDevelopmentEntry(legacy, desired: desired, target: target) }
+        else { migrateLegacy = false }
         var accepted = try acceptedHashes(target)
         if let existing {
             let digest = try hash(existing)
             guard digest == desiredHash || accepted.contains(digest) else {
                 throw failure("同名 QueryCraft 配置已被修改或由其他程序管理，已保留。请在客户端检查。", "The QueryCraft entry was modified or belongs to another configuration. It has been preserved; review it in your client.")
             }
-            if adding && digest == desiredHash {
+            if adding && digest == desiredHash && !migrateLegacy {
                 // Adopt an exact manually copied entry so later transport updates remain possible.
                 try privateWrite(try JSONEncoder().encode([desiredHash]), to: receipt(target))
                 return nil
@@ -81,8 +88,8 @@ actor MCPClientRegistration {
         let updated: Data
         if target.isCodex {
             updated = try await withCodex(original) { executable, stage, env in
-                if existing != nil {
-                    _ = try await MCPProcess.run(executable, arguments: ["mcp", "remove", "querycraft"], environment: env, workingDirectory: stage)
+                for name in (existing != nil ? [identity.clientName] : []) + (migrateLegacy ? ["querycraft"] : []) {
+                    _ = try await MCPProcess.run(executable, arguments: ["mcp", "remove", name], environment: env, workingDirectory: stage)
                 }
                 let file = stage.appending(path: "config.toml")
                 if adding {
@@ -96,7 +103,8 @@ actor MCPClientRegistration {
         } else {
             var document = try jsonDocument(original)
             var servers = (document[target.root] as? [String: Any]) ?? [:]
-            if adding { servers["querycraft"] = desired } else { servers.removeValue(forKey: "querycraft") }
+            if migrateLegacy { servers.removeValue(forKey: "querycraft") }
+            if adding { servers[identity.clientName] = desired } else { servers.removeValue(forKey: identity.clientName) }
             // Preserve an existing empty container and all unrelated document fields.
             document[target.root] = servers
             updated = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) + Data("\n".utf8)
@@ -156,20 +164,21 @@ actor MCPClientRegistration {
         }
     }
 
-    private func entry(in data: Data?, target: Target) async throws -> [String: Any]? {
+    private func entry(in data: Data?, target: Target, name: String? = nil) async throws -> [String: Any]? {
+        let name = name ?? identity.clientName
         if target.isCodex {
             return try await withCodex(data) { executable, stage, env in
                 let output = try await MCPProcess.run(executable, arguments: ["mcp", "list", "--json"], environment: env, workingDirectory: stage)
                 guard let rows = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [[String: Any]] else { throw MCPFailure("Invalid Codex configuration response.") }
-                guard rows.contains(where: { $0["name"] as? String == "querycraft" }) else { return nil }
-                let entry = try await MCPProcess.run(executable, arguments: ["mcp", "get", "querycraft", "--json"], environment: env, workingDirectory: stage)
+                guard rows.contains(where: { $0["name"] as? String == name }) else { return nil }
+                let entry = try await MCPProcess.run(executable, arguments: ["mcp", "get", name, "--json"], environment: env, workingDirectory: stage)
                 return try JSONSerialization.jsonObject(with: Data(entry.utf8)) as? [String: Any]
             }
         }
         let document = try jsonDocument(data)
         guard let container = document[target.root] else { return nil }
         guard let servers = container as? [String: Any] else { throw invalidJSON() }
-        guard let value = servers["querycraft"] else { return nil }
+        guard let value = servers[name] else { return nil }
         guard let value = value as? [String: Any] else { throw invalidJSON() }
         return value
     }
@@ -178,6 +187,22 @@ actor MCPClientRegistration {
         let data = Data(configuration.utf8)
         guard let entry = try await entry(in: data, target: target) else { throw invalidJSON() }
         return entry
+    }
+
+    private func ownsLegacyDevelopmentEntry(_ entry: [String: Any], desired: [String: Any], target: Target) throws -> Bool {
+        // Codex includes the outer registration name in its parsed entry.
+        var old = entry, new = desired
+        old.removeValue(forKey: "name"); new.removeValue(forKey: "name")
+        if try hash(old) == hash(new) { return true }
+        func directory(_ entry: [String: Any]) -> URL? {
+            let transport = (entry["transport"] as? [String: Any]) ?? entry
+            let args = transport["args"] as? [String] ?? (transport["command"] as? [String]).map { Array($0.dropFirst()) } ?? []
+            guard let index = args.firstIndex(of: "--data-dir"), index + 1 < args.count else { return nil }
+            return URL(fileURLWithPath: args[index + 1], isDirectory: true).standardizedFileURL
+        }
+        guard let oldDirectory = directory(entry), oldDirectory.lastPathComponent == "QueryCraftDev",
+              oldDirectory == directory(desired) else { return false }
+        return try acceptedHashes(target, name: "querycraft").contains(hash(entry))
     }
 
     private func jsonDocument(_ data: Data?) throws -> [String: Any] {
@@ -194,9 +219,13 @@ actor MCPClientRegistration {
         digest(try JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]))
     }
     private func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
-    private func receipt(_ target: Target) -> URL { receipts.appending(path: digest(Data(target.file.standardizedFileURL.path.utf8)) + ".json") }
-    private func acceptedHashes(_ target: Target) throws -> Set<String> {
-        guard let data = try read(receipt(target)) else { return [] }
+    private func receipt(_ target: Target, name: String? = nil) -> URL {
+        let name = name ?? identity.clientName
+        let suffix = name == "querycraft" ? "" : "\n" + name
+        return receipts.appending(path: digest(Data((target.file.standardizedFileURL.path + suffix).utf8)) + ".json")
+    }
+    private func acceptedHashes(_ target: Target, name: String? = nil) throws -> Set<String> {
+        guard let data = try read(receipt(target, name: name)) else { return [] }
         return Set(try JSONDecoder().decode([String].self, from: data))
     }
 

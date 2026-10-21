@@ -85,22 +85,40 @@ actor MCPComponentCatalog {
     struct Envelope: Codable { let payload: Data; let signature: Data }
     struct Catalog: Codable { let schemaVersion: Int; let component: MCPComponentKind; let releases: [Envelope] }
     static let publicKey = "8dcu6cE1Vh6kUXtkeuDsSEWIy6sLbuHaqdnnZhE3rP8="
-    let baseURL: URL
+    let baseURL: URL?
     private let key: Data
     private let session: URLSession
     private let allowsLocalHTTP: Bool
     init(baseURL: URL? = nil, publicKey: Data? = nil, session: URLSession = .shared,
-         allowsLocalHTTP: Bool = false) {
-        self.baseURL = baseURL ?? URL(string: ProcessInfo.processInfo.environment["QUERYCRAFT_COMPONENT_CATALOG_BASE_URL"]
-            ?? Bundle.main.object(forInfoDictionaryKey: "QCComponentCatalogBaseURL") as? String
-            ?? "https://querycraft.debug-tools.cc/components/") ?? URL(string: "https://querycraft.debug-tools.cc/components/")!
-        key = publicKey ?? Data(base64Encoded: Bundle.main.object(forInfoDictionaryKey: "QCComponentPublicKey") as? String ?? Self.publicKey) ?? Data()
+         allowsLocalHTTP: Bool = false, identity: MCPServerIdentity? = nil,
+         environment: [String: String] = ProcessInfo.processInfo.environment) {
+        let identity = identity ?? MCPServerIdentity(directory: QueryCraftStorageLocation.applicationSupportDirectory)
+        self.baseURL = baseURL ?? Self.configuredURL(identity: identity, environment: environment,
+            production: Bundle.main.object(forInfoDictionaryKey: "QCComponentCatalogBaseURL") as? String,
+            development: Bundle.main.object(forInfoDictionaryKey: "QCDevelopmentComponentCatalogBaseURL") as? String)
+        let keyName = identity == .development ? "QCDevelopmentComponentPublicKey" : "QCComponentPublicKey"
+        key = publicKey ?? Data(base64Encoded: Bundle.main.object(forInfoDictionaryKey: keyName) as? String ?? Self.publicKey) ?? Data()
         self.session = session
         #if DEBUG
-        self.allowsLocalHTTP = allowsLocalHTTP || ["127.0.0.1", "localhost", "::1"].contains(self.baseURL.host ?? "")
+        self.allowsLocalHTTP = allowsLocalHTTP || ["127.0.0.1", "localhost", "::1"].contains(self.baseURL?.host ?? "")
         #else
         self.allowsLocalHTTP = false
         #endif
+    }
+    nonisolated static func configuredURL(identity: MCPServerIdentity, environment: [String: String],
+                                         production: String? = nil, development: String? = nil) -> URL? {
+        let production = environment["QUERYCRAFT_COMPONENT_CATALOG_BASE_URL"] ?? production ?? "https://querycraft.debug-tools.cc/components/"
+        guard identity == .development else { return URL(string: production) }
+        guard let value = environment["QUERYCRAFT_DEV_COMPONENT_CATALOG_BASE_URL"] ?? development,
+              let url = URL(string: value), url.host != nil,
+              value.trimmingCharacters(in: CharacterSet(charactersIn: "/")) != production.trimmingCharacters(in: CharacterSet(charactersIn: "/")) else { return nil }
+        return url
+    }
+    private func requireConfiguredSource() throws -> URL {
+        guard let baseURL else {
+            throw MCPFailure(AppCopy.current.text("尚未配置独立开发组件源，已保留本地 Dev 组件；不会下载生产版。", "No separate development component source is configured. Local Dev components were preserved; production downloads are disabled."))
+        }
+        return baseURL
     }
     func validateURL(_ url: URL) throws {
         guard url.user == nil, url.password == nil, url.fragment == nil,
@@ -110,7 +128,7 @@ actor MCPComponentCatalog {
     }
     func releases(_ component: MCPComponentKind) async throws -> [MCPComponentRelease] {
         let file = component == .mcp ? "mcp-\(DatabaseDriverArchitecture.current.rawValue).json" : "skill.json"
-        let url = baseURL.appending(path: file)
+        let url = try requireConfiguredSource().appending(path: file)
         try validateURL(url)
         let (data, response) = try await session.data(for: request(url))
         try validate(response)
@@ -142,6 +160,7 @@ actor MCPComponentCatalog {
     }
     func download(_ release: MCPComponentRelease, to destination: URL,
                   onProgress: @escaping @Sendable (MCPComponentInstallationProgress) async -> Void = { _ in }) async throws {
+        _ = try requireConfiguredSource()
         try validateURL(release.url)
         await onProgress(.init(phase: .downloading, totalBytes: release.size))
         let (bytes, response) = try await session.bytes(for: request(release.url))

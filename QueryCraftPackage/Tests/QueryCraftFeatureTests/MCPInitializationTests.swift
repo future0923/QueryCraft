@@ -8,9 +8,10 @@ struct MCPInitializationTests {
     // connection, not its separate settings-page discovery connection.
     static let codexInitialize = Data(#"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{"experimental":{"codex/auth-change":{}},"extensions":{"openai/form":{}},"elicitation":{"form":{},"url":{}}},"clientInfo":{"name":"codex-mcp-client","title":"Codex","version":"0.162.0-alpha.17.2"}}}"#.utf8)
 
-    @Test(.timeLimit(.minutes(1)))
-    func codexConversationHandshakeDiscoversAndCallsTools() async throws {
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func codexConversationHandshakeDiscoversAndCallsTools(development: Bool) async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+            .appending(path: development ? "QueryCraftDev" : "QueryCraft")
         defer { try? FileManager.default.removeItem(at: root) }
         var policy = MCPPolicy(); policy.enabled = true
         let store = MCPPolicyStore(directory: root); try store.save(policy)
@@ -25,7 +26,7 @@ struct MCPInitializationTests {
         let initialized = try JSONDecoder().decode(Response<Initialize>.self, from: #require(try await replies.next()))
         let info = try initialized.result.get()
         #expect(info.protocolVersion == "2025-06-18")
-        #expect(info.serverInfo.name == "QueryCraft")
+        #expect(info.serverInfo.name == (development ? "QueryCraft Dev" : "QueryCraft"))
         try await pair.client.send(Data(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.utf8))
         try await pair.client.send(Data(#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}"#.utf8))
         let listed = try JSONDecoder().decode(Response<ListTools>.self, from: #require(try await replies.next()))

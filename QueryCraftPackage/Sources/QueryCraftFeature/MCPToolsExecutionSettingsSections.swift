@@ -8,22 +8,7 @@ struct MCPToolsExecutionSettingsSections: View {
     private func copy(_ zh: String, _ en: String) -> String { strings.text(zh, en) }
 
     var body: some View {
-        Section {
-            Picker(copy("执行权限", "Execution access"), selection: $model.policy.mode) {
-                ForEach(MCPExecutionMode.allCases, id: \.rawValue) { Text($0.title).tag($0) }
-            }.pickerStyle(.radioGroup)
-            Text(modeDescription).font(MCPSettingsType.detail).foregroundStyle(.secondary)
-            TextField(copy("查询超时（秒）", "Query timeout (seconds)"), text: Binding(get: {
-                model.policy.queryTimeoutSeconds.map(String.init) ?? ""
-            }, set: { value in
-                if value.trimmingCharacters(in: .whitespaces).isEmpty { model.policy.queryTimeoutSeconds = nil }
-                else if let seconds = Int(value), (0...86400).contains(seconds) { model.policy.queryTimeoutSeconds = seconds }
-            }))
-        } header: { Text(copy("全局执行权限", "Global execution access")) }
-        footer: {
-            Text(copy("超时留空继承 QueryCraft 查询设置，0 表示不限时。驱动能力与连接范围仍然生效。", "Blank timeout inherits QueryCraft settings; 0 means unlimited. Driver capabilities and connection scopes still apply."))
-        }
-        Section(copy("可用工具", "Available tools")) {
+        Section(copy("全局工具开关", "Global tool switches")) {
             HStack {
                 Text(copy("已启用 \(enabledCount) 项", "\(enabledCount) enabled"))
                     .font(MCPSettingsType.detail).foregroundStyle(.secondary)
@@ -34,6 +19,8 @@ struct MCPToolsExecutionSettingsSections: View {
                 }.fixedSize()
             }
         }
+        Text(copy("启用工具不会增加连接的读写权限，每次调用仍按目标连接的实际权限检查。", "Enabling a tool never increases connection access. Every call is checked against its target connection's effective permissions."))
+            .font(MCPSettingsType.detail).foregroundStyle(.secondary)
         ForEach(MCPPermissionToolGroup.allCases) { group in
             MCPPermissionToolSection(group: group, disabledTools: $model.policy.disabledTools)
         }
@@ -44,13 +31,7 @@ struct MCPToolsExecutionSettingsSections: View {
     }
 
     private var enabledCount: Int { MCPToolCatalog.definitions.filter { !model.policy.disabledTools.contains($0.name) }.count }
-    private var modeDescription: String {
-        switch model.policy.mode {
-        case .readOnly: copy("允许查询、查看结构和读取消息。", "Query data, inspect structure and read messages.")
-        case .dataWrite: copy("允许插入及带可验证条件的更新、删除。", "Insert, update and delete using verifiable filters.")
-        case .fullAccess: copy("允许驱动支持的高风险操作；破坏性操作仍需明确确认。", "Allow supported high-risk operations; destructive actions still require confirmation.")
-        }
-    }
+
 }
 
 private struct MCPPermissionToolSection: View {
@@ -58,12 +39,24 @@ private struct MCPPermissionToolSection: View {
     @Binding var disabledTools: Set<String>
 
     var body: some View {
-        Section(group.title) {
+        Section {
             ForEach(group.tools, id: \.name) { tool in
                 Toggle(tool.localizedTitle, isOn: Binding(get: { !disabledTools.contains(tool.name) }, set: { enabled in
                     if enabled { disabledTools.remove(tool.name) } else { disabledTools.insert(tool.name) }
                 }))
                 .toggleStyle(.checkbox).help("querycraft_\(tool.name)\n\(tool.description)")
+            }
+        } header: {
+            HStack {
+                Text(group.title)
+                Spacer()
+                Toggle(AppCopy.current.text("整组启用", "Enable group"), isOn: Binding(
+                    get: { group.tools.allSatisfy { !disabledTools.contains($0.name) } },
+                    set: { enabled in
+                        let names = Set(group.tools.map(\.name))
+                        if enabled { disabledTools.subtract(names) } else { disabledTools.formUnion(names) }
+                    }))
+                    .toggleStyle(.checkbox)
             }
         }
     }

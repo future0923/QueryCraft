@@ -1,0 +1,88 @@
+import SwiftUI
+
+private struct MCPCompactPermissionRowsKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var mcpCompactPermissionRows: Bool {
+        get { self[MCPCompactPermissionRowsKey.self] }
+        set { self[MCPCompactPermissionRowsKey.self] = newValue }
+    }
+}
+
+enum MCPPermissionLayout {
+    static let controlWidth: CGFloat = 180
+    static let scopeWidth: CGFloat = 180
+    static let connectionMinimumWidth: CGFloat = 160
+    static let connectionIdealWidth: CGFloat = 200
+}
+
+struct MCPPermissionGroupSection: View {
+    @Bindable var model: MCPSettingsModel
+    let group: MCPPermissionGroup
+    @Environment(\.mcpCompactPermissionRows) private var compact
+    private func copy(_ zh: String, _ en: String) -> String { AppCopy.current.text(zh, en) }
+    private var selection: MCPPermissionSelection { model.groupSelection(group) }
+
+    var body: some View {
+        Section {
+            HStack {
+                Text(copy("本组批量设置", "Set access for this group"))
+                Spacer(minLength: 8)
+                MCPPermissionPicker(selection: selection, choices: [.custom] + MCPPermissionSelection.accessChoices,
+                    accessibilityLabel: copy("\(group.name)权限", "\(group.name) access")) {
+                        model.setGroupSelection($0, for: group)
+                    }
+                    .frame(width: MCPPermissionLayout.controlWidth, height: 22, alignment: .trailing)
+            }
+            if let mode = selection.mode, mode.rank > model.policy.mode.rank {
+                HStack(alignment: .top, spacing: 10) {
+                    Text(copy("全局上限为“\(model.policy.mode.title)”，本组实际权限仍受该上限约束。", "The global ceiling is \(model.policy.mode.title); this group remains subject to that limit."))
+                        .font(MCPSettingsType.detail).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button(copy("查看限制", "View limit")) { model.showPermissionPage("ceiling") }.fixedSize()
+                }
+            }
+            if !model.visibleProfiles(in: group).isEmpty {
+                Group {
+                    if !compact {
+                        HStack(spacing: 12) {
+                            Text(copy("连接", "Connection"))
+                                .frame(minWidth: MCPPermissionLayout.connectionMinimumWidth,
+                                       idealWidth: MCPPermissionLayout.connectionIdealWidth, maxWidth: .infinity, alignment: .leading)
+                            Text(copy("访问权限", "Access"))
+                                .frame(width: MCPPermissionLayout.controlWidth, alignment: .trailing)
+                            Text(copy("访问范围", "Object scope"))
+                                .frame(width: MCPPermissionLayout.scopeWidth, alignment: .trailing)
+                        }
+                    } else {
+                        Text(copy("连接列表", "Connections")).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .font(MCPSettingsType.detail).foregroundStyle(.secondary)
+            }
+            ForEach(model.visibleProfiles(in: group)) { profile in
+                MCPConnectionPermissionRow(model: model, profile: profile)
+                    .id(profile.id.uuidString)
+            }
+            if let id = group.groupID {
+                Toggle(copy("以后加入本组的连接也自动授权", "Automatically authorize future group members"), isOn: Binding(
+                    get: { model.policy.allConnections || model.policy.groupIDs.contains(id) },
+                    set: { model.setGroupAutomaticGrant($0, for: group) }))
+                .toggleStyle(.checkbox).disabled(model.policy.allConnections)
+                .font(MCPSettingsType.detail)
+                .id("group-future-" + group.id)
+            } else {
+                Text(copy("未分组的新增连接默认不授权；“全部连接”模式除外。", "New ungrouped connections remain unauthorized unless all connections are allowed."))
+                    .font(MCPSettingsType.detail).foregroundStyle(.secondary)
+            }
+        } header: {
+            HStack {
+                Text(group.name)
+                Spacer()
+                let allowed = group.profiles.filter { model.policy.includesConnection($0) }.count
+                Text(copy("\(allowed) / \(group.profiles.count) 个连接已授权", "\(allowed) / \(group.profiles.count) authorized"))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .id(group.id)
+    }
+}

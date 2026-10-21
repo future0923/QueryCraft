@@ -130,4 +130,48 @@ struct MCPClientRegistrationTests {
         #expect(!restored.contains("mcp_servers.querycraft"))
         #expect(!FileManager.default.fileExists(atPath: home.appending(path: ".codex").path))
     }
+    @Test(arguments: ["Claude Code", "Cursor", "VS Code", "OpenCode", "Codex"])
+    func developmentNameMigratesOwnedLegacyAndCoexistsWithProduction(_ client: String) async throws {
+        let home = try temporaryHome(); defer { try? FileManager.default.removeItem(at: home) }
+        let production = MCPClientRegistration(home: home, environment: [:])
+        let development = MCPClientRegistration(home: home, environment: [:], identity: .development)
+        func config(_ directory: String, http: Bool = false) -> String {
+            MCPClientConfiguration.make(client: client, executable: "/tmp/" + directory + "/MCP/bin/querycraft-mcp",
+                dataDirectory: "/tmp/" + directory, http: http ? MCPHTTPSettings() : nil)
+        }
+        let dev = config("QueryCraftDev")
+        let legacy = dev.replacingOccurrences(of: "querycraft-dev", with: "querycraft")
+        _ = try await production.change(client: client, configuration: legacy, adding: true)
+        _ = try await development.change(client: client, configuration: dev, adding: true)
+        #expect(try await development.inspect(client: client, configuration: dev).state == .registered)
+        #expect(try await production.inspect(client: client, configuration: config("QueryCraft")).state == .absent)
+        _ = try await production.change(client: client, configuration: config("QueryCraft"), adding: true)
+        _ = try await development.change(client: client, configuration: config("QueryCraftDev", http: true), adding: true)
+        #expect(try await production.inspect(client: client, configuration: config("QueryCraft")).state == .registered)
+        _ = try await development.change(client: client, configuration: dev, adding: false)
+        #expect(try await production.inspect(client: client, configuration: config("QueryCraft")).state == .registered)
+        #expect(try await development.inspect(client: client, configuration: dev).state == .absent)
+    }
+
+    @Test(arguments: ["Claude Code", "Cursor", "VS Code", "OpenCode"])
+    func developmentDoesNotAdoptProductionReceiptForModifiedEntry(_ client: String) async throws {
+        let home = try temporaryHome(); defer { try? FileManager.default.removeItem(at: home) }
+        let production = MCPClientRegistration(home: home, environment: [:])
+        let development = MCPClientRegistration(home: home, environment: [:], identity: .development)
+        let prod = configuration(client)
+        _ = try await production.change(client: client, configuration: prod, adding: true)
+        let file = try await production.inspect(client: client, configuration: prod).file
+        let root = client == "OpenCode" ? "mcp" : client == "VS Code" ? "servers" : "mcpServers"
+        var document = try object(file), servers = try #require(try object(file)[root] as? [String: Any])
+        servers["querycraft-dev"] = servers["querycraft"]
+        document[root] = servers
+        try JSONSerialization.data(withJSONObject: document).write(to: file)
+        let dev = MCPClientConfiguration.make(client: client, executable: "/tmp/QueryCraftDev/MCP/bin/querycraft-mcp",
+            dataDirectory: "/tmp/QueryCraftDev", http: nil)
+        #expect(try await development.inspect(client: client, configuration: dev).state == .conflict)
+        let before = try Data(contentsOf: file)
+        await #expect(throws: MCPFailure.self) { try await development.change(client: client, configuration: dev, adding: true) }
+        #expect(try Data(contentsOf: file) == before)
+    }
+
 }

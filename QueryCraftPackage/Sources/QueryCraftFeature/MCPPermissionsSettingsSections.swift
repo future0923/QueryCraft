@@ -1,237 +1,81 @@
 import SwiftUI
 
-/// Permission controls share the host settings form, rather than embedding a second sidebar.
 struct MCPPermissionsSettingsSections: View {
     @Bindable var model: MCPSettingsModel
-    let step: String
-    private let strings = AppCopy.current
-    private func copy(_ zh: String, _ en: String) -> String { strings.text(zh, en) }
-    private var selectedProfile: ConnectionProfile? {
-        model.authorizedProfiles.first { $0.id == model.selectedConnection }
-    }
+    @State private var confirmsRevocation = false
+    @FocusState private var searchFocused: Bool
+    private func copy(_ zh: String, _ en: String) -> String { AppCopy.current.text(zh, en) }
 
     var body: some View {
         Section {
-            Picker(copy("权限项目", "Configure"), selection: Binding(get: { model.authorizationStep }, set: { step in
-                var transaction = Transaction(); transaction.disablesAnimations = true
-                withTransaction(transaction) { model.authorizationStep = step }
-            })) {
-                Text(copy("连接", "Connections")).tag("connections")
-                Text(copy("数据库与对象", "Databases and objects")).tag("databases")
-                Text(copy("权限限制", "Permission limits")).tag("overrides")
-                Text(copy("工具与执行", "Tools and execution")).tag("tools")
-            }.pickerStyle(.menu)
-        }
-        // This page's content identity is independent of the shared picker.
-        // Previously opened pages remain alive when another category is selected.
-        switch step {
-        case "connections": connectionScope
-        case "databases": databaseScope
-        case "overrides": permissionOverrides
-        default: MCPToolsExecutionSettingsSections(model: model)
-        }
-    }
-
-    @ViewBuilder private var connectionScope: some View {
-        Section {
             Picker(copy("允许访问", "Allow access to"), selection: $model.policy.allConnections) {
-                Text(copy("指定连接与分组", "Selected connections and groups")).tag(false)
-                Text(copy("全部连接", "All connections")).tag(true)
+                Text(copy("指定分组与连接", "Selected groups and connections")).tag(false)
+                Text(copy("全部连接（含以后新增）", "All connections, including future ones")).tag(true)
             }.pickerStyle(.menu)
-            TextField(copy("搜索连接", "Search connections"), text: $model.search, prompt: Text(copy("搜索连接", "Search connections")))
-                .textFieldStyle(.roundedBorder).labelsHidden()
-                .help(copy("按名称、类型、地址、数据库或 ID 搜索", "Search by name, type, host, database or ID"))
-            Table(model.filteredProfiles) {
-                TableColumn(copy("允许", "Allow")) { profile in
-                    Toggle(profile.name, isOn: Binding(get: { model.policy.includesConnection(profile) }, set: { allowed in
-                        if allowed { model.policy.connectionIDs.insert(profile.id) }
-                        else { model.removeConnection(profile) }
-                    }))
-                    .labelsHidden().toggleStyle(.checkbox).disabled(model.policy.allConnections)
-                }.width(44)
-                TableColumn(copy("连接", "Connection")) { profile in connectionLabel(profile) }
-                TableColumn(copy("驱动", "Driver")) { profile in Text(profile.databaseType.title).font(MCPSettingsType.detail) }.width(90)
-            }
-            .frame(height: 340)
-            .overlay {
-                if model.filteredProfiles.isEmpty && model.didLoad && !model.isBusy && model.error == nil {
-                    Text(copy("没有匹配的连接", "No matching connections")).font(.callout).foregroundStyle(.secondary).allowsHitTesting(false)
-                }
-            }
-            HStack {
-                Text(copy("已允许 \(model.authorizedProfiles.count) 个连接", "\(model.authorizedProfiles.count) connections allowed"))
-                    .font(MCPSettingsType.detail).foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                Menu(copy("选择", "Select")) {
-                    Button(copy("允许搜索结果", "Allow search results")) { model.policy.connectionIDs.formUnion(model.filteredProfiles.map(\.id)) }
-                    Button(copy("移除全部授权", "Remove all grants")) {
-                        model.policy.connectionIDs = []; model.policy.groupIDs = []
-                    }
-                }.fixedSize().disabled(model.policy.allConnections)
-            }
-        } header: { Text(copy("连接访问", "Connection access")) }
-        footer: {
             Text(model.policy.allConnections
-                ? copy("包括以后新增的连接。数据库范围与执行权限仍然生效。", "Includes future connections. Database scopes and execution limits still apply.")
-                : copy("勾选允许访问的连接，或按分组授权。修改后点击保存。", "Select allowed connections, or authorize a group. Save to apply changes."))
-        }
-        if !model.groups.isEmpty {
-            Section(copy("按分组授权", "Authorize groups")) {
-                Group {
-                    ForEach(model.groups) { group in
-                        Toggle(group.name, isOn: Binding(get: { model.policy.groupIDs.contains(group.id) }, set: { allowed in
-                            if allowed { model.policy.groupIDs.insert(group.id) } else { model.policy.groupIDs.remove(group.id) }
-                        })).toggleStyle(.checkbox).disabled(model.policy.allConnections)
-                    }
-                }
-            }
-        }
-    }
-
-    private func connectionLabel(_ profile: ConnectionProfile) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(profile.name).lineLimit(1)
-            Text("\(profile.host):\(String(profile.port))").font(MCPSettingsType.detail).foregroundStyle(.secondary).lineLimit(1)
-        }.help("\(profile.name)\n\(profile.host):\(String(profile.port))\n\(profile.id)")
-    }
-
-    private var connectionSelector: some View {
-        Picker(copy("连接", "Connection"), selection: $model.selectedConnection) {
-            if model.authorizedProfiles.isEmpty {
-                Text(copy("无已授权连接", "No authorized connections")).tag(nil as UUID?)
-            }
-            ForEach(model.authorizedProfiles) { profile in
-                Text(profile.name).tag(Optional(profile.id))
-            }
-        }
-        .pickerStyle(.menu)
-        .disabled(model.authorizedProfiles.isEmpty)
-        .onAppear { selectAuthorizedConnection() }
-        .onChange(of: model.authorizedProfiles.map(\.id)) { selectAuthorizedConnection() }
-    }
-
-    private func selectAuthorizedConnection() {
-        if selectedProfile == nil { model.selectedConnection = model.authorizedProfiles.first?.id }
-    }
-
-    private var databaseScope: some View {
+                 ? copy("当前及以后新增的连接都会授权，操作权限仍按下方设置。", "Current and future connections are authorized, with operation limits configured below.")
+                 : copy("在下方给需要的分组或连接选择权限；其余连接不允许访问。", "Choose access for the groups or connections below; all others remain inaccessible."))
+                .font(MCPSettingsType.detail).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } header: { Text(copy("哪些连接可以访问", "Which connections can AI access?")) }
+        .id("permission-scope")
         Section {
-            connectionSelector
-            if let profile = selectedProfile {
-                Picker(copy("访问范围", "Access scope"), selection: Binding(get: { model.rule(for: profile.id).scope }, set: { value in
-                    model.updateRule(for: profile.id) { $0.databaseAccess = value }
-                })) {
-                    Text(copy("全部", "All")).tag(MCPDatabaseAccess.all)
-                    Text(copy("仅指定名称", "Selected names only")).tag(MCPDatabaseAccess.selected)
-                    Text(copy("禁止访问", "Deny access")).tag(MCPDatabaseAccess.none)
-                }.pickerStyle(.menu)
-                Text(scopeExplanation(profile)).font(MCPSettingsType.detail).foregroundStyle(.secondary)
-                if model.rule(for: profile.id).scope == .selected {
-                    TextField(copy("指定名称", "Allowed names"), text: Binding(get: {
-                        model.rule(for: profile.id).databases?.sorted().joined(separator: ", ") ?? ""
-                    }, set: { value in model.updateRule(for: profile.id) { $0.databases = Set(split(value)) } }))
-                    .help(copy("可手动输入，以逗号分隔", "Enter names separated by commas"))
-                    databasePicker(profile)
+            if !model.policy.enabled {
+                HStack {
+                    Text(copy("MCP 已关闭，所有连接当前均不可访问。", "MCP is disabled. All connections are currently inaccessible."))
+                    Spacer(minLength: 8)
+                    Button(copy("去开启", "Enable MCP")) { model.section = "access" }
                 }
-            } else { unauthorizedHint }
-        } header: { Text(copy("数据库与对象范围", "Database and object scope")) }
-        footer: { Text(copy("切换范围会保留已选名单；指定名单为空时禁止访问。", "Changing scope preserves selected names. An empty selection denies access.")) }
-    }
-
-    private func scopeExplanation(_ profile: ConnectionProfile) -> String {
-        let object: String = switch profile.databaseType {
-        case .redis: copy("Redis DB 编号", "Redis DB numbers")
-        case .elasticsearch: copy("Elasticsearch 索引、别名或数据流", "Elasticsearch indices, aliases or data streams")
-        case .kafka: copy("Kafka Topic", "Kafka topics")
-        default: copy("数据库", "Databases")
+            }
+            if model.connectionFilterVisible || !model.search.isEmpty {
+                HStack(spacing: 10) {
+                    TextField(copy("筛选连接、分组或地址", "Filter connections, groups or hosts"), text: $model.search,
+                              prompt: Text(copy("筛选连接、分组或地址", "Filter connections, groups or hosts")))
+                        .textFieldStyle(.roundedBorder).labelsHidden().focused($searchFocused)
+                        .help(copy("也支持驱动、数据库名称和连接 ID", "Also searches drivers, database names and connection IDs"))
+                    Button(copy("清除", "Clear")) {
+                        model.search = ""; model.connectionFilterVisible = false
+                    }.fixedSize()
+                }
+            }
+            Text(copy("只读：查看数据 · 数据读写：增删改数据 · 完整访问：含结构操作", "Read only: view data · Read/write: change data · Full access: includes schema operations"))
+                .font(MCPSettingsType.detail).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading).help(accessHelpText)
+        } header: {
+            HStack(spacing: 12) {
+                Text(copy("连接权限", "Connection access"))
+                Spacer(minLength: 8)
+                Button {
+                    model.connectionFilterVisible.toggle()
+                    if !model.connectionFilterVisible { model.search = "" }
+                } label: { Label(copy("筛选", "Filter"), systemImage: "line.3.horizontal.decrease.circle") }
+                    .buttonStyle(.borderless).controlSize(.small).fixedSize()
+                Menu(copy("批量操作", "Bulk actions")) {
+                    Button(copy("授权未授权连接（只读）", "Authorize remaining connections (read only)")) { model.allowSearchResultsReadOnly() }
+                    Button(copy("撤销全部授权…", "Revoke all grants…"), role: .destructive) { confirmsRevocation = true }
+                }.controlSize(.small).fixedSize()
+            }
         }
-        return copy("此连接按\(object)限制访问。", "This connection is scoped by: \(object).")
-    }
+        .task(id: model.connectionFilterVisible) {
+            if model.connectionFilterVisible { await Task.yield(); searchFocused = true }
+        }
+        .id("permission-connections")
+        .confirmationDialog(copy("撤销全部 MCP 连接授权？数据库范围和权限规则将保留。", "Revoke all MCP connection grants? Object scopes and permission rules will be preserved."), isPresented: $confirmsRevocation) {
+            Button(copy("撤销全部授权", "Revoke all grants"), role: .destructive) { model.revokeAllConnectionGrants() }
+        }
 
-    @ViewBuilder private var permissionOverrides: some View {
-        Section {
-            connectionSelector
-            if let profile = selectedProfile {
-                Picker(copy("权限上限", "Permission ceiling"), selection: Binding(get: { model.rule(for: profile.id).mode?.rawValue ?? "inherit" }, set: { value in
-                    model.updateRule(for: profile.id) { $0.mode = MCPExecutionMode(rawValue: value) }
-                })) {
-                    Text(copy("继承全局", "Inherit global")).tag("inherit")
-                    ForEach(MCPExecutionMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-                }.pickerStyle(.menu)
-                LabeledContent(copy("当前有效权限", "Effective access"), value: model.policy.effectiveMode(profile, database: nil).title)
-                let databases = (model.rule(for: profile.id).databases ?? []).sorted()
-                if !databases.isEmpty {
-                    Group {
-                        ForEach(databases, id: \.self) { database in
-                            Picker(database, selection: Binding(get: { model.rule(for: profile.id).databaseModes[database]?.rawValue ?? "inherit" }, set: { value in
-                                model.updateRule(for: profile.id) { $0.databaseModes[database] = MCPExecutionMode(rawValue: value) }
-                            })) {
-                                Text(copy("继承连接", "Inherit connection")).tag("inherit")
-                                ForEach(MCPExecutionMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-                            }.pickerStyle(.menu)
-                        }
-                    }
-                }
-            } else { unauthorizedHint }
-        } header: { Text(copy("连接权限限制", "Connection permission limits")) }
-        footer: { Text(copy("取全局、分组、连接、数据库规则中最严格的权限。单独设置只能收紧授权。", "The strictest global, group, connection or database rule applies. Individual limits can only narrow access.")) }
-        if !model.groups.isEmpty {
-            Section(copy("分组权限限制", "Group permission limits")) {
-                Group {
-                    ForEach(model.groups) { group in
-                        Picker(group.name, selection: Binding(get: { model.policy.groupModes[group.id.uuidString]?.rawValue ?? "inherit" }, set: {
-                            model.policy.groupModes[group.id.uuidString] = MCPExecutionMode(rawValue: $0)
-                        })) {
-                            Text(copy("继承全局", "Inherit global")).tag("inherit")
-                            ForEach(MCPExecutionMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-                        }.pickerStyle(.menu)
-                    }
-                }
+        ForEach(model.visiblePermissionGroups) { group in
+            MCPPermissionGroupSection(model: model, group: group)
+        }
+        if model.visiblePermissionGroups.isEmpty && model.didLoad && model.error == nil {
+            Section {
+                Text(copy("没有匹配的连接或分组", "No matching connections or groups")).foregroundStyle(.secondary)
             }
         }
     }
 
-    private var unauthorizedHint: some View {
-        Text(copy("请先在“连接”中允许至少一个连接。", "Allow at least one connection in Connections first."))
-            .font(MCPSettingsType.detail).foregroundStyle(.secondary)
-    }
-
-    private func databasePicker(_ profile: ConnectionProfile) -> some View {
-        let id = profile.id
-        let choices = (model.databaseChoices[id] ?? []).filter {
-            model.databaseSearch.isEmpty || $0.localizedCaseInsensitiveContains(model.databaseSearch)
-        }
-        return VStack(alignment: .leading, spacing: 8) {
-            TextField(copy("搜索名称", "Search names"), text: $model.databaseSearch, prompt: Text(copy("搜索名称", "Search names")))
-                .labelsHidden().textFieldStyle(.roundedBorder)
-            List(choices, id: \.self) { database in
-                Toggle(database, isOn: Binding(get: { model.rule(for: id).databases?.contains(database) == true }, set: { allowed in
-                    model.updateRule(for: id) { rule in
-                        var selected = rule.databases ?? []
-                        if allowed { selected.insert(database) } else { selected.remove(database) }
-                        rule.databases = selected
-                    }
-                })).toggleStyle(.checkbox)
-            }
-            .listStyle(.inset)
-            .frame(height: 220)
-            .overlay {
-                if model.databaseChoices[id] != nil && choices.isEmpty && model.databaseChoiceErrors[id] == nil && !model.loadingDatabaseChoices.contains(id) {
-                    Text(copy("没有匹配的名称", "No matching names")).font(.callout).foregroundStyle(.secondary).allowsHitTesting(false)
-                }
-            }
-            HStack {
-                ProgressView().controlSize(.small).frame(width: 16, height: 16).opacity(model.loadingDatabaseChoices.contains(id) ? 1 : 0)
-                Text(model.databaseChoiceErrors[id] ?? "").font(MCPSettingsType.detail).foregroundStyle(.red).lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button(copy("从连接加载", "Load from connection")) { Task { await model.discoverDatabases(for: id) } }
-                    .disabled(model.loadingDatabaseChoices.contains(id))
-            }.frame(height: 44)
-        }
-        .onChange(of: id) { model.databaseSearch = "" }
-    }
-
-    private func split(_ value: String) -> [String] {
-        value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    private var accessHelpText: String {
+        copy("只读：查询、查看结构和读取消息。MySQL / PostgreSQL 使用只读事务；Doris 不提供同样的事务保证。\n数据读写：允许插入，以及带可验证过滤条件的更新、删除；不允许修改结构。\n完整访问：允许驱动支持的高级操作，破坏性调用仍需显式确认。数据库账号权限和工具开关继续生效。", "Read only: queries, metadata and messages. MySQL/PostgreSQL use read-only transactions; Doris does not provide the same guarantee.\nRead/write: inserts and verifiably filtered updates/deletes, without schema changes.\nFull access: supported advanced operations. Destructive calls require confirmation; database account permissions and tool switches still apply.")
     }
 }

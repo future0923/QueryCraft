@@ -80,7 +80,8 @@ def package(build, output, development=False, archive_enabled=True, architecture
     version = metadata['version']
     app_version = next(line.split('=',1)[1].strip() for line in (ROOT/'Config/Shared.xcconfig').read_text().splitlines() if line.startswith('MARKETING_VERSION'))
     info = {'CFBundleIdentifier': 'io.github.future0923.QueryCraft.MCP' + ('.Dev' if development else ''),
-            'CFBundleName': 'QueryCraft MCP', 'CFBundleExecutable': 'querycraft-mcp', 'CFBundlePackageType': 'APPL',
+            'CFBundleName': 'QueryCraft Dev MCP' if development else 'QueryCraft MCP',
+            'CFBundleDisplayName': 'QueryCraft Dev MCP' if development else 'QueryCraft MCP', 'CFBundleExecutable': 'querycraft-mcp', 'CFBundlePackageType': 'APPL',
             'CFBundleShortVersionString': version, 'CFBundleVersion': metadata['build'], 'QCMCPVersion': version, 'LSMinimumSystemVersion': '15.0',
             'LSUIElement': True, 'QCAppVersion': app_version, 'QCCredentialHelperRequired': True, 'QCSharedCredentialHelperRequired': True,
             'QCComponentCatalogBaseURL': 'https://querycraft.debug-tools.cc/components/',

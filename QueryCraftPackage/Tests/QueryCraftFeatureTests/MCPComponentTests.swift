@@ -5,9 +5,11 @@ import Testing
 
 private final class ComponentURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var response = Data()
+    nonisolated(unsafe) static var requestCount = 0
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        Self.requestCount += 1
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Self.response); client?.urlProtocolDidFinishLoading(self)
     }
@@ -54,6 +56,37 @@ struct MCPComponentTests {
         await #expect(throws: MCPFailure.self) { _ = try await catalog.releases(.mcp) }
         await #expect(throws: MCPFailure.self) { try await catalog.validateURL(URL(string: "http://example.test/component.zip")!) }
     }
+    @Test func developmentSourceNeverFallsBackToProduction() async throws {
+        let production = "https://querycraft.debug-tools.cc/components/"
+        #expect(MCPComponentCatalog.configuredURL(identity: .production, environment: [:])?.absoluteString == production)
+        #expect(MCPComponentCatalog.configuredURL(identity: .development, environment: [:], production: production) == nil)
+        #expect(MCPComponentCatalog.configuredURL(identity: .development,
+            environment: ["QUERYCRAFT_COMPONENT_CATALOG_BASE_URL": production]) == nil)
+        #expect(MCPComponentCatalog.configuredURL(identity: .development,
+            environment: ["QUERYCRAFT_DEV_COMPONENT_CATALOG_BASE_URL": production]) == nil)
+        #expect(MCPComponentCatalog.configuredURL(identity: .development,
+            environment: ["QUERYCRAFT_DEV_COMPONENT_CATALOG_BASE_URL": "https://dev.example.test/components/"])?.host == "dev.example.test")
+        let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [ComponentURLProtocol.self]
+        let session = URLSession(configuration: configuration); defer { session.invalidateAndCancel() }
+        let catalog = MCPComponentCatalog(session: session, identity: .development, environment: [:])
+        let count = ComponentURLProtocol.requestCount
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString).appending(path: "QueryCraftDev")
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+        let sentinel = root.appending(path: "MCP/keep-existing-runtime")
+        try FileManager.default.createDirectory(at: sentinel.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("existing runtime".utf8).write(to: sentinel)
+        await #expect(throws: MCPFailure.self) { _ = try await catalog.releases(.mcp) }
+        await #expect(throws: MCPFailure.self) { _ = try await catalog.releases(.skill) }
+        await #expect(throws: MCPFailure.self) { try await catalog.download(release(), to: root.appending(path: "download.zip")) }
+        let installer = MCPInstallation(root: root.appending(path: "MCP"), catalog: catalog)
+        await #expect(throws: MCPFailure.self) { try await installer.install() }
+        let skill = MCPSkillInstallation(catalog: catalog, cache: root.appending(path: "SkillPackages"))
+        await #expect(throws: MCPFailure.self) { try await skill.install(at: root.appending(path: "skills/querycraft-dev")) }
+        #expect(ComponentURLProtocol.requestCount == count)
+        #expect(try String(contentsOf: sentinel, encoding: .utf8) == "existing runtime")
+        #expect(!FileManager.default.fileExists(atPath: root.appending(path: "download.zip").path))
+    }
+
     @Test func processLockPreventsConcurrentInstallerMutation() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

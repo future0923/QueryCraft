@@ -3,6 +3,10 @@ import SwiftUI
 struct MCPSettingsPane: View {
     @State private var model: MCPSettingsModel
     @State private var confirmUninstall = false
+    @State private var showsSettingsIndex = false
+    @State private var showsReview = false
+    @State private var pendingIndexDestination: MCPSettingsDestination?
+    @State private var reviewPolicy = MCPPolicy()
 
     init(model: MCPSettingsModel) {
         _model = State(initialValue: model)
@@ -12,16 +16,12 @@ struct MCPSettingsPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker(copy("MCP 设置", "MCP settings"), selection: $model.section) {
-                Text(copy("接入", "Connection")).tag("access")
-                Text(copy("访问权限", "Access")).tag("permissions")
-                Text(copy("调用记录", "Activity")).tag("activity")
+            ViewThatFits(in: .horizontal) {
+                settingsHeader(compact: false)
+                settingsHeader(compact: true)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 320)
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 20).padding(.top, 8)
 
             Group {
                 if model.section == "activity" {
@@ -29,16 +29,20 @@ struct MCPSettingsPane: View {
                 } else if model.section == "permissions" {
                     MCPPermissionsSettingsPane(model: model)
                 } else {
-                    Form { accessSections }
-                    .formStyle(.grouped)
-                    .scrollContentBackground(.hidden)
-                    .contentMargins(.top, 8, for: .scrollContent)
+                    accessPane
                 }
             }
             .disabled(model.isBusy || !model.didLoad)
 
             Divider()
             HStack(spacing: 10) {
+                Button { showsSettingsIndex = true } label: {
+                    Label(copy("全部设置", "All settings"), systemImage: "list.bullet")
+                }
+                .buttonStyle(.bordered).fixedSize()
+                .disabled(!model.didLoad || model.isBusy)
+                .accessibilityIdentifier("mcp.settings.index.open")
+                .help(copy("全部设置", "All settings"))
                 ProgressView().controlSize(.small).frame(width: 16, height: 16).opacity(isWorking ? 1 : 0)
                     .accessibilityLabel(copy("正在处理", "Working"))
                     .accessibilityHidden(!isWorking)
@@ -54,9 +58,10 @@ struct MCPSettingsPane: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 Button { Task { await model.recheck() } } label: {
                     Text(copy("重新检查", "Check again"))
-                }.buttonStyle(.bordered).disabled(model.isBusy || model.isLoading || model.isCheckingRuntime)
-                Button { model.save() } label: { Text(copy("保存", "Save")) }
+                }.buttonStyle(.bordered).fixedSize().disabled(model.isBusy || model.isLoading || model.isCheckingRuntime)
+                Button { beginReview() } label: { Text(copy("检查并保存", "Review and save")) }
                     .buttonStyle(.borderedProminent)
+                    .fixedSize()
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(model.isBusy || !model.didLoad)
             }
@@ -70,13 +75,82 @@ struct MCPSettingsPane: View {
         .confirmationDialog(copy("卸载 MCP 程序？连接和权限设置将保留。", "Uninstall MCP? Connections and permissions are preserved."), isPresented: $confirmUninstall) {
             Button(copy("卸载", "Uninstall"), role: .destructive) { Task { await model.uninstall() } }
         }
+        .sheet(isPresented: $showsSettingsIndex, onDismiss: {
+            guard let destination = pendingIndexDestination else { return }
+            pendingIndexDestination = nil
+            if destination == .review { beginReview() }
+            else { model.navigate(to: destination) }
+        }) {
+            MCPSettingsIndexView { destination in
+                pendingIndexDestination = destination
+                showsSettingsIndex = false
+            }
+        }
+        .sheet(item: $model.scopeEditorConnection) { profile in
+            MCPConnectionScopeEditor(model: model, profile: profile)
+        }
+        .sheet(isPresented: $showsReview) {
+            MCPSettingsReviewView(policy: reviewPolicy, profiles: model.profiles, groups: model.groups) {
+                guard model.policy == reviewPolicy else {
+                    model.error = copy("配置已变化，请重新检查后保存。", "Settings changed. Review them again before saving.")
+                    return
+                }
+                model.save()
+            }
+        }
+    }
 
+    private func settingsHeader(compact: Bool) -> some View {
+        Picker(copy("MCP 设置", "MCP settings"), selection: Binding(
+            get: { model.selectedSettingsPage }, set: { model.selectSettingsPage($0) })) {
+            Text(copy("接入", "Setup")).tag("access")
+            Text(compact ? copy("连接", "Access") : copy("连接权限", "Connections")).tag("connections")
+            Text(compact ? copy("工具", "Tools") : copy("工具开关", "Tools")).tag("tools")
+            Text(compact ? copy("执行", "Limits") : copy("执行限制", "Limits")).tag("execution")
+            Text(compact ? copy("性能", "Perf.") : copy("发现与性能", "Performance")).tag("tuning")
+            Text(compact ? copy("上限", "Cap") : copy("全局上限", "Global limit")).tag("ceiling")
+            Text(compact ? copy("记录", "Logs") : copy("调用记录", "Activity")).tag("activity")
+        }
+        .pickerStyle(.segmented).labelsHidden()
+        .controlSize(compact ? .small : .regular)
+        .font(compact ? .system(size: 11) : MCPSettingsType.body)
+        .fixedSize()
+    }
+
+    private var accessPane: some View {
+        ScrollViewReader { proxy in
+            Form { accessSections }
+                .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
+                .contentMargins(.top, 8, for: .scrollContent)
+                .task(id: model.settingsNavigationRevision) {
+                    if model.section == "access", let target = model.settingsScrollTarget {
+                        await Task.yield()
+                        proxy.scrollTo(target, anchor: .top)
+                    }
+                }
+        }
+    }
+
+    private func beginReview() {
+        model.captureQueryTimeout()
+        do {
+            try model.policy.validate()
+            model.error = nil
+            reviewPolicy = model.policy
+            showsReview = true
+        } catch { model.error = error.localizedDescription }
     }
 
     private var isWorking: Bool { model.isBusy || model.isLoading || model.isCheckingRuntime }
     private var feedback: String { model.error ?? model.runtimeError ?? model.status }
     private var runtimeDescription: String {
-        if let version = model.installedVersion { return copy("已安装 \(version)", "Version \(version) installed") }
+        if let version = model.installedVersion {
+            if model.availableVersion == version {
+                return copy("已安装 \(version) · 已是最新", "Version \(version) installed · Up to date")
+            }
+            return copy("已安装 \(version)", "Version \(version) installed")
+        }
         if model.runtimeError != nil { return copy("检查失败，请重新检查", "Check failed; try again") }
         return model.runtimeStatusLoaded ? copy("尚未安装", "Not installed") : copy("正在检查…", "Checking…")
     }
@@ -89,12 +163,16 @@ struct MCPSettingsPane: View {
             }
             .toggleStyle(.switch)
             HStack {
-                MCPSettingsControlLabel(title: copy("MCP 程序", "MCP runtime"),
-                    description: runtimeDescription)
+                VStack(alignment: .leading, spacing: 4) {
+                    MCPSettingsControlLabel(title: copy("MCP 程序", "MCP runtime"), description: runtimeDescription)
+                    if model.runtimeUpdateAvailable, let version = model.availableVersion {
+                        Label(copy("可升级至 \(version)", "Update available: \(version)"), systemImage: "arrow.up.circle.fill")
+                            .font(MCPSettingsType.detail).foregroundStyle(Color.accentColor)
+                    }
+                }
                 Spacer(minLength: 8)
-                Button(model.installedVersion == nil ? copy("安装…", "Install…") : copy("升级 / 修复…", "Upgrade / Repair…")) {
-                    Task { await model.install() }
-                }.disabled(model.isCheckingRuntime)
+                if model.runtimeUpdateAvailable { runtimeInstallButton.buttonStyle(.borderedProminent) }
+                else { runtimeInstallButton }
                 if model.installedVersion != nil {
                     Button(copy("卸载…", "Uninstall…"), role: .destructive) { confirmUninstall = true }
                         .disabled(model.isCheckingRuntime)
@@ -110,8 +188,9 @@ struct MCPSettingsPane: View {
                     .disabled(model.installedVersion == nil || !model.policy.enabled)
             }
         } footer: {
-            Text(copy("安装后可在 QueryCraft 退出时独立运行。请在“访问权限”中选择允许的连接。", "Works after QueryCraft quits. Choose allowed connections in Access."))
+            Text(copy("安装后可在 QueryCraft 退出时独立运行。请在“连接权限”中选择允许的连接。", "Works after QueryCraft quits. Choose allowed connections in Connections."))
         }
+        .id("access-runtime")
 
         Section(copy("连接客户端", "Connect a client")) {
             Picker(copy("客户端", "Client"), selection: $model.client) {
@@ -143,17 +222,25 @@ struct MCPSettingsPane: View {
         .task(id: model.didLoad ? model.client + model.configuration : "") {
             if model.didLoad { await model.inspectClientRegistration() }
         }
-        if model.transport == "http" { httpSection }
-        skillSection
-        advancedSection
-        Section(copy("安装信息", "Installation details")) {
-            LabeledContent(copy("可用组件版本", "Available component version"), value: model.availableVersion ?? (model.runtimeStatusLoaded ? copy("尚未获取", "Not checked") : copy("正在检查…", "Checking…")))
-            Text(model.executable).font(MCPSettingsType.detail.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-        }
+        .id("access-client")
+        if model.transport == "http" || model.showsHTTPSettings { httpSection.id("access-http") }
+        skillSection.id("access-skill")
         Section(copy("使用帮助", "Getting started")) {
-            Text(copy("安装并启用 MCP，在“访问权限”中授权连接后保存。选择客户端后点击“一键添加”并重新连接；本地进程由客户端自动启动，HTTP 服务需在此启动。不支持自动配置的客户端可复制配置。", "Install and enable MCP, authorize connections in Access, then save. Select a client, click Add to client and reconnect. Clients start the local process automatically; start HTTP here. Copy configuration for other clients."))
+            Text(copy("安装并启用 MCP，在“连接权限”中授权连接后保存。选择客户端后点击“一键添加”并重新连接；本地进程由客户端自动启动，HTTP 服务需在此启动。不支持自动配置的客户端可复制配置。", "Install and enable MCP, authorize connections in Connections, then save. Select a client, click Add to client and reconnect. Clients start the local process automatically; start HTTP here. Copy configuration for other clients."))
                 .font(MCPSettingsType.detail).foregroundStyle(.secondary)
         }
+        .id("access-help")
+    }
+
+    private var runtimeInstallButton: some View {
+        Button {
+            Task { await model.install() }
+        } label: {
+            if model.installedVersion == nil { Text(copy("安装…", "Install…")) }
+            else if model.runtimeUpdateAvailable, let version = model.availableVersion {
+                Text(copy("升级至 \(version)…", "Update to \(version)…"))
+            } else { Text(copy("修复 / 重新安装…", "Repair / Reinstall…")) }
+        }.disabled(model.isCheckingRuntime)
     }
 
     private var configurationPreviewHeight: CGFloat {
@@ -225,7 +312,7 @@ struct MCPSettingsPane: View {
     }
 
     private var skillSection: some View {
-        Section(copy("可选 QueryCraft Skill", "Optional QueryCraft skill")) {
+        Section(copy("可选 \(model.serverIdentity.displayName) Skill", "Optional \(model.serverIdentity.displayName) skill")) {
             Group {
                 Text(skillFeedback)
                     .font(MCPSettingsType.detail)
@@ -262,28 +349,6 @@ struct MCPSettingsPane: View {
         case .updateAvailable: copy("可更新到 \(model.availableSkillVersion ?? "")", "Update available: \(model.availableSkillVersion ?? "")")
         case .modified: copy("含本地修改，已保留文件", "Local changes preserved")
         case nil: copy("正在检查…", "Checking…")
-        }
-    }
-
-    private var advancedSection: some View {
-        Section(copy("高级设置", "Advanced settings")) {
-            Group {
-                Picker(copy("工具发现", "Tool discovery"), selection: Binding(get: { model.policy.tuning.discovery }, set: { value in model.updateOptimizations { $0.discovery = value } })) {
-                    Text(copy("直接工具", "Direct tools")).tag(MCPToolDiscovery.flat)
-                    Text(copy("按需发现", "Lazy discovery")).tag(MCPToolDiscovery.lazy)
-                    Text(copy("两者同时", "Both")).tag(MCPToolDiscovery.both)
-                }.pickerStyle(.menu)
-                Text(copy("按需发现可减少工具上下文；保存后在客户端重新加载工具。", "Lazy discovery reduces tool context. Reload client tools after saving."))
-                    .font(MCPSettingsType.detail).foregroundStyle(.secondary)
-                Stepper(copy("结构缓存：\(model.policy.tuning.metadataCacheSeconds) 秒", "Metadata cache: \(model.policy.tuning.metadataCacheSeconds) seconds"), value: Binding(get: { model.policy.tuning.metadataCacheSeconds }, set: { value in model.updateOptimizations { $0.metadataCacheSeconds = value } }), in: 0...300, step: 10)
-                Stepper(copy("元数据空闲连接：\(model.policy.tuning.maximumIdleConnections)", "Idle metadata connections: \(model.policy.tuning.maximumIdleConnections)"), value: Binding(get: { model.policy.tuning.maximumIdleConnections }, set: { value in model.updateOptimizations { $0.maximumIdleConnections = value } }), in: 0...8)
-                Text(copy("设为 0 关闭缓存或连接复用。查询结果、Redis 键和消息保持实时。", "Set to 0 to disable caching or reuse. Query results, Redis keys and messages stay live."))
-                    .font(MCPSettingsType.detail).foregroundStyle(.secondary)
-                TextField(copy("最大结果行数", "Maximum rows"), value: $model.policy.maximumRows, format: .number.grouping(.never))
-                TextField(copy("结果字节上限", "Maximum result bytes"), value: $model.policy.maximumResultBytes, format: .number.grouping(.never))
-                TextField(copy("会话空闲超时（秒）", "Session idle timeout (seconds)"), value: $model.policy.sessionIdleSeconds, format: .number.grouping(.never))
-                Stepper(copy("最多 \(model.policy.maximumSessions) 个会话", "Maximum \(model.policy.maximumSessions) sessions"), value: $model.policy.maximumSessions, in: 1...128)
-            }
         }
     }
 
