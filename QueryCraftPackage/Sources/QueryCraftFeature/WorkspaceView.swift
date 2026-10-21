@@ -100,7 +100,6 @@ public struct WorkspaceView: View {
                                 for: selection
                             )
                         },
-                        tableDidRename: tableDidRename,
                         tableDidDelete: tableDidDelete,
                         createTable: createTable,
                         createRedisKey: createRedisKey,
@@ -153,6 +152,20 @@ public struct WorkspaceView: View {
             .ignoresSafeArea(.container, edges: .top)
         }
         .frame(minWidth: 1_000, minHeight: 520)
+        .sheet(item: $model.tableActionRequest) { request in
+            WorkspaceTableActionSheet(request: request, model: model,
+                hasPendingChanges: {
+                    pendingChangesRegistry.actions(for: .databaseObject(request.selection))?.hasChanges == true
+                },
+                didComplete: { statement in
+                    switch request.action {
+                    case .rename:
+                        if let result = statement.resultingSelection { tableDidRename(request.selection, result) }
+                    case .drop: tableDidDelete(request.selection)
+                    default: break
+                    }
+                }, dismiss: { model.tableActionRequest = nil })
+        }
         .sheet(item: $connectionPickerModel) { pickerModel in
             WorkspaceConnectionPicker(
                 model: pickerModel,

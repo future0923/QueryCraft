@@ -7,8 +7,6 @@ struct WorkspaceDatabaseItems: View {
         WorkspaceDatabaseObjectSelection,
         WorkspaceDatabaseObjectDetailTab
     ) -> Void
-    let renameTable: @MainActor (WorkspaceDatabaseObjectSelection) -> Void
-    let deleteTable: @MainActor (WorkspaceDatabaseObjectSelection) -> Void
     var deleteIndex: @MainActor (WorkspaceDatabaseObjectSelection) -> Void = { _ in }
     var deleteTopic: @MainActor (WorkspaceDatabaseObjectSelection) -> Void = { _ in }
 
@@ -203,15 +201,16 @@ struct WorkspaceDatabaseItems: View {
                     : object.name,
                 summary: object.summary,
                 openTab: { tab in openObjectTab(selection, tab) },
-                renameTable: { renameTable(selection) },
-                deleteTable: { deleteTable(selection) },
                 exportData: tableExportAction(for: selection),
                 importData: tableImportAction(for: selection),
                 deleteTopic: topicDeletionAction(for: selection),
                 iconSystemImage: model.databaseType == .kafka
                     ? "point.3.connected.trianglepath.dotted"
                     : nil,
-                allowsTableMutations: model.databaseType != .kafka
+                allowsTableMutations: model.databaseType.supportsSQLObjectOverview,
+                tableActions: WorkspaceTableActionMenu(databaseType: model.databaseType) { action in
+                    model.requestTableAction(action, for: selection)
+                }
             )
         }
     }

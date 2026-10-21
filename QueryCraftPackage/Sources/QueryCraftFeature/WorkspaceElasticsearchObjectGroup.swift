@@ -25,8 +25,6 @@ struct WorkspaceElasticsearchObjectGroup: View {
                         displayName: object.name,
                         summary: object.summary,
                         openTab: { tab in openObjectTab(selection, tab) },
-                        renameTable: {},
-                        deleteTable: {},
                         deleteIndex: { deleteIndex(selection) }
                     )
                 }

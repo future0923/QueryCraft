@@ -66,6 +66,12 @@ final class WorkspaceModel {
     var isElasticsearchAliasGroupExpanded = true
     var isElasticsearchIndexGroupExpanded = true
     var sidebarMode = WorkspaceSidebarMode.items
+    var tableActionRequest: WorkspaceTableActionRequest?
+    private(set) var tableActionRevision = 0
+    private var isPerformingTableAction = false
+    private var tableActionConnectionID = UUID()
+    private var tableDataNeedingRefresh: Set<WorkspaceDatabaseObjectSelection> = []
+    private var tableDetailsNeedingRefresh: Set<WorkspaceDatabaseObjectSelection> = []
 
     private let repository: any ConnectionProfileRepository
     private let savedQueryRepository: any SavedQueryRepository
@@ -935,6 +941,83 @@ final class WorkspaceModel {
         }
     }
 
+    func requestTableAction(_ action: WorkspaceTableAction, for selection: WorkspaceDatabaseObjectSelection) {
+        guard selection.kind == .table, connectionState == .connected,
+              databaseContextName == selection.databaseName,
+              action.unavailabilityReason(for: databaseType) == nil,
+              !isPerformingTableAction else { return }
+        tableActionRequest = .init(action: action, selection: selection, workspaceID: workspaceID,
+                                   connectionID: tableActionConnectionID)
+    }
+
+    func isCurrentTableAction(_ request: WorkspaceTableActionRequest) -> Bool {
+        request.workspaceID == workspaceID && request.connectionID == tableActionConnectionID
+            && connectionState == .connected && databaseContextName == request.selection.databaseName
+    }
+
+    func performTableAction(_ request: WorkspaceTableActionRequest,
+                            statement: WorkspaceTableActionStatement) async throws -> String? {
+        guard !safetyLock.isEnabled else { throw WorkspaceDatabaseTableMutationError.safetyLockEnabled }
+        guard !isPerformingTableAction, isCurrentTableAction(request),
+              request.selection.kind == .table, request.action.unavailabilityReason(for: databaseType) == nil,
+              let configuration = sessionConfiguration else {
+            throw WorkspaceDatabaseTableMutationError.contextChanged
+        }
+        isPerformingTableAction = true
+        defer { isPerformingTableAction = false }
+        let actionSession = await sessionFactory.makeSession(configuration: configuration.selecting(database: request.selection.databaseName))
+        do {
+            try await actionSession.connect()
+            try Task.checkCancellation()
+            if databaseType == .mysql,
+               request.action == .resetAutoIncrement || request.action == .setAutoIncrement {
+                let details = try await actionSession.fetchDetails(for: request.selection.object,
+                                                                  in: request.selection.databaseName)
+                guard details.columns.contains(where: { $0.extra.lowercased().contains("auto_increment") }) else {
+                    throw WorkspaceTableActionError.noAutoIncrement
+                }
+                try Task.checkCancellation()
+            }
+            guard isCurrentTableAction(request), sessionConfiguration == configuration else {
+                throw WorkspaceDatabaseTableMutationError.contextChanged
+            }
+            guard !safetyLock.isEnabled else { throw WorkspaceDatabaseTableMutationError.safetyLockEnabled }
+            _ = try await actionSession.executeStatement(statement.sql, kind: statement.kind,
+                database: request.selection.databaseName, onBatch: { _ in })
+            await actionSession.close()
+        } catch {
+            await actionSession.close()
+            throw error
+        }
+        // The server accepted the change. Do not turn a post-write cancellation or refresh
+        // failure into a retryable mutation failure, which could execute DELETE/RENAME twice.
+        guard isCurrentTableAction(request), sessionConfiguration == configuration else { return nil }
+        tableActionRevision &+= 1
+        tableDataNeedingRefresh.insert(request.selection)
+        tableDetailsNeedingRefresh.insert(request.selection)
+        invalidateCompletionColumns()
+        var refreshed = await refreshObjects(in: request.selection.databaseName)
+        if request.action != .rename && request.action != .drop {
+            let retainedDetails = objectDetailsStates[request.selection]
+            await loadDetails(for: request.selection, force: true)
+            if case .failed = objectDetailsStates[request.selection] {
+                refreshed = false
+                if case .loaded = retainedDetails { objectDetailsStates[request.selection] = retainedDetails }
+            }
+            if let page = objectDataStates[request.selection]?.page {
+                await loadData(for: request.selection, offset: page.offset, limit: page.limit,
+                               sort: page.sort, filter: page.filter, force: true)
+                if case .failed = objectDataStates[request.selection] {
+                    refreshed = false
+                    objectDataStates[request.selection] = .loaded(page)
+                }
+            }
+        }
+        return refreshed ? nil : AppCopy.current.text(
+            "操作已完成，但页面刷新失败。请关闭此窗口后使用顶部刷新按钮重新加载；无需重复执行操作。",
+            "The operation completed, but refreshing failed. Close this sheet and use the toolbar refresh button. Do not repeat the operation.")
+    }
+
     func canImportTable(_ selection: WorkspaceDatabaseObjectSelection) -> Bool {
         selection.kind == .table && WorkspaceDataImportTarget.supports(databaseType)
             && sessionCapabilities.supportsDataEditing && sessionCapabilities.supportsTransactions
@@ -1105,6 +1188,8 @@ final class WorkspaceModel {
     }
 
     func prepareForConnectionAttempt() {
+        tableActionConnectionID = UUID()
+        tableActionRequest = nil
         connectionState = .connecting
         cancelObjectLoads()
     }
@@ -1113,6 +1198,8 @@ final class WorkspaceModel {
     func connect(
         didRecoverDocuments: @escaping @MainActor () async -> Void = {}
     ) async -> (any WorkspaceSession)? {
+        tableActionConnectionID = UUID()
+        tableActionRequest = nil
         connectionState = .connecting
         await reloadSavedQueries()
         var connectingSession: (any WorkspaceSession)?
@@ -1212,6 +1299,8 @@ final class WorkspaceModel {
                 )
             }
             objectDetailsStates.removeAll()
+            tableDataNeedingRefresh.removeAll()
+            tableDetailsNeedingRefresh.removeAll()
             objectIndexesStates.removeAll()
             objectDataStates.removeAll()
             objectDataOffsets.removeAll()
@@ -2293,6 +2382,8 @@ final class WorkspaceModel {
             return
         }
 
+        let force = force || tableDetailsNeedingRefresh.contains(selection)
+        let tableRevision = tableActionRevision
         let mutationRevision = elasticsearchMutationRevision
         if !force && (databaseType != .elasticsearch || elasticsearchDetailsRevisions[selection] == mutationRevision) {
             switch objectDetailsStates[selection] ?? .notLoaded {
@@ -2320,6 +2411,7 @@ final class WorkspaceModel {
             try Task.checkCancellation()
             guard self.session === session, mutationRevision == elasticsearchMutationRevision else { return }
             objectDetailsStates[selection] = .loaded(details)
+            if tableRevision == tableActionRevision { tableDetailsNeedingRefresh.remove(selection) }
             elasticsearchDetailsRevisions[selection] = mutationRevision
         } catch is CancellationError {
             if
@@ -2547,6 +2639,7 @@ final class WorkspaceModel {
             return
         }
 
+        let tableRevision = tableActionRevision
         let mutationRevision = elasticsearchMutationRevision
         if kafkaLive.isShowing(selection) {
             if force { await kafkaLive.refresh() }
@@ -2554,7 +2647,7 @@ final class WorkspaceModel {
         }
         let kafkaRequest = kafkaReadRequest(for: selection)
         let kafkaScanRequest = kafkaScanRequest(for: selection)
-        let force = force || (databaseType == .elasticsearch && mutationRevision > 0
+        let force = force || tableDataNeedingRefresh.contains(selection) || (databaseType == .elasticsearch && mutationRevision > 0
             && elasticsearchDataRevisions[selection] != mutationRevision)
         if !force {
             switch objectDataStates[selection] ?? .notLoaded {
@@ -2874,6 +2967,7 @@ final class WorkspaceModel {
             dataLoadSelection = nil
             clearDataReplacement(for: loadID)
             objectDataStates[selection] = .loaded(page)
+            if tableRevision == tableActionRevision { tableDataNeedingRefresh.remove(selection) }
             if databaseType == .elasticsearch { elasticsearchDataRevisions[selection] = mutationRevision }
             await updateDataCount(
                 for: selection,

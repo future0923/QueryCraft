@@ -103,6 +103,15 @@ struct WorkspaceSQLObjectOverviewView: View {
             .contextMenu(forSelectionType: String.self) { ids in
                 Button(AppCopy.current.text("打开", "Open")) { open(ids.first) }
                     .disabled(ids.isEmpty)
+                if ids.count == 1, let id = ids.first,
+                   let entry = rows.first(where: { $0.id == id })?.entry,
+                   entry.object.kind == .table {
+                    Divider()
+                    WorkspaceTableActionMenu(databaseType: model.databaseType) { action in
+                        model.requestTableAction(action, for: .init(databaseName: database,
+                            objectName: entry.object.name, kind: .table))
+                    }
+                }
             } primaryAction: { ids in open(ids.first) }
             .onKeyPress(.return) {
                 guard selection != nil else { return .ignored }
@@ -144,6 +153,7 @@ struct WorkspaceSQLObjectOverviewView: View {
         .onAppear { refreshRegistry.updateOverview(refreshActions, owner: owner) }
         .onChange(of: refreshActions) { _, actions in refreshRegistry.updateOverview(actions, owner: owner) }
         .onDisappear { refreshRegistry.removeOverview(owner: owner) }
+        .onChange(of: model.tableActionRevision) { _, _ in refreshID = UUID() }
         .onChange(of: rows.map(\.id)) { _, ids in
             if let selection, !ids.contains(selection) { self.selection = nil }
         }

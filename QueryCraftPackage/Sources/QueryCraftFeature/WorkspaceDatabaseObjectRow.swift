@@ -7,39 +7,36 @@ struct WorkspaceDatabaseObjectRow: View {
     let iconSystemImage: String?
     let allowsTableMutations: Bool
     let openTab: @MainActor (WorkspaceDatabaseObjectDetailTab) -> Void
-    let renameTable: @MainActor () -> Void
-    let deleteTable: @MainActor () -> Void
     var exportData: (@MainActor (WorkspaceDataExportFormat) -> Void)? = nil
     var importData: (@MainActor () -> Void)? = nil
     var deleteIndex: (@MainActor () -> Void)? = nil
     var deleteTopic: (@MainActor () -> Void)? = nil
+    var tableActions: WorkspaceTableActionMenu? = nil
 
     init(
         selection: WorkspaceDatabaseObjectSelection,
         displayName: String,
         summary: WorkspaceDatabaseObjectSummary? = nil,
         openTab: @escaping @MainActor (WorkspaceDatabaseObjectDetailTab) -> Void,
-        renameTable: @escaping @MainActor () -> Void,
-        deleteTable: @escaping @MainActor () -> Void,
         exportData: (@MainActor (WorkspaceDataExportFormat) -> Void)? = nil,
         importData: (@MainActor () -> Void)? = nil,
         deleteIndex: (@MainActor () -> Void)? = nil,
         deleteTopic: (@MainActor () -> Void)? = nil,
         iconSystemImage: String? = nil,
-        allowsTableMutations: Bool = true
+        allowsTableMutations: Bool = true,
+        tableActions: WorkspaceTableActionMenu? = nil
     ) {
         self.selection = selection
         self.displayName = displayName
         self.summary = summary
         self.openTab = openTab
-        self.renameTable = renameTable
-        self.deleteTable = deleteTable
         self.exportData = exportData
         self.importData = importData
         self.deleteIndex = deleteIndex
         self.deleteTopic = deleteTopic
         self.iconSystemImage = iconSystemImage
         self.allowsTableMutations = allowsTableMutations
+        self.tableActions = tableActions
     }
 
     var body: some View {
@@ -90,17 +87,9 @@ struct WorkspaceDatabaseObjectRow: View {
                     Button(AppCopy.current.text("导入数据…", "Import Data…"), systemImage: "square.and.arrow.down", action: importData)
                         .accessibilityIdentifier("importTable")
                 }
-                if selection.kind == .table && allowsTableMutations {
+                if selection.kind == .table && allowsTableMutations, let tableActions {
                     Divider()
-                    Button(AppCopy.current.text("重命名表…", "Rename Table...")) {
-                        renameTable()
-                    }
-                    Button(
-                        AppCopy.current.text("删除表…", "Delete Table..."),
-                        role: .destructive
-                    ) {
-                        deleteTable()
-                    }
+                    tableActions
                 }
                 if WorkspaceIndexDeletionWorker.offersDeletion(selection), let deleteIndex {
                     Divider()

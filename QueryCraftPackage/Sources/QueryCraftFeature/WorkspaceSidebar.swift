@@ -12,10 +12,6 @@ struct WorkspaceSidebar: View {
         WorkspaceDatabaseObjectSelection,
         WorkspaceDatabaseObjectDetailTab
     ) -> Void
-    let tableDidRename: @MainActor (
-        WorkspaceDatabaseObjectSelection,
-        WorkspaceDatabaseObjectSelection
-    ) -> Void
     let tableDidDelete: @MainActor (
         WorkspaceDatabaseObjectSelection
     ) -> Void
@@ -24,12 +20,6 @@ struct WorkspaceSidebar: View {
     let showDatabaseOverview: @MainActor () -> Void
     let showDatabasePicker: @MainActor () -> Void
 
-    @State private var tableEditor: WorkspaceDatabaseTableEditor?
-    @State private var tablePendingDelete: WorkspaceDatabaseObjectSelection?
-    @State private var tablePendingDeleteAfterUnlock:
-        WorkspaceDatabaseObjectSelection?
-    @State private var tableMutationErrorMessage: String?
-    @State private var tableDeletionTask: Task<Void, Never>?
     @State private var showsIndexCreation = false
     @State private var showsIndexTemplateManager = false
     @State private var showsKafkaTopicCreation = false
@@ -194,78 +184,7 @@ struct WorkspaceSidebar: View {
                 dismiss: { showsKafkaTopicCreation = false }
             )
         }
-        .sheet(item: $tableEditor) { editor in
-            switch editor {
-            case let .rename(selection):
-                WorkspaceDatabaseTableRenameSheet(
-                    selection: selection,
-                    model: model,
-                    didRename: tableDidRename,
-                    dismiss: { tableEditor = nil }
-                )
-            }
-        }
-        .alert(
-            AppCopy.current.text("删除表？", "Delete Table?"),
-            isPresented: deleteConfirmationPresentation,
-            presenting: tablePendingDelete
-        ) { selection in
-            Button(
-                AppCopy.current.text("删除", "Delete"),
-                role: .destructive
-            ) {
-                requestDeleteTable(selection)
-            }
-            Button(AppCopy.current.text("取消", "Cancel"), role: .cancel) {}
-                .keyboardShortcut(.cancelAction)
-        } message: { selection in
-            Text(
-                AppCopy.current.text(
-                    "将永久删除表“\(selection.objectName)”及其中的所有数据。此操作无法撤销。",
-                    "This permanently deletes the “\(selection.objectName)” table and all of its data. This action cannot be undone."
-                )
-            )
-        }
-        .alert(
-            AppCopy.current.text("停用安全锁？", "Disable Safety Lock?"),
-            isPresented: deleteSafetyLockPresentation
-        ) {
-            Button(
-                AppCopy.current.text(
-                    "允许此工作区进行更改",
-                    "Allow Changes for This Workspace"
-                ),
-                role: .destructive
-            ) {
-                guard let selection = tablePendingDeleteAfterUnlock else {
-                    return
-                }
-                tablePendingDeleteAfterUnlock = nil
-                model.safetyLock.disable()
-                deleteTable(selection)
-            }
-            Button(AppCopy.current.text("取消", "Cancel"), role: .cancel) {
-                tablePendingDeleteAfterUnlock = nil
-            }
-        } message: {
-            Text(
-                AppCopy.current.text(
-                    "删除表会永久移除表和其中的数据。安全锁将保持停用，直到此工作区关闭。",
-                    "Dropping a table permanently removes it and its data. Safety Lock will remain disabled until this workspace closes."
-                )
-            )
-        }
-        .alert(
-            AppCopy.current.text("无法删除表", "Unable to Delete Table"),
-            isPresented: tableMutationErrorPresentation
-        ) {
-            Button(AppCopy.current.text("好", "OK"), role: .cancel) {}
-        } message: {
-            Text(tableMutationErrorMessage ?? "")
-        }
-        .onDisappear {
-            tableDeletionTask?.cancel()
-        }
+
     }
 
     @ViewBuilder
@@ -300,12 +219,6 @@ struct WorkspaceSidebar: View {
                                 database: database,
                                 model: model,
                                 openObjectTab: openDatabaseObjectTab,
-                                renameTable: {
-                                    tableEditor = .rename($0)
-                                },
-                                deleteTable: {
-                                    tablePendingDelete = $0
-                                },
                                 deleteIndex: requestDeleteIndex,
                                 deleteTopic: { selection in
                                     guard model.connectionState == .connected else { return }
@@ -495,33 +408,6 @@ struct WorkspaceSidebar: View {
         )
     }
 
-    private var deleteConfirmationPresentation: Binding<Bool> {
-        Binding(
-            get: { tablePendingDelete != nil },
-            set: { isPresented in
-                if !isPresented { tablePendingDelete = nil }
-            }
-        )
-    }
-
-    private var deleteSafetyLockPresentation: Binding<Bool> {
-        Binding(
-            get: { tablePendingDeleteAfterUnlock != nil },
-            set: { isPresented in
-                if !isPresented { tablePendingDeleteAfterUnlock = nil }
-            }
-        )
-    }
-
-    private var tableMutationErrorPresentation: Binding<Bool> {
-        Binding(
-            get: { tableMutationErrorMessage != nil },
-            set: { isPresented in
-                if !isPresented { tableMutationErrorMessage = nil }
-            }
-        )
-    }
-
     private func showCreateTable() {
         guard let databaseName = model.databaseContextName else { return }
         createTable(databaseName)
@@ -541,45 +427,4 @@ struct WorkspaceSidebar: View {
         }
     }
 
-    private func requestDeleteTable(
-        _ selection: WorkspaceDatabaseObjectSelection
-    ) {
-        if model.safetyLock.isEnabled {
-            tablePendingDeleteAfterUnlock = selection
-        } else {
-            deleteTable(selection)
-        }
-    }
-
-    private func deleteTable(
-        _ selection: WorkspaceDatabaseObjectSelection
-    ) {
-        guard tableDeletionTask == nil else { return }
-        let mutation = WorkspaceDatabaseTableMutation.drop(
-            selection: selection
-        )
-        tableDeletionTask = Task { @MainActor in
-            defer { tableDeletionTask = nil }
-            do {
-                try await model.applyTableMutation(mutation)
-                try Task.checkCancellation()
-                tableDidDelete(selection)
-            } catch is CancellationError {
-                return
-            } catch {
-                tableMutationErrorMessage = error.localizedDescription
-            }
-        }
-    }
-}
-
-private enum WorkspaceDatabaseTableEditor: Identifiable {
-    case rename(WorkspaceDatabaseObjectSelection)
-
-    var id: String {
-        switch self {
-        case let .rename(selection):
-            "rename:\(selection.id)"
-        }
-    }
 }
