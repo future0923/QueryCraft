@@ -1,7 +1,8 @@
 import Foundation
 import MCP
 import Testing
-@testable import QueryCraftFeature
+@_spi(MCP) @testable import QueryCraftFeature
+@testable import QueryCraftMCPRuntime
 
 struct MCPInitializationTests {
     // Captured from the installed Codex app-server's actual conversation MCP
@@ -15,7 +16,7 @@ struct MCPInitializationTests {
         defer { try? FileManager.default.removeItem(at: root) }
         var policy = MCPPolicy(); policy.enabled = true
         let store = MCPPolicyStore(directory: root); try store.save(policy)
-        let runtime = MCPRuntime(directory: root)
+        let runtime = MCPHostRuntime(directory: root)
         let server = await QueryCraftMCPApplication.makeServer(runtime: runtime)
         let pair = await InMemoryTransport.createConnectedPair()
         try await server.start(transport: MCPInitializationTransport(pair.server))

@@ -5,6 +5,9 @@
       location = "group:QueryCraftPackage">
    </FileRef>
    <FileRef
+      location = "group:QueryCraftMCPPackage">
+   </FileRef>
+   <FileRef
       location = "group:QueryCraftDrivers">
    </FileRef>
    <FileRef

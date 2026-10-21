@@ -1,5 +1,4 @@
 import Foundation
-import MCP
 import Testing
 import Security
 @testable import QueryCraftFeature
@@ -37,7 +36,7 @@ struct MCPTests {
         var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
         try MCPPolicyStore(directory: root).save(policy)
         let runtime = MCPRuntime(directory: root)
-        let args: [String: Value] = ["name": "Kafka", "type": "kafka", "host": "localhost", "port": 9092, "tls_mode": "disabled"]
+        let args: [String: MCPJSONValue] = ["name": "Kafka", "type": "kafka", "host": "localhost", "port": 9092, "tls_mode": "disabled"]
         let result = try await runtime.call("querycraft_add_connection", arguments: args)
         let id = try #require(result.objectValue?["connection_id"]?.stringValue.flatMap(UUID.init(uuidString:)))
         let saved = try #require(try await runtime.repository.fetch(id: id))
@@ -186,26 +185,6 @@ struct MCPTests {
         let p = profile(); var policy = MCPPolicy(); policy.mode = .dataWrite
         await #expect(throws: MCPFailure.self) { _ = try await MCPSQLAuthorization.statements("DELETE FROM users", profile: p, database: "allowed", policy: policy) }
         await #expect(throws: MCPFailure.self) { _ = try await MCPSQLAuthorization.statements("BEGIN", profile: p, database: "allowed", policy: policy) }
-    }
-    @Test func sdkHandshakeAndToolPermissions() async throws {
-        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = MCPPolicyStore(directory: directory); var policy = MCPPolicy(); policy.enabled = true
-        policy.disabledTools.insert("remove_connection"); try store.save(policy)
-        let runtime = MCPRuntime(directory: directory)
-        let server = await QueryCraftMCPApplication.makeServer(runtime: runtime)
-        let pair = await InMemoryTransport.createConnectedPair()
-        try await server.start(transport: pair.server)
-        let client = Client(name: "test", version: "1")
-        let initialized = try await client.connect(transport: pair.client)
-        #expect(initialized.serverInfo.name == "QueryCraft")
-        let (tools, _) = try await client.listTools()
-        #expect(tools.contains(where: { $0.name == "querycraft_execute_query" }))
-        #expect(!tools.contains(where: { $0.name == "querycraft_remove_connection" }))
-        policy.enabled = false; try store.save(policy)
-        let (content, isError) = try await client.callTool(name: "querycraft_list_connections")
-        #expect(isError == true); #expect(!content.isEmpty)
-        await client.disconnect(); await server.stop(); await runtime.shutdown()
     }
     @Test func argumentsRejectMixedArraysAndUnknownFields() throws {
         #expect(throws: MCPFailure.self) {

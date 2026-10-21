@@ -1,9 +1,8 @@
 import Foundation
-import MCP
 
 actor MCPResultBuffer {
     private var columns: [WorkspaceDatabaseDataColumn] = []
-    private var rows: [Value] = []
+    private var rows: [MCPJSONValue] = []
     private var byteCount = 0
     private var truncated = false
     private let limit: Int
@@ -19,7 +18,7 @@ actor MCPResultBuffer {
         columns = batch.columns
         for row in batch.rows {
             guard rows.count < limit else { truncated = true; break }
-            let cells: [Value] = row.values.map { cell in
+            let cells: [MCPJSONValue] = row.values.map { cell in
                 switch cell {
                 case .null: return .null
                 case .binary(let count, let preview):
@@ -33,19 +32,19 @@ actor MCPResultBuffer {
                     return .string(value)
                 }
             }
-            let entry = Value.array(cells)
+            let entry = MCPJSONValue.array(cells)
             let size = try JSONEncoder().encode(entry).count
             guard byteCount + size <= byteLimit else { truncated = true; break }
             byteCount += size; rows.append(entry)
         }
     }
-    func value(hasMore: Bool = false) -> Value {
-        .object(["columns": .array(columns.map { .object(["name": .string($0.name), "type": $0.type.map(Value.string) ?? .null]) }),
+    func value(hasMore: Bool = false) -> MCPJSONValue {
+        .object(["columns": .array(columns.map { .object(["name": .string($0.name), "type": $0.type.map(MCPJSONValue.string) ?? .null]) }),
                  "rows": .array(rows), "returned_rows": .int(rows.count), "truncated": .bool(truncated || hasMore)])
     }
 }
 
-extension Dictionary where Key == String, Value == MCP.Value {
+extension Dictionary where Key == String, Value == MCPJSONValue {
     func requiredString(_ key: String) throws -> String {
         guard let value = self[key]?.stringValue, !value.isEmpty else { throw MCPFailure("Missing or invalid argument: \(key)") }
         return value

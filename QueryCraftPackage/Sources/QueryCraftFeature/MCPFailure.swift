@@ -1,5 +1,4 @@
 import Foundation
-import MCP
 import Security
 
 enum MCPFailureCode: String, Codable, Sendable {
@@ -44,7 +43,7 @@ struct MCPFailure: LocalizedError, Sendable {
     let code: MCPFailureCode
     init(_ message: String, code: MCPFailureCode = .invalidArgument) { self.message = message; self.code = code }
     var errorDescription: String? { "[\(code.rawValue)] \(message)" }
-    var value: Value {
+    var value: MCPJSONValue {
         .object(["error": .object(["code": .string(code.rawValue), "message": .string(message),
                                   "recovery": .string(code.recovery), "automatic_retry": false])])
     }

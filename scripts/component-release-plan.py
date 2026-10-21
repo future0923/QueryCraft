@@ -20,7 +20,9 @@ def meaningful(base,head,path):
     return normalize(read(base,path))!=normalize(read(head,path))
 def component_paths(kind):
     if kind=='skill':return ['Components/Skill/**','scripts/package-components.py']
-    return ['QueryCraftPackage/Sources/QueryCraftFeature/MCPRuntime*','QueryCraftPackage/Sources/QueryCraftFeature/MCPHTTP*',
+    return ['QueryCraftMCPPackage/Sources/**','QueryCraftMCPPackage/Package.swift',
+      'QueryCraftPackage/Sources/QueryCraftFeature/MCPHost*','QueryCraftPackage/Sources/QueryCraftFeature/MCPJSONValue*',
+      'QueryCraftPackage/Sources/QueryCraftFeature/MCPRuntime*','QueryCraftPackage/Sources/QueryCraftFeature/MCPHTTP*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPInitialization*','QueryCraftPackage/Sources/QueryCraftFeature/MCPPolicy*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPSQL*','QueryCraftPackage/Sources/QueryCraftFeature/MCPRequest*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPSchema*','QueryCraftPackage/Sources/QueryCraftFeature/MCPResult*',

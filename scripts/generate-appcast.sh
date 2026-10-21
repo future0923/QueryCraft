@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Legacy Universal ZIP tooling, retained for recovering existing releases.
+# New releases use scripts/update-archives.py and architecture-specific XZs.
 usage() {
     echo "Usage: scripts/generate-appcast.sh <version> <update-zip> [release-notes]"
     echo "Defaults to docs/releases/<version>.md when release-notes is omitted."

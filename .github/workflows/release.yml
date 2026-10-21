@@ -76,6 +76,7 @@ jobs:
         run: |
           python3 scripts/test-component-release-plan.py
           python3 scripts/test-release-artifact-plan.py
+          python3 scripts/test-update-archives.py
       - id: components
         env:
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
@@ -188,6 +189,7 @@ jobs:
       QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
       SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
       QUERYCRAFT_BUILD_MCP: ${{ needs.metadata.outputs.mcp_changed }}
+      QUERYCRAFT_BUILD_SKILL: ${{ needs.metadata.outputs.skill_changed }}
       QUERYCRAFT_BUILD_CLIENT: true
       QUERYCRAFT_BUILD_DRIVERS: false
       QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: false
@@ -226,7 +228,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: querycraft-release-client-${{ matrix.architecture }}
+          name: querycraft-release-client-${{ matrix.architecture }}-v2
           path: artifacts/${{ matrix.architecture }}/
           if-no-files-found: error
           retention-days: 14
@@ -235,82 +237,62 @@ jobs:
         if: steps.upload.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
-          name: querycraft-release-client-${{ matrix.architecture }}
+          name: querycraft-release-client-${{ matrix.architecture }}-v2
           path: artifacts/${{ matrix.architecture }}/
           if-no-files-found: error
           retention-days: 14
           overwrite: true
 
   build_update:
-    needs: metadata
-    if: needs.metadata.outputs.build_update == 'true'
-    runs-on: macos-15
-    timeout-minutes: 90
-    env:
-      SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-      QUERYCRAFT_UPDATE_BASE_URL: https://querycraft.debug-tools.cc
-      QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL: https://querycraft.debug-tools.cc/drivers
-      QUERYCRAFT_BUILD_CLIENT: false
-      QUERYCRAFT_BUILD_DRIVERS: false
-      QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: true
+    needs: [metadata, build_client]
+    if: >-
+      ${{ always() && needs.metadata.result == 'success' &&
+          needs.metadata.outputs.build_update == 'true' &&
+          contains(fromJSON('["success","skipped"]'), needs.build_client.result) }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.metadata.outputs.build_ref }}
-
-      - name: Select Xcode 26.2
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
-
-      - name: Import persistent application signing identity
-        env:
-          QUERYCRAFT_SIGNING_P12_BASE64: ${{ secrets.QUERYCRAFT_SIGNING_P12_BASE64 }}
-          QUERYCRAFT_SIGNING_P12_PASSWORD: ${{ secrets.QUERYCRAFT_SIGNING_P12_PASSWORD }}
+      - name: Download cached architecture artifacts
+        if: needs.metadata.outputs.source_run_id != ''
+        uses: actions/download-artifact@v8
+        with:
+          pattern: querycraft-release-client-*-v2
+          path: artifacts/update
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.metadata.outputs.source_run_id }}
+      - name: Download newly built architecture artifacts
+        if: needs.build_client.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: querycraft-release-client-*-v2
+          path: artifacts/update
+          merge-multiple: true
+      - name: Assemble architecture-aware update feed
         run: |
-          export QUERYCRAFT_SIGNING_DIRECTORY="$RUNNER_TEMP/querycraft-signing"
-          echo "QUERYCRAFT_SIGNING_DIRECTORY=$QUERYCRAFT_SIGNING_DIRECTORY" >> "$GITHUB_ENV"
-          python3 scripts/code-signing.py import-ci
-
-      - name: Install XcodeBuildMCP
-        run: npm install --global xcodebuildmcp@2.6.2
-
-      - name: Validate signing secret
-        run: |
-          if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
-            echo "Required GitHub secret is missing: SPARKLE_PRIVATE_KEY" >&2
-            exit 1
-          fi
-
-      - name: Build and package universal update
-        env:
-          QUERYCRAFT_RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
-          QUERYCRAFT_RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
-          DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
-        run: scripts/ci/build-release-artifacts.sh arm64 artifacts/update
-
-      - name: Package changed Skill
-        if: needs.metadata.outputs.skill_changed == 'true'
-        run: |
-          tool="$(find "$RUNNER_TEMP/querycraft-derived-data" -name sign_update -type f -perm -111 -print -quit)"
-          python3 scripts/package-components.py --component skill --output artifacts/update --sign-tool "$tool"
-      - name: Remove temporary signing keychain
-        if: always()
-        run: python3 scripts/code-signing.py cleanup-ci
-
+          python3 scripts/update-archives.py assemble --directory artifacts/update \
+            --version "${{ needs.metadata.outputs.version }}" \
+            --notes "docs/releases/${{ needs.metadata.outputs.version }}.md" --previous appcast.xml
       - id: upload
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: querycraft-release-client-update
-          path: artifacts/update/
+          name: querycraft-release-client-update-v2
+          path: |
+            artifacts/update/appcast.xml
+            artifacts/update/release-notes.md
           if-no-files-found: error
           retention-days: 14
-
       - name: Retry artifact upload
         if: steps.upload.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
-          name: querycraft-release-client-update
-          path: artifacts/update/
+          name: querycraft-release-client-update-v2
+          path: |
+            artifacts/update/appcast.xml
+            artifacts/update/release-notes.md
           if-no-files-found: error
           retention-days: 14
           overwrite: true
@@ -446,6 +428,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.build_ref }}
 
       - name: Install publish dependencies
         run: |
@@ -515,7 +499,7 @@ jobs:
           fi
           gh release upload "$RELEASE_TAG" --clobber \
             dist/QueryCraft-*.dmg \
-            dist/QueryCraft-*.zip \
+            dist/QueryCraft-*.tar.xz \
             dist/appcast.xml \
             dist/release-notes.md
 

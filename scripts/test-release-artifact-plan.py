@@ -9,7 +9,7 @@ SPEC = importlib.util.spec_from_file_location('artifacts', ROOT / 'scripts/ci/re
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 DRIVERS = ['mysql', 'postgresql', 'doris']
-COMPLETE = {'querycraft-release-client-' + arch for arch in ['x86_64', 'arm64', 'update']}
+COMPLETE = {'querycraft-release-client-' + arch + '-v2' for arch in ['x86_64', 'arm64', 'update']}
 COMPLETE |= {f'querycraft-release-driver-{kind}-{arch}' for kind in DRIVERS for arch in ['x86_64', 'arm64']}
 
 
@@ -21,14 +21,20 @@ class ArtifactPlanTests(unittest.TestCase):
         self.assertTrue(result['build_update'])
         self.assertEqual({row['database'] for row in result['driver_build_matrix']}, set(DRIVERS))
 
-    def test_observed_failed_run_builds_only_three_missing_artifacts(self):
-        missing = {'querycraft-release-client-x86_64', 'querycraft-release-driver-doris-x86_64',
+    def test_failed_run_builds_missing_binaries_and_reassembles_update(self):
+        missing = {'querycraft-release-client-x86_64-v2', 'querycraft-release-driver-doris-x86_64',
                    'querycraft-release-driver-postgresql-x86_64'}
         result = MODULE.plan(COMPLETE - missing, DRIVERS, True)
         self.assertEqual([row['architecture'] for row in result['client_build_matrix']], ['x86_64'])
         self.assertEqual([(row['database'], row['architecture']) for row in result['driver_build_matrix']],
                          [('postgresql', 'x86_64'), ('doris', 'x86_64')])
-        self.assertFalse(result['build_update'])
+        self.assertTrue(result['build_update'])
+
+    def test_legacy_zip_cache_cannot_satisfy_architecture_xz_release(self):
+        legacy = {'querycraft-release-client-' + arch for arch in ('x86_64', 'arm64', 'update')}
+        result = MODULE.plan(legacy, [], False)
+        self.assertEqual({row['architecture'] for row in result['client_build_matrix']}, {'x86_64', 'arm64'})
+        self.assertTrue(result['build_update'])
 
     def test_complete_source_does_not_rebuild_any_artifact(self):
         result = MODULE.plan(COMPLETE, DRIVERS, True)

@@ -14,8 +14,8 @@ DRIVERS = {'mysql', 'postgresql', 'doris', 'redis', 'elasticsearch', 'kafka'}
 
 def plan(available, drivers, publish_drivers, rebuild_driver='none'):
     clients = [dict(architecture=arch, runner=runner) for arch, runner in ARCHITECTURES
-               if f'querycraft-release-client-{arch}' not in available]
-    update = 'querycraft-release-client-update' not in available
+               if f'querycraft-release-client-{arch}-v2' not in available]
+    update = bool(clients) or 'querycraft-release-client-update-v2' not in available
     driver_builds = [dict(database=driver, architecture=arch, runner=runner)
                      for driver in drivers for arch, runner in ARCHITECTURES
                      if publish_drivers and (driver == rebuild_driver
@@ -53,6 +53,8 @@ def main():
             raise ValueError('Source run ID must be numeric')
         tag = 'v' + args.version
         build_ref = subprocess.check_output(['git', 'rev-parse', tag + '^{commit}'], text=True).strip()
+        if subprocess.run(['git', 'cat-file', '-e', tag + ':scripts/update-archives.py'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+            raise ValueError('Legacy ZIP release: recover using the workflow from that release tag')
         config = subprocess.check_output(['git', 'show', tag + ':Config/Shared.xcconfig'], text=True)
         for key, expected in [('MARKETING_VERSION', args.version), ('CURRENT_PROJECT_VERSION', args.build)]:
             if not re.search(r'^' + key + r' = ' + re.escape(expected) + r'$', config, re.M):

@@ -165,7 +165,7 @@ Skill 教授六类驱动的工作流，依赖已配置好的 MCP；不需要 Que
 
 ## 构建与验证
 
-使用 XcodeBuildMCP 构建 `QueryCraft` scheme 后：
+使用 XcodeBuildMCP 依次构建 `QueryCraft` 与 `querycraft-mcp` 两个 scheme，保持同一架构、配置和 DerivedData 后：
 
 ```bash
 python3 scripts/package-mcp.py \
@@ -174,8 +174,9 @@ python3 scripts/package-mcp.py \
 python3 scripts/test-mcp-protocol.py '/tmp/QueryCraft MCP.app/Contents/MacOS/querycraft-mcp'
 ```
 
-独立包使用 C 启动器动态链接 `QueryCraftFeature.framework`，与驱动保持同一模块身份。
-SwiftPM 的 `querycraft-mcp` 用于开发测试，不是分发包；不能直接用它替代签名的独立包。
+协议服务位于独立的 `QueryCraftMCPPackage`，MCP SDK 与 NIO 不再链接进主程序。
+它引用 `QueryCraftFeature` 动态库产品，与驱动保持同一模块身份；共享权限、凭据和驱动接口仍在原框架中。
+`querycraft-mcp` 构建出的可执行文件需要通过上述脚本补齐框架、资源、凭据助手和签名后分发，不能直接作为完整安装包。
 `--self-test` 验证协议握手与 SQL 资源，`--check-drivers --data-dir <隔离目录>` 列出实际加载的驱动。
 Dev 主程序安装不再附带 MCP；release 构建仅在 MCP 有相关改动时独立打包。协议测试不读取用户连接或访问真实数据库。
 

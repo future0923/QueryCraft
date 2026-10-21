@@ -1,18 +1,17 @@
-import MCP
 import Foundation
 
 struct MCPToolDefinition: Sendable {
     let name: String
     let description: String
-    let properties: [String: Value]
+    let properties: [String: MCPJSONValue]
     let required: [String]
     private static let titles = ["list_connections": "列出连接", "list_databases": "列出数据库", "list_tables": "列出表与对象", "describe_table": "查看结构", "get_schema_context": "获取结构上下文", "list_routines": "列出存储过程", "get_routine_source": "读取过程定义", "execute_query": "执行查询", "execute_batch": "批量执行", "open_session": "打开会话", "close_session": "关闭会话", "begin_transaction": "开始事务", "commit_transaction": "提交事务", "rollback_transaction": "回滚事务", "execute_redis_command": "执行 Redis 命令", "execute_request": "执行 ES 请求", "peek_messages": "读取 Kafka 消息", "send_message": "发送 Kafka 消息", "consumer_groups": "查看消费组", "add_connection": "添加连接", "duplicate_connection": "复制连接", "remove_connection": "删除连接", "open_table": "在桌面打开对象", "execute_and_show": "执行并展示结果", "plugin_tools": "发现驱动工具", "plugin_call": "调用驱动工具", "plugin_list": "列出驱动"]
     var localizedTitle: String {
         AppCopy.current.text(Self.titles[name] ?? name, name.replacingOccurrences(of: "_", with: " ").capitalized)
     }
 
-    var tool: Tool {
-        Tool(name: "querycraft_" + name, description: description,
+    var tool: MCPWireTool {
+        MCPWireTool(name: "querycraft_" + name, description: description,
              inputSchema: .object(["type": "object", "properties": .object(properties),
                                    "required": .array(required.map { .string($0) }), "additionalProperties": false]),
              annotations: .init(readOnlyHint: MCPToolCatalog.readTools.contains(name),
@@ -40,7 +39,7 @@ enum MCPToolCatalog {
     Database tools work without the desktop. open_table and execute_and_show need it running.
     """
 
-    static func validate(_ name: String, arguments: [String: Value]) throws {
+    static func validate(_ name: String, arguments: [String: MCPJSONValue]) throws {
         guard let definition = definitions.first(where: { $0.name == name }) else { throw MCPFailure("Unknown tool.") }
         for key in definition.required where arguments[key] == nil { throw MCPFailure("Missing argument: \(key)") }
         for (key, value) in arguments {
@@ -68,20 +67,20 @@ enum MCPToolCatalog {
             throw MCPFailure("Partition exceeds the supported range.")
         }
     }
-    static func string(_ description: String) -> Value { .object(["type": "string", "description": .string(description)]) }
-    static func integer(_ description: String) -> Value { .object(["type": "integer", "description": .string(description)]) }
-    static let selector: [String: Value] = [
+    static func string(_ description: String) -> MCPJSONValue { .object(["type": "string", "description": .string(description)]) }
+    static func integer(_ description: String) -> MCPJSONValue { .object(["type": "integer", "description": .string(description)]) }
+    static let selector: [String: MCPJSONValue] = [
         "connection_id": string("Stable connection UUID from list_connections."),
         "database": string("Database name; defaults to the saved connection database."),
         "schema": string("Optional SQL schema.")
     ]
-    static func definition(_ name: String, _ description: String, _ extra: [String: Value] = [:],
+    static func definition(_ name: String, _ description: String, _ extra: [String: MCPJSONValue] = [:],
                            required: [String] = ["connection_id"]) -> MCPToolDefinition {
-        let metadata: [String: Value] = metadataTools.contains(name)
+        let metadata: [String: MCPJSONValue] = metadataTools.contains(name)
             ? ["refresh": .object(["type": "boolean", "description": "Bypass the short-lived metadata cache; use after external schema changes."])] : [:]
         return .init(name: name, description: description, properties: selector.merging(metadata) { _, b in b }.merging(extra) { _, b in b }, required: required)
     }
-    static let query: [String: Value] = [
+    static let query: [String: MCPJSONValue] = [
         "confirm_high_risk": .object(["type": "boolean", "description": "Explicit confirmation for destructive operations under full access; false by default."]),
         "sql": string("SQL text; permissions are checked for every statement."),
         "session_id": string("Optional session from open_session; preserves driver session state; close it when finished."),

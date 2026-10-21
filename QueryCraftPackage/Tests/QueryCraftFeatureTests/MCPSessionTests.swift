@@ -1,5 +1,4 @@
 import Foundation
-import MCP
 import Testing
 @testable import QueryCraftFeature
 
@@ -17,7 +16,7 @@ struct MCPSessionTests {
         try await runtime.repository.insert(initialProfile)
         let profile = try #require(try await runtime.repository.fetch(id: initialProfile.id))
         await runtime.seedMCPTestSession(.init(id: "session", profile: profile, database: "allowed", connection: session, mode: .readOnly))
-        let args: [String: Value] = ["connection_id": .string(profile.id.uuidString), "session_id": "session", "sql": "SELECT 1"]
+        let args: [String: MCPJSONValue] = ["connection_id": .string(profile.id.uuidString), "session_id": "session", "sql": "SELECT 1"]
         let first = Task {
             do { return try await runtime.call("querycraft_execute_query", arguments: args) }
             catch { started.continuation.finish(); throw error }
@@ -81,7 +80,7 @@ struct MCPSessionTests {
     }
 
     @Test @MainActor func nativeResultKeepsNullAndIntegerPrecision() async throws {
-        let value: Value = .object(["results": .array([.object([
+        let value: MCPJSONValue = .object(["results": .array([.object([
             "sql": "SELECT value", "affected_or_returned_rows": .int(1),
             "result": .object(["columns": .array([.object(["name": "a", "type": "bigint"]), .object(["name": "b", "type": "text"])]),
                                "rows": .array([.array(["9007199254740993", .null])])])

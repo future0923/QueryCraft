@@ -6,7 +6,9 @@ usage() {
 Usage: scripts/deploy-release-artifacts.sh <version> <artifact-directory>
 
 When QUERYCRAFT_DEPLOY_CLIENT=true, the artifact directory must contain:
-  QueryCraft-<version>.zip
+  QueryCraft-<version>-x86_64.tar.xz
+  QueryCraft-<version>-arm64.tar.xz
+  update-x86_64.json / update-arm64.json
   QueryCraft-<version>-x86_64.dmg
   QueryCraft-<version>-arm64.dmg
   appcast.xml
@@ -107,7 +109,9 @@ for command_name in curl jq shasum stat xmllint; do
     fi
 done
 
-update_zip="$artifact_directory/QueryCraft-$version.zip"
+update_intel="$artifact_directory/QueryCraft-$version-x86_64.tar.xz"
+update_arm="$artifact_directory/QueryCraft-$version-arm64.tar.xz"
+script_directory="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
 intel_dmg="$artifact_directory/QueryCraft-$version-x86_64.dmg"
 arm_dmg="$artifact_directory/QueryCraft-$version-arm64.dmg"
 appcast="$artifact_directory/appcast.xml"
@@ -117,7 +121,8 @@ minimum_system_version=""
 ed_signature=""
 if [[ "$deploy_client" == "true" ]]; then
     for required_file in \
-        "$update_zip" \
+        "$update_intel" \
+        "$update_arm" \
         "$intel_dmg" \
         "$arm_dmg" \
         "$appcast" \
@@ -129,16 +134,16 @@ if [[ "$deploy_client" == "true" ]]; then
         fi
     done
 
-    item_xpath="//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version']]"
-    release_build="$(xmllint --xpath "string(($item_xpath/*[local-name()='version'])[1])" "$appcast")"
-    minimum_system_version="$(xmllint --xpath "string(($item_xpath/*[local-name()='minimumSystemVersion'])[1])" "$appcast")"
-    ed_signature="$(xmllint --xpath "string(($item_xpath/*[local-name()='enclosure']/@*[local-name()='edSignature'])[1])" "$appcast")"
-    update_url="$(xmllint --xpath "string(($item_xpath/*[local-name()='enclosure']/@url)[1])" "$appcast")"
-    if [[ ! "$release_build" =~ ^[0-9]+$ || -z "$minimum_system_version" || -z "$ed_signature" || \
-          "$update_url" != "$base_url/releases/QueryCraft-$version.zip" ]]; then
-        echo "The appcast metadata for QueryCraft $version is incomplete or invalid." >&2
-        exit 65
+    python3 "$script_directory/update-archives.py" validate --directory "$artifact_directory" \
+        --feed "$appcast" --base-url "$base_url"
+    release_build="$(jq -er '.build' "$artifact_directory/update-x86_64.json")"
+    minimum_system_version="$(jq -er '.minimumSystemVersion' "$artifact_directory/update-x86_64.json")"
+    signature_intel="$(jq -er '.edSignature' "$artifact_directory/update-x86_64.json")"
+    signature_arm="$(jq -er '.edSignature' "$artifact_directory/update-arm64.json")"
+    if [[ "$(jq -er '.version' "$artifact_directory/update-x86_64.json")" != "$version" ]]; then
+        echo "Update metadata does not match requested release." >&2; exit 65
     fi
+
 fi
 
 driver_archives=()
@@ -297,30 +302,32 @@ if [[ "$deploy_drivers" == "true" ]]; then
 fi
 
 published_application_matches() {
-    local candidate remote_signature architecture
-    if ! candidate="$(curl --fail --silent --show-error --location "$base_url/appcast.xml")"; then
+    local architecture
+    local remote_feed="$temporary_driver_manifest_directory/published-appcast.xml"
+    if ! curl --fail --silent --show-error --location "$base_url/appcast.xml" -o "$remote_feed"; then
         return 1
     fi
-    if ! xmllint --xpath \
-        "boolean(//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version'] and *[local-name()='version' and text()='$release_build']])" \
-        - <<<"$candidate" | grep -q true
-    then
+    if ! python3 "$script_directory/update-archives.py" validate --directory "$artifact_directory" \
+        --feed "$remote_feed" --base-url "$base_url" --canonical; then
         return 1
     fi
-    remote_signature="$(xmllint --xpath \
-        "string((//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version']]/*[local-name()='enclosure']/@*[local-name()='edSignature'])[1])" \
-        - <<<"$candidate")"
-    if [[ "$remote_signature" != "$ed_signature" ]]; then
-        return 1
-    fi
+    while IFS= read -r download_url; do
+        if ! curl --fail --silent --show-error --head --location "$download_url" -o /dev/null; then
+            return 1
+        fi
+    done < <(python3 - "$remote_feed" "$version" <<'PYFEED'
+import sys, xml.etree.ElementTree as ET
+for item in ET.parse(sys.argv[1]).findall('./channel/item'):
+    if item.findtext('{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString') == sys.argv[2]:
+        print(item.find('enclosure').get('url'))
+PYFEED
+    )
     for architecture in x86_64 arm64; do
         if ! curl --fail --silent --show-error --head --location \
-            "$base_url/releases/QueryCraft-$version-$architecture.dmg" -o /dev/null
-        then
+            "$base_url/releases/QueryCraft-$version-$architecture.dmg" -o /dev/null; then
             return 1
         fi
     done
-    published_appcast="$candidate"
 }
 
 if [[ "$deploy_client" == "true" ]]; then
@@ -329,40 +336,27 @@ if [[ "$deploy_client" == "true" ]]; then
     else
         if ! curl_deploy \
             --retry 0 \
+            --form-string "update_format=2" \
             --form-string "version=$version" \
             --form-string "build=$release_build" \
             --form-string "minimum_system_version=$minimum_system_version" \
-            --form-string "ed_signature=$ed_signature" \
+            --form-string "ed_signature_x86_64=$signature_intel" \
+            --form-string "ed_signature_arm64=$signature_arm" \
             --form "release_notes=<$release_notes" \
-            --form "archive=@$update_zip;type=application/zip" \
+            --form "archive_x86_64=@$update_intel;type=application/octet-stream" \
+            --form "archive_arm64=@$update_arm;type=application/octet-stream" \
             --form "dmg_x86_64=@$intel_dmg;type=application/octet-stream" \
             --form "dmg_arm64=@$arm_dmg;type=application/octet-stream" \
-            "$deploy_url/applications"
-        then
+            "$deploy_url/applications"; then
             echo "Application upload response failed; verifying the published state." >&2
         fi
     fi
-
-    published_appcast="$(curl --fail --silent --show-error --location "$base_url/appcast.xml")"
-    if ! xmllint --xpath \
-        "boolean(//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version'] and *[local-name()='version' and text()='$release_build']])" \
-        - <<<"$published_appcast" | grep -q true
-    then
-        echo "Published appcast does not contain QueryCraft $version ($release_build)." >&2
+    if ! published_application_matches; then
+        echo "Both architecture updates and installers must be available before release succeeds." >&2
         exit 65
     fi
-    published_signature="$(xmllint --xpath \
-        "string((//*[local-name()='item'][*[local-name()='shortVersionString' and text()='$version']]/*[local-name()='enclosure']/@*[local-name()='edSignature'])[1])" \
-        - <<<"$published_appcast")"
-    if [[ "$published_signature" != "$ed_signature" ]]; then
-        echo "Published appcast signature does not match QueryCraft $version." >&2
-        exit 65
-    fi
-    for architecture in x86_64 arm64; do
-        curl --fail --silent --show-error --head --location \
-            "$base_url/releases/QueryCraft-$version-$architecture.dmg" -o /dev/null
-    done
 fi
+
 for manifest in "${driver_manifests[@]}"; do
     manifest_name="$(basename "$manifest")"
     database_type="$(jq -er '.databaseType' "$manifest")"

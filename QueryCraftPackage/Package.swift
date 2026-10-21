@@ -7,7 +7,6 @@ let package = Package(
     name: "QueryCraftFeature",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "querycraft-mcp", targets: ["QueryCraftMCPExecutable"]),
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "QueryCraftFeature",
@@ -16,9 +15,6 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", revision: "a0ae212ebf6eab5f754c3129608bc5557637e605"),
-        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
         .package(
             path: "../ThirdParty/CodeEditLanguages"
         ),
@@ -42,17 +38,11 @@ let package = Package(
         ),
     ],
     targets: [
-        .executableTarget(name: "QueryCraftMCPExecutable", dependencies: ["QueryCraftFeature"]),
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "QueryCraftFeature",
             dependencies: [
-                .product(name: "MCP", package: "swift-sdk"),
-                .product(name: "Logging", package: "swift-log"),
-                .product(name: "NIOCore", package: "swift-nio"),
-                .product(name: "NIOPosix", package: "swift-nio"),
-                .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(
                     name: "CodeEditLanguages",
                     package: "CodeEditLanguages"

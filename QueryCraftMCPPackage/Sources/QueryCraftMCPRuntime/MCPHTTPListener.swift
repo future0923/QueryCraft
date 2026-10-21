@@ -1,4 +1,5 @@
 import Foundation
+@_spi(MCP) import QueryCraftFeature
 import MCP
 import NIOCore
 import NIOPosix
@@ -8,7 +9,7 @@ actor MCPHTTPRouter {
     struct Entry {
         let transport: StatefulHTTPServerTransport
         let server: Server
-        let runtime: MCPRuntime
+        let runtime: MCPHostRuntime
         var lastUsed: Date
     }
     struct FixedID: SessionIDGenerator {
@@ -16,23 +17,22 @@ actor MCPHTTPRouter {
         func generateSessionID() -> String { id }
     }
     let directory: URL
-    let settings: MCPHTTPSettings
+    let settings: MCPHTTPConfiguration
     private var pendingSessions = 0
     private var entries: [String: Entry] = [:]
-    init(directory: URL, settings: MCPHTTPSettings) { self.directory = directory; self.settings = settings }
+    init(directory: URL, settings: MCPHTTPConfiguration) { self.directory = directory; self.settings = settings }
 
     func handle(_ request: HTTPRequest) async -> HTTPResponse {
         do {
-            let policy = try MCPPolicyStore(directory: directory).load()
-            try policy.authorize(tool: "http")
+            let configuration = try JSONDecoder().decode(MCPHTTPConfiguration.self, from: MCPHost.httpConfiguration(directory: directory))
             guard request.path == settings.path else { return .error(statusCode: 404, .invalidRequest("Not found")) }
-            guard request.header("Authorization") == "Bearer \(policy.http.token)" else {
+            guard request.header("Authorization") == "Bearer \(configuration.token)" else {
                 return .error(statusCode: 401, .invalidRequest("Unauthorized"), extraHeaders: ["WWW-Authenticate": "Bearer"])
             }
-            guard let host = request.header("Host"), policy.http.allowedHosts.contains(where: { host == $0 || host == "\($0):\(settings.port)" }) else {
+            guard let host = request.header("Host"), configuration.allowedHosts.contains(where: { host == $0 || host == "\($0):\(settings.port)" }) else {
                 return .error(statusCode: 403, .invalidRequest("Host is not allowed"))
             }
-            if let origin = request.header("Origin"), !policy.http.allowedOrigins.contains(origin) {
+            if let origin = request.header("Origin"), !configuration.allowedOrigins.contains(origin) {
                 return .error(statusCode: 403, .invalidRequest("Origin is not allowed"))
             }
             let expired = entries.filter { Date().timeIntervalSince($0.value.lastUsed) > 1800 }.map(\.key)
@@ -55,7 +55,7 @@ actor MCPHTTPRouter {
             // Host, Origin and bearer auth are checked above on every request, including SSE and DELETE.
             let pipeline = StandardValidationPipeline(validators: [AcceptHeaderValidator(mode: .sseRequired), ContentTypeValidator(), ProtocolVersionValidator()])
             let transport = StatefulHTTPServerTransport(sessionIDGenerator: FixedID(id: id), validationPipeline: pipeline)
-            let runtime = MCPRuntime(directory: directory)
+            let runtime = MCPHostRuntime(directory: directory)
             let server = await QueryCraftMCPApplication.makeServer(runtime: runtime)
             try await server.start(transport: MCPInitializationTransport(transport))
             entries[id] = Entry(transport: transport, server: server, runtime: runtime, lastUsed: Date())
@@ -73,9 +73,8 @@ actor MCPHTTPRouter {
 
 enum MCPHTTPListener {
     static func run(directory: URL) async throws {
-        let policy = try MCPPolicyStore(directory: directory).load()
-        try policy.authorize(tool: "http"); try policy.http.validate()
-        let router = MCPHTTPRouter(directory: directory, settings: policy.http)
+        let configuration = try JSONDecoder().decode(MCPHTTPConfiguration.self, from: MCPHost.httpConfiguration(directory: directory))
+        let router = MCPHTTPRouter(directory: directory, settings: configuration)
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
         do {
             let server = try await ServerBootstrap(group: group)
@@ -85,8 +84,8 @@ enum MCPHTTPListener {
                     channel.pipeline.configureHTTPServerPipeline(withErrorHandling: true).flatMap {
                         channel.eventLoop.makeCompletedFuture { try channel.pipeline.syncOperations.addHandler(MCPHTTPChannelHandler(router: router)) }
                     }
-                }.bind(host: policy.http.host, port: policy.http.port).get()
-            FileHandle.standardError.write(Data("QueryCraft MCP HTTP listening at \(policy.http.endpoint)\n".utf8))
+                }.bind(host: configuration.host, port: configuration.port).get()
+            FileHandle.standardError.write(Data("QueryCraft MCP HTTP listening at \(configuration.endpoint)\n".utf8))
             try await server.closeFuture.get()
             await router.shutdown()
             try await group.shutdownGracefully()
@@ -159,4 +158,14 @@ private func write(_ data: Data, to channel: any Channel) async throws {
         var buffer = channel.allocator.buffer(capacity: data.count); buffer.writeBytes(data)
         return channel.writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(buffer)))
     }.flatMap { $0 }.get()
+}
+
+struct MCPHTTPConfiguration: Decodable, Sendable {
+    let host: String
+    let port: Int
+    let path: String
+    let allowedHosts: [String]
+    let allowedOrigins: [String]
+    let token: String
+    var endpoint: String { "http://\(host.contains(":") ? "[\(host)]" : host):\(port)\(path)" }
 }

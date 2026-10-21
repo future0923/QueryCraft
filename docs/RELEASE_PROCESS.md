@@ -56,14 +56,17 @@ MySQL 和 Doris 共用 `QueryCraftDrivers/MariaDBTransport` 动态库。该目�
 - Actions 自动构建、签名并发布相关组件；未改动组件保持已有发布。手动 `publish_components` 可独立发布变更的 MCP/Skill，支持 `source_run_id` 复用原构建产物。生产环境审批和发布令牌要求与现有资源发布一致。
 - 选择 `publish_drivers` 时只允许发布实际变动的驱动；无相关改动或仅变动版本号/build 必须失败。共享 MariaDBTransport 涉及 MySQL/Doris，Driver API 不兼容变化涉及全部六类。
 - 构建矩阵、服务端部署、发布后清单同步和 GitHub 驱动附件使用同一份实际变更名单。复用旧 run 时，产物目录中残留的其他驱动包不得随之上传；只修改驱动测试也不触发驱动发版。Swift 与打包脚本的 Driver API 常量不一致时必须失败。
+- 主程序 `QueryCraftPackage` 不得依赖 MCP SDK、Logging 或 NIO；协议入口、stdio/HTTP 传输只在独立的 `QueryCraftMCPPackage`。需要 MCP 产物时，先构建 `QueryCraft`，再以相同架构、配置和 DerivedData 构建 `querycraft-mcp`，最后运行 `scripts/package-mcp.py`。MCP 必须动态链接同一份 `QueryCraftFeature.framework`，禁止把 Feature 静态复制进可执行文件。
 - MCP 分别提供原生 Intel 与 Apple Silicon ZIP；Skill 提供一个资源 ZIP。包内兼容元数据必须与 CI 签名的 `.release.json` 一致。GitHub 组件 tag 为 `mcp-v<version>+<build>` / `skill-v<version>+<build>`，已发布资源不可覆盖，完全相同的重试可幂等通过。
 - 运行 `scripts/test-mcp-package.py <MCP.app> --drivers-dir <六类驱动目录>`，逐架构检查签名、完整运行依赖、SQL 资源、stdio/HTTP、凭据助手与六驱动加载。MCP 只引用自己的运行目录，不依赖主程序路径。
 - 运行 `scripts/test-mcp-desktop.py <MCP.app> --component-checks --output <隔离结果目录>`，验证真实签名目录下载、兼容回退、固定启动入口、独立 CLI 更新、旧会话继续调用、失败保留旧版、显式回退、旧客户端路径保留及 Skill 本地修改保护。
-- `MCPComponentTests`、`MCPTests`、`MCPSessionTests`、`MCPOptimizationTests` 应通过。设置仍使用原有左右对齐原生布局，加载与状态反馈保持稳定。
+- `QueryCraftMCPTests`（握手、初始化兼容、JSON/工具 schema 边界）以及共享模块内的 `MCPComponentTests`、`MCPTests`、`MCPSessionTests`、`MCPOptimizationTests` 应通过。设置仍使用原有左右对齐原生布局，加载与状态反馈保持稳定。
 - LicenseServer 提供 MCP 管理、Skill 管理、上传草稿/发布/下架/删除草稿、管理员/CSRF、部署令牌和审计。服务端只持有发行公钥；CI 对单个不可变发行记录签名，服务端聚合已发布记录供客户端下载。
 - 发布前先部署支持 `/components/` 及对应管理/部署路由的服务端。Nginx 使用新配置，或使用已验证的大包上传兼容入口 `/admin/resources/deploy/drivers?component=mcp|skill`；兼容入口仍走组件鉴权、签名与独立存储。组件包、签名记录及双语说明全部就绪后再发布。核对三处版本：包内、下载清单、GitHub Release。
 - 新版入口 `<数据目录>/MCP/bin/querycraft-mcp` 固定不变。原 `<数据目录>/MCP/QueryCraft MCP.app` 保留给旧客户端；更新后在设置中重新添加客户端即可迁移。保留不可变旧版本供已有会话及回退使用，不自动删除运行中的资源。
 
+
+DMG 仍为双击挂载、拖入 Applications 的标准安装形式。最终镜像使用 ULMO/LZMA（系统支持 10.15+，本项目最低 15）；先创建完成的临时文件系统镜像，再无损转换为 ULMO，保留原应用签名。发布前应校验镜像、挂载后固定证书、文件摘要、权限和符号链接；不要通过减少图标尺寸或删减驱动能力缩小安装包。
 
 ## 3. 提交和创建 tag
 
@@ -79,7 +82,7 @@ git tag -a v<版本> -m "QueryCraft <版本>"
 git push origin v<版本>
 ```
 
-主程序 tag 工作流构建 Intel、Apple Silicon 和 Universal Sparkle 更新包，发布主程序、实际变更的 MCP/Skill 和受影响的驱动；未变更组件保持原版本。tag 不会因为主程序版本变化而自动上传未改动驱动。手动构建保持 `publish_drivers` 显式选择。
+主程序 tag 工作流构建 Intel、Apple Silicon DMG 及各自的 XZ Sparkle 更新包，发布主程序、实际变更的 MCP/Skill 和受影响的驱动；未变更组件保持原版本。tag 不会因为主程序版本变化而自动上传未改动驱动。手动构建保持 `publish_drivers` 显式选择。
 
 ## 4. 需要发布驱动时
 
@@ -109,7 +112,7 @@ gh workflow run release.yml --ref main \
 
 ### 部分构建失败后的恢复
 
-客户端、Universal 更新及驱动构建上限为 90 分钟；产物上传失败会在同一任务内重试一次，避免为临时网络失败重新编译。
+客户端及驱动构建上限为 90 分钟，更新源合并不再重新编译 Universal 主程序；产物上传失败会在同一任务内重试一次，避免为临时网络失败重新编译。
 
 以 `source_run_id` 恢复时，工作流先核对来源 run 已结束、属于本仓库的发布工作流，且源码提交与当前版本 tag 完全一致。按未过期产物清单只构建缺失项；源码仍固定在原 tag，不移动 tag，也不混用 main 后续功能。明确指定 `rebuild_driver` 时才强制重建该驱动。
 
@@ -130,6 +133,16 @@ curl -fsSL https://querycraft.debug-tools.cc/appcast.xml
 curl -fsSL https://querycraft.debug-tools.cc/drivers/mysql-arm64.json
 ```
 
-确认 Actions 的 metadata、主程序、Universal update、选定驱动任务和 publish 全部成功；确认 GitHub Release、DMG、ZIP、appcast 和资源服务下载地址可用；确认未选择的驱动没有新增版本；在 Dev 中确认主程序版本、实际驱动目录和 Driver API。记录 workflow URL、tag、提交、测试结果、已发布驱动和未发布驱动。
+确认 Actions 的 metadata、主程序、双架构 update 合并、选定驱动任务和 publish 全部成功；确认 GitHub Release、DMG、双架构 tar.xz、驱动/组件 ZIP、appcast 和资源服务下载地址可用；确认未选择的驱动没有新增版本；在 Dev 中确认主程序版本、实际驱动目录和 Driver API。记录 workflow URL、tag、提交、测试结果、已发布驱动和未发布驱动。
 
 如果线上检查发现当前主程序所需 Driver API 尚未覆盖，发版脚本必须失败并停止切换，而不是让不兼容的主程序继续被宣称为完整发布。协议不支持或没有实库条件的验证要明确记录，不能用相似名称或旧 manifest 代替真实结果。
+
+## 主程序更新包体积与架构检查
+
+- 每个原生客户端任务使用同一份签名 Release 应用生成 DMG 与 `QueryCraft-<version>-<architecture>.tar.xz`，并输出 `update-<architecture>.json`（schemaVersion 2、版本/build、最低系统、架构、大小、SHA-256、EdDSA 签名）。主程序和 Feature 二进制必须只有指定架构；上游 Sparkle 保留原签名。
+- `scripts/update-archives.py assemble` 只在两架构完整、版本/build/最低系统一致且大小/摘要正确后合并公共 `appcast.xml`。同 build 的 ARM 条目必须在前并声明 `sparkle:hardwareRequirements=arm64`，Intel 条目为后备。不改变现有 SUFeedURL；现有客户端已使用 Sparkle 2.9+，包括 Rosetta 场景。
+- 两架构任务均运行 `scripts/test-sparkle-updates.py`，使用实际 Sparkle 解析与选包，测试本机与进程内硬件条件模拟；模拟不替代 ARM 实机运行验收。
+- 必须先部署 sibling QueryCraft/LicenseServer 对 `update_format=2` 的支持（可加列迁移保留旧 ZIP 记录），再发布新格式客户端。部署请求必须同时提交两个 XZ、两个签名和两个 DMG；服务端验签、限制展开大小、检查归档路径与原生 CPU，保存同一版本的完整双包后才切换公共更新源。保留旧 ZIP 下载及历史条目。
+- 新产物缓存名称以 `-v2` 结尾，不能把旧 ZIP 缓存当成 XZ 产物复用；重建任一架构后必须重新合并更新源。恢复旧 ZIP tag 时使用该 tag 自带的发布工作流，新流程会拒绝不含新格式脚本的旧 tag。
+- 发布完成检查两个架构的 canonical URL、大小及签名，不能只检查公共源中的第一个条目。GitHub 附件上传两份 `.tar.xz`，不再上传 Universal ZIP。
+- 归档格式不会改变 MySQL、PostgreSQL、Doris、Redis、Elasticsearch、Kafka 的协议、加载路径或 Driver API。仅此项优化不增加任何驱动或 MCP/Skill 版本；实际待发改动仍按前文独立判断。

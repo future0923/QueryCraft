@@ -1,11 +1,10 @@
 import Foundation
-import MCP
 
 extension MCPRuntime {
     struct MetadataCacheEntry: Sendable {
         let profile: ConnectionProfile
         let policy: MCPPolicy
-        let value: Value
+        let value: MCPJSONValue
         let stored: Date
         let bytes: Int
     }
@@ -16,15 +15,15 @@ extension MCPRuntime {
         let connection: any WorkspaceSession
         let returned: Date
     }
-    func metadataKey(tool: String, args: [String: Value], profile: ConnectionProfile, database: String?, policy: MCPPolicy) throws -> String? {
+    func metadataKey(tool: String, args: [String: MCPJSONValue], profile: ConnectionProfile, database: String?, policy: MCPPolicy) throws -> String? {
         // Redis objects are live keys, not schema. Never cache key listings/details.
         guard profile.databaseType != .redis, MCPToolCatalog.metadataTools.contains(tool), policy.tuning.metadataCacheSeconds > 0 else { return nil }
         var canonical = args; canonical.removeValue(forKey: "refresh")
-        canonical["database"] = database.map(Value.string)
+        canonical["database"] = database.map(MCPJSONValue.string)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         return profile.id.uuidString + ":" + tool + ":" + String(decoding: try encoder.encode(canonical), as: UTF8.self)
     }
-    func cachedMetadata(key: String?, profile: ConnectionProfile, policy: MCPPolicy, refresh: Bool, now: Date = Date()) -> Value? {
+    func cachedMetadata(key: String?, profile: ConnectionProfile, policy: MCPPolicy, refresh: Bool, now: Date = Date()) -> MCPJSONValue? {
         guard let key else { return nil }
         guard !refresh, let entry = metadataCache[key], entry.profile == profile, entry.policy == policy,
               now.timeIntervalSince(entry.stored) < Double(policy.tuning.metadataCacheSeconds) else {
@@ -32,7 +31,7 @@ extension MCPRuntime {
         }
         return entry.value
     }
-    func cacheMetadata(_ value: Value, key: String?, profile: ConnectionProfile, policy: MCPPolicy, generation: UInt64) throws {
+    func cacheMetadata(_ value: MCPJSONValue, key: String?, profile: ConnectionProfile, policy: MCPPolicy, generation: UInt64) throws {
         guard let key, !stopped, generation == metadataGeneration,
               policy == (try store.load()) else { return }
         let bytes = try JSONEncoder().encode(value).count

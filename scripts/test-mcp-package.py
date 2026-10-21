@@ -21,6 +21,13 @@ def verify(app, drivers=None, previous_drivers=None):
         relocated = root / 'Moved App With Spaces.app'
         shutil.copytree(app, relocated, symlinks=True)
         binary = relocated / 'Contents/MacOS/querycraft-mcp'
+        feature = relocated / 'Contents/Frameworks/QueryCraftFeature.framework/Versions/A/QueryCraftFeature'
+        symbols = run(['nm', '-gU', feature]).stdout
+        for module in ['3MCP', '7NIOCore', '8NIOPosix', '8NIOHTTP1', '7Logging']:
+            assert '$s' + module not in symbols, 'Desktop Feature unexpectedly embeds protocol dependency: ' + module
+        runtime_symbols = run(['nm', '-gU', binary]).stdout
+        assert '$s17QueryCraftFeature' not in runtime_symbols, 'Runtime embeds a second static Feature module'
+        assert '@rpath/QueryCraftFeature.framework/' in run(['otool', '-L', binary]).stdout
         env = {key: value for key, value in os.environ.items()
                if not key.startswith(('DYLD_', 'SWIFT_','PACKAGE_RESOURCE_'))}
         result = run([binary, '--self-test'], cwd=root, env=dict(env, DYLD_PRINT_LIBRARIES='1'))

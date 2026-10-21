@@ -1,10 +1,9 @@
 import Foundation
-import MCP
 
 extension MCPRuntime {
-    func execute(_ tool: String, args: [String: Value], profile: ConnectionProfile, database: String?,
-                 connection: any WorkspaceSession, policy: MCPPolicy, inTransaction: Bool) async throws -> Value {
-        try await withThrowingTaskGroup(of: Value.self) { group in
+    func execute(_ tool: String, args: [String: MCPJSONValue], profile: ConnectionProfile, database: String?,
+                 connection: any WorkspaceSession, policy: MCPPolicy, inTransaction: Bool) async throws -> MCPJSONValue {
+        try await withThrowingTaskGroup(of: MCPJSONValue.self) { group in
             group.addTask {
                 try await withTaskCancellationHandler {
                     try await self.perform(tool, args: args, profile: profile, database: database, connection: connection,
@@ -22,8 +21,8 @@ extension MCPRuntime {
         }
     }
 
-    private func perform(_ tool: String, args: [String: Value], profile: ConnectionProfile, database: String?,
-                         connection: any WorkspaceSession, policy: MCPPolicy, inTransaction: Bool) async throws -> Value {
+    private func perform(_ tool: String, args: [String: MCPJSONValue], profile: ConnectionProfile, database: String?,
+                         connection: any WorkspaceSession, policy: MCPPolicy, inTransaction: Bool) async throws -> MCPJSONValue {
         let accessTarget = profile.databaseType == .kafka ? args.string("topic")
             : profile.databaseType == .elasticsearch ? args.string("path").flatMap(MCPRequestAuthorization.index) : database
         let mode = policy.effectiveMode(profile, database: accessTarget)
@@ -36,7 +35,7 @@ extension MCPRuntime {
                 return .array(try await connection.fetchObjects(in: database ?? "").filter { policy.permitsObject($0, profile: profile, schema: args.string("schema")) }.prefix(1000).map { .string($0.name) })
             }
             let allowed = policy.connectionRule(profile).allowedDatabases
-            return .array(try await connection.fetchDatabases().filter { allowed == nil || allowed!.contains($0) }.map(Value.string))
+            return .array(try await connection.fetchDatabases().filter { allowed == nil || allowed!.contains($0) }.map(MCPJSONValue.string))
         case "list_tables":
             let objects = try await connection.fetchObjects(in: database ?? "").filter { policy.permitsObject($0, profile: profile, schema: args.string("schema")) }
             return .array(objects.prefix(1000).map { .object(["name": .string($0.name), "kind": .string($0.kind.rawValue)]) })
@@ -58,10 +57,10 @@ extension MCPRuntime {
                 return MCPSchemaContext.compact(profile: profile, database: database, tables: details,
                     omittedTables: max(0, requested.count - details.count), budget: min(policy.maximumResultBytes / 4, args.integer("max_chars", default: 16_000)))
             }
-            let values: [Value] = details.map { object, detail in
+            let values: [MCPJSONValue] = details.map { object, detail in
                 .object(["name": .string(object.name), "ddl": .string(detail.ddl), "columns": .array(detail.columns.map {
                     .object(["name": .string($0.name), "type": .string($0.type), "nullable": .bool($0.isNullable),
-                             "comment": .string($0.comment), "key": .string($0.key), "default": $0.defaultValue.map(Value.string) ?? .null])
+                             "comment": .string($0.comment), "key": .string($0.key), "default": $0.defaultValue.map(MCPJSONValue.string) ?? .null])
                 })])
             }
             if tool == "describe_table" { return .array(values) }
@@ -89,7 +88,7 @@ extension MCPRuntime {
             let ownsTransaction = atomic || readOnlyTransaction
             if let schema = args.string("schema") { try await connection.applyQueryContext(.init(databaseName: database ?? "", schemaName: schema)) }
             if ownsTransaction { _ = try await connection.executeStatement(readOnlyTransaction ? "START TRANSACTION READ ONLY" : "BEGIN", kind: .transaction(.begin), database: database, onBatch: { _ in }) }
-            var results: [Value] = []
+            var results: [MCPJSONValue] = []
             do {
                 for statement in statements {
                     try Task.checkCancellation()
@@ -201,7 +200,7 @@ extension MCPRuntime {
         case "consumer_groups":
             guard let kafka = connection as? any WorkspaceKafkaConsumerGroupProviding else { throw MCPFailure("Kafka consumer groups are unavailable on this driver.") }
             let topic = try args.requiredString("topic"); try authorizeTopic(topic, profile: profile, policy: policy)
-            var values: [Value] = []
+            var values: [MCPJSONValue] = []
             for group in try await kafka.fetchConsumerGroups().prefix(100) {
                 let offsets = try await kafka.fetchConsumerOffsets(groupID: group.id, topic: topic)
                 if policy.connectionRule(profile).allowedDatabases != nil {
@@ -230,7 +229,7 @@ extension MCPRuntime {
         default: false
         }
     }
-    private func redisValue(_ value: RedisReplyValue) -> Value {
+    private func redisValue(_ value: RedisReplyValue) -> MCPJSONValue {
         switch value {
         case .null: .null
         case .simpleString(let s), .bulkString(let s): .string(s)

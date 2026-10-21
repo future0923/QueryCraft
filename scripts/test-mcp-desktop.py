@@ -35,13 +35,10 @@ def main():
         (host/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'io.github.future0923.QueryCraft.MCP.Verifier','CFBundleExecutable':'Verifier','CFBundlePackageType':'APPL','CFBundleLocalizations':[args.language],'CFBundleDevelopmentRegion':args.language,'LSUIElement':True}))
         sdk=subprocess.check_output(['/usr/bin/xcode-select','-p'],text=True).strip()+'/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk'
         command=['/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc','-parse-as-library','-target',platform.machine()+'-apple-macosx15.0','-sdk',sdk,ROOT/'scripts/test-mcp-desktop.swift',ROOT/'scripts/test-mcp-components.swift',ROOT/'scripts/test-mcp-download-progress.swift','-I',products,'-F',frameworks,'-framework','QueryCraftFeature','-o',binary,'-Xlinker','-rpath','-Xlinker',frameworks]
-        for name in ['TreeSitterJSON','TreeSitterSQL','TreeSitter','Internal','CNIODarwin','CNIOLinux','CNIOOpenBSD','CNIOPosix','CNIOAtomics','CNIOLLHTTP','CNIOSHA1','CNIOWindows','CNIOWASI','_AtomicsShims']:
+        for name in ['TreeSitterJSON','TreeSitterSQL','TreeSitter','Internal']:
             modulemap=dd/f'Build/Intermediates.noindex/GeneratedModuleMaps/{name}.modulemap'
             if modulemap.exists():command+=['-Xcc','-fmodule-map-file='+str(modulemap)]
         command+=['-Xcc','-fmodule-map-file='+str(dd/'SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite/module.modulemap')]
-        command+=['-Xcc','-fmodule-map-file='+str(dd/'SourcePackages/checkouts/swift-atomics/Sources/_AtomicsShims/include/module.modulemap')]
-        for modulemap in (dd/'SourcePackages/checkouts/swift-nio/Sources').glob('*/include/module.modulemap'):
-            command+=['-Xcc','-fmodule-map-file='+str(modulemap)]
         for path in [ROOT/'ThirdParty/CodeEditLanguages/Sources/TreeSitterJSON/include',ROOT/'ThirdParty/CodeEditLanguages/Sources/TreeSitterSQL/include',dd/'SourcePackages/checkouts/tree-sitter/lib/include',dd/'SourcePackages/checkouts/TextStory/Sources/Internal',ROOT/'ThirdParty/CodeEditTextView/Sources/CodeEditTextViewObjC/include']:
             command+=['-Xcc','-I'+str(path)]
         run(command)

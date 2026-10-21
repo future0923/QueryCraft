@@ -8,9 +8,14 @@ No Superpowers skills are used. User documentation is in [MCP.md](MCP.md).
 
 - Official Swift MCP SDK at `a0ae212ebf6eab5f754c3129608bc5557637e605`;
   SwiftNIO adapts HTTP sockets to the SDK's stateful Streamable HTTP transport.
-- Runtime/policy/authorization live in QueryCraftFeature. A tiny native C launcher
-  dynamically links the same framework as external drivers. No second copy of
-  the Swift protocol/module metadata is embedded in the distributed executable.
+- Protocol/stdio/HTTP code lives in QueryCraftMCPPackage; only that package links
+  MCP SDK, Logging and NIO. Shared policy, execution, credentials and driver APIs
+  remain in QueryCraftFeature, behind a JSON SPI for the protocol process. The
+  separate package depends on its dynamic library product, so external drivers
+  and MCP share one Feature image without statically duplicated type metadata.
+- Build both QueryCraft and querycraft-mcp schemes with the same configuration,
+  architecture and DerivedData before running package-mcp.py. Relocation checks
+  reject protocol dependencies in Feature and a static Feature copy in MCP.
 - Each client owns independent database sessions; desktop sessions are never reused.
   stdio uses protocol-only stdout. HTTP requires Bearer auth and Host/Origin checks.
 - Policy is a private, atomically replaced JSON file reread on tool calls and SQL

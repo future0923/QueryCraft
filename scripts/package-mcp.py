@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Package the independent MCP runtime. The host application never embeds it.
 
-Requires a completed Xcode QueryCraft app build. Does not publish or install anything.
+Requires completed Xcode QueryCraft and querycraft-mcp scheme builds. Does not publish or install anything.
 The payload includes SwiftPM resources, private libraries and a separately versioned
 credential helper. Original desktop credential-helper v1 is never modified.
 """
@@ -32,7 +32,7 @@ def package(build, output, development=False, archive_enabled=True, architecture
     resources = output / 'Contents/Resources'
     for directory in [macos, frameworks, resources]: directory.mkdir(parents=True, exist_ok=True)
     # Exactly one dynamically linked Feature module must serve both MCP and drivers.
-    # Linking the SwiftPM executable would embed a second, static copy of that module.
+    # The independent package references Feature as an external dynamic product.
     for source in (source_app / 'Contents/Frameworks').iterdir():
         if source.is_dir(): shutil.copytree(source, frameworks / source.name, symlinks=True)
         else: shutil.copy2(source, frameworks / source.name)
@@ -48,20 +48,33 @@ def package(build, output, development=False, archive_enabled=True, architecture
     import platform
     archs = [architecture or platform.machine()]
     if not set(archs) <= set(available_archs): raise RuntimeError('Build does not support the requested MCP architecture.')
-    with tempfile.TemporaryDirectory(prefix='querycraft-mcp-launcher-') as temporary:
-        launcher = Path(temporary) / 'main.c'
-        launcher.write_text('extern void QueryCraftMCPRun(int argc, char **argv);\nint main(int argc, char **argv) { QueryCraftMCPRun(argc, argv); return 0; }\n')
-        binaries = []
-        for arch in archs:
-            binary = Path(temporary) / arch
-            run('clang', '-target', arch+'-apple-macosx15.0', launcher, '-F', frameworks,
-                '-framework', 'QueryCraftFeature', '-Wl,-rpath,@executable_path/../Frameworks', '-o', binary)
-            binaries.append(binary)
-        run('lipo', '-create', *binaries, '-output', executable)
-    processed = {executable, frameworks / 'QueryCraftFeature.framework/Versions/A/QueryCraftFeature'}
-    # Keep upstream framework signatures intact. Only our framework/launcher are edited.
-    for binary in processed:
+    source_executable = build / 'querycraft-mcp'
+    if not source_executable.is_file():
+        raise RuntimeError('Build the independent querycraft-mcp scheme before packaging MCP.')
+    executable_archs = run('lipo', '-archs', source_executable).decode().split()
+    if set(executable_archs) != set(archs):
+        raise RuntimeError('MCP executable architecture must match the requested single-architecture package.')
+    # This executable depends on the dynamic Feature product. Never relink its
+    # sources here or embed a second copy of driver/registry types.
+    shutil.copy2(source_executable, executable)
+    libraries = run('otool', '-L', executable).decode()
+    if '@rpath/QueryCraftFeature.framework/' not in libraries:
+        raise RuntimeError('MCP must link the shared QueryCraftFeature framework dynamically.')
+    processed = set()
+    owned_frameworks = {frameworks / 'QueryCraftFeature.framework'}
+    pending = [executable, frameworks / 'QueryCraftFeature.framework/Versions/A/QueryCraftFeature']
+    # Xcode can emit shared transitive products (e.g. swift-collections) for
+    # this executable. Copy only its dependency closure, never other drivers.
+    while pending:
+        binary = pending.pop()
+        if binary in processed:
+            continue
+        processed.add(binary)
+        if set(run('lipo', '-archs', binary).decode().split()) != set(archs):
+            raise RuntimeError(f'Dependency architecture does not match MCP: {binary.name}')
         lines = run('otool', '-l', binary).decode().splitlines()
+        if binary == executable and not any('path @executable_path/../Frameworks (offset' in line for line in lines):
+            run('install_name_tool', '-add_rpath', '@executable_path/../Frameworks', binary)
         for i, line in enumerate(lines):
             if line.strip() == 'cmd LC_RPATH':
                 value = lines[i + 2].strip().split('path ', 1)[1].split(' (offset')[0]
@@ -69,13 +82,32 @@ def package(build, output, development=False, archive_enabled=True, architecture
                     run('install_name_tool', '-delete_rpath', value, binary)
         for line in run('otool', '-L', binary).decode().splitlines()[1:]:
             dependency = line.strip().split(' (')[0]
-            if dependency.startswith(('/System/', '/usr/lib/', '@loader_path/', '@executable_path/')): continue
+            if dependency.startswith(('/System/', '/usr/lib/', '@loader_path/', '@executable_path/')):
+                continue
+            if dependency == '@rpath/libswiftCore.dylib':
+                # macOS 15 supplies Swift's stable runtime in the dyld cache.
+                run('install_name_tool', '-change', dependency, '/usr/lib/swift/libswiftCore.dylib', binary)
+                continue
             if dependency.startswith('@rpath/'):
-                relative = dependency[len('@rpath/'):]
-                # Compatibility libraries may be supplied by the OS dyld shared cache.
-                if relative.startswith('libswiftCompatibility'): continue
-                if (frameworks / relative).exists(): continue
+                relative = Path(dependency[len('@rpath/'):])
+                if str(relative).startswith('libswiftCompatibility'):
+                    continue
+                destination = frameworks / relative
+                if not destination.exists() and relative.parts[0].endswith('.framework'):
+                    source = build / 'PackageFrameworks' / relative.parts[0]
+                    if source.is_dir():
+                        copied = frameworks / source.name
+                        shutil.copytree(source, copied, symlinks=True)
+                        owned_frameworks.add(copied)
+                if destination.exists():
+                    # Preserve the upstream Sparkle framework and its nested signatures.
+                    if relative.parts[0] != 'Sparkle.framework':
+                        owned_frameworks.add(frameworks / relative.parts[0])
+                        pending.append(destination)
+                    continue
             raise RuntimeError(f'Unresolved or nonportable dependency: {dependency}')
+    for binary in processed:
+        run('strip', '-x', binary)
     metadata = json.loads((ROOT/'Components/versions.json').read_text())['mcp']
     version = metadata['version']
     app_version = next(line.split('=',1)[1].strip() for line in (ROOT/'Config/Shared.xcconfig').read_text().splitlines() if line.startswith('MARKETING_VERSION'))
@@ -113,7 +145,8 @@ def package(build, output, development=False, archive_enabled=True, architecture
     helper_packager.embed_shared(output, signer, identity, archs)
     for stale in list(output.rglob('AgentSkills')):
         if stale.is_dir(): shutil.rmtree(stale)
-    run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', frameworks / 'QueryCraftFeature.framework')
+    for framework in sorted(owned_frameworks):
+        run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', framework)
     run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', helper)
     run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', output)
     run('codesign', '--verify', '--deep', '--strict', output)

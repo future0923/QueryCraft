@@ -26,6 +26,12 @@ class ReleasePlanTests(unittest.TestCase):
     def test_runtime_change_selects_mcp_only(self):
         self.write('QueryCraftPackage/Sources/QueryCraftFeature/MCPHTTPListener.swift','actor Listener {}')
         result=self.result();self.assertTrue(result['components']['mcp']['changed']);self.assertFalse(result['components']['skill']['changed']);self.assertFalse(any(item['changed'] for item in result['drivers'].values()))
+    def test_independent_protocol_package_selects_mcp_only(self):
+        self.write('QueryCraftMCPPackage/Sources/QueryCraftMCPRuntime/MCPHTTPListener.swift','actor Listener {}')
+        result=self.result();self.assertTrue(result['components']['mcp']['changed']);self.assertFalse(result['components']['skill']['changed']);self.assertFalse(any(item['changed'] for item in result['drivers'].values()))
+    def test_protocol_test_only_does_not_release_mcp(self):
+        self.write('QueryCraftMCPPackage/Tests/QueryCraftMCPTests/HandshakeTests.swift','struct Tests {}')
+        result=self.result();self.assertFalse(result['components']['mcp']['changed'])
     def test_shared_credential_change_selects_mcp_only(self):
         self.write('QueryCraftPackage/Sources/QueryCraftFeature/SharedKeychainCredentialStore.swift','actor SharedCredentials {}')
         result=self.result();self.assertTrue(result['components']['mcp']['changed']);self.assertFalse(result['components']['skill']['changed']);self.assertFalse(any(item['changed'] for item in result['drivers'].values()))

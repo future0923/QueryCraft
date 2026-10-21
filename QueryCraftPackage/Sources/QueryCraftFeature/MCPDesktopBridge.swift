@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import MCP
 import SwiftUI
 
 struct MCPDesktopRequest: Codable, Sendable {
@@ -16,7 +15,7 @@ struct MCPDesktopRequest: Codable, Sendable {
 
 enum MCPDesktopBridge {
     static let notification = Notification.Name("io.github.future0923.QueryCraft.MCPRequest")
-    static func send(tool: String, profile: ConnectionProfile, database: String?, args: [String: Value], directory: URL) async throws -> Value {
+    static func send(tool: String, profile: ConnectionProfile, database: String?, args: [String: MCPJSONValue], directory: URL) async throws -> MCPJSONValue {
         let identifier = directory.lastPathComponent == "QueryCraftDev" ? "io.github.future0923.QueryCraft.Dev" : "io.github.future0923.QueryCraft"
         let running = await MainActor.run { !NSRunningApplication.runningApplications(withBundleIdentifier: identifier).isEmpty }
         guard running else { throw MCPFailure("Open QueryCraft to use desktop integration.") }
@@ -45,7 +44,7 @@ enum MCPDesktopBridge {
 final class MCPResultWindowController: NSWindowController, NSWindowDelegate {
     private static var windows: [MCPResultWindowController] = []
     static func show(_ json: String, profile: ConnectionProfile, database: String?) async throws {
-        let value = try JSONDecoder().decode(Value.self, from: Data(json.utf8))
+        let value = try JSONDecoder().decode(MCPJSONValue.self, from: Data(json.utf8))
         let results = try await decodeResults(value)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 650),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -63,7 +62,7 @@ final class MCPResultWindowController: NSWindowController, NSWindowDelegate {
     }
     func windowWillClose(_ notification: Foundation.Notification) { Self.windows.removeAll { $0 === self } }
 
-    static func decodeResults(_ value: Value) async throws -> [WorkspaceStatementResult] {
+    static func decodeResults(_ value: MCPJSONValue) async throws -> [WorkspaceStatementResult] {
         guard let entries = value.objectValue?["results"]?.arrayValue, !entries.isEmpty else { throw MCPFailure("Invalid MCP result.") }
         var results: [WorkspaceStatementResult] = []
         for (index, entry) in entries.enumerated() {

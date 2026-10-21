@@ -1,9 +1,8 @@
 import Foundation
-import MCP
 
 enum MCPSchemaContext {
     /// A compact planning context. Names and provenance come only from actual driver metadata.
-    static func compact(profile: ConnectionProfile, database: String?, tables: [(WorkspaceDatabaseObject, WorkspaceDatabaseObjectDetails)], omittedTables: Int, budget: Int) -> Value {
+    static func compact(profile: ConnectionProfile, database: String?, tables: [(WorkspaceDatabaseObject, WorkspaceDatabaseObjectDetails)], omittedTables: Int, budget: Int) -> MCPJSONValue {
         let maximum = min(64_000, max(256, budget))
         let header = "Connection: \(profile.id.uuidString)\nDriver: \(profile.databaseType.rawValue)\nDatabase: \(database ?? "")"
         var text = String(header.prefix(maximum))

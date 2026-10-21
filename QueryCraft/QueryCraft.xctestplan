@@ -30,6 +30,13 @@
         "identifier" : "QueryCraftFeatureTests",
         "name" : "QueryCraftFeatureTests"
       }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:QueryCraftMCPPackage",
+        "identifier" : "QueryCraftMCPTests",
+        "name" : "QueryCraftMCPTests"
+      }
     }
   ],
   "version" : 1

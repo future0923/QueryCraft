@@ -7,7 +7,8 @@ Usage: scripts/ci/build-release-artifacts.sh <x86_64|arm64> <output-directory>
 
 Optional environment:
   QUERYCRAFT_BUILD_CLIENT           Build application release artifacts (default: true)
-  QUERYCRAFT_BUILD_UNIVERSAL_UPDATE Build the universal Sparkle ZIP (default: false)
+  QUERYCRAFT_BUILD_UNIVERSAL_UPDATE Deprecated; must remain false
+  QUERYCRAFT_BUILD_SKILL            Package changed Skill on arm64 (default: false)
   QUERYCRAFT_BUILD_DRIVERS          Build external driver artifacts (default: true)
   QUERYCRAFT_DRIVER_TARGET          all, mysql, postgresql, doris, redis,
                                     elasticsearch, or kafka (default: all)
@@ -19,8 +20,8 @@ Optional environment:
   XCODEBUILDMCP_BIN                 Default: xcodebuildmcp from PATH
   DERIVED_DATA_ROOT                 Default: temporary directory
 
-SPARKLE_PRIVATE_KEY is also required when
-QUERYCRAFT_BUILD_UNIVERSAL_UPDATE=true.
+SPARKLE_PRIVATE_KEY is required for client update signing in CI.
+Local packaging can use the existing Sparkle Keychain account.
 Client builds require the persistent identity installed by scripts/code-signing.py.
 EOF
 }
@@ -62,8 +63,8 @@ if [[ -z "$xcodebuildmcp_bin" || ! -x "$xcodebuildmcp_bin" ]]; then
     echo "XcodeBuildMCP CLI was not found." >&2
     exit 69
 fi
-if [[ "$build_universal_update" != "true" && "$build_universal_update" != "false" ]]; then
-    echo "QUERYCRAFT_BUILD_UNIVERSAL_UPDATE must be true or false." >&2
+if [[ "$build_universal_update" != "false" ]]; then
+    echo "Universal updates are replaced by architecture-specific client updates." >&2
     exit 65
 fi
 if [[ "$build_client" != "true" && "$build_client" != "false" ]]; then
@@ -84,9 +85,7 @@ if [[ "$driver_target" != "all" && \
     echo "Unsupported QUERYCRAFT_DRIVER_TARGET: $driver_target" >&2
     exit 65
 fi
-if [[ "$build_client" != "true" && \
-      "$build_drivers" != "true" && \
-      "$build_universal_update" != "true" ]]; then
+if [[ "$build_client" != "true" && "$build_drivers" != "true" ]]; then
     echo "At least one release artifact type must be enabled." >&2
     exit 65
 fi
@@ -110,7 +109,10 @@ fi
 
 # Fail before compilation if the persistent identity is missing. Driver-only
 # jobs keep their existing ad-hoc channel and do not need this private key.
-if [[ "$build_client" == "true" || "$build_universal_update" == "true" ]]; then
+if [[ "$build_client" == "true" ]]; then
+    if [[ "${CI:-false}" == "true" ]]; then
+        require_environment SPARKLE_PRIVATE_KEY
+    fi
     python3 "$project_root/scripts/code-signing.py" check
 fi
 
@@ -118,13 +120,8 @@ temporary_root="$(mktemp -d "${RUNNER_TEMP:-/tmp}/querycraft-release.XXXXXX")"
 derived_data_root="${DERIVED_DATA_ROOT:-$temporary_root/DerivedData}"
 architecture_derived_data="$derived_data_root/$architecture"
 driver_output="$temporary_root/drivers-$architecture"
-appcast_backup="$temporary_root/appcast.xml.original"
-appcast_was_backed_up=false
 
 cleanup() {
-    if [[ "$appcast_was_backed_up" == "true" ]]; then
-        cp "$appcast_backup" "$project_root/appcast.xml"
-    fi
     rm -rf "$temporary_root"
 }
 trap cleanup EXIT
@@ -208,6 +205,7 @@ prepare_release_app() {
     done
 
     if [[ "${QUERYCRAFT_BUILD_MCP:-false}" == "true" ]]; then
+        build_scheme querycraft-mcp "$architecture_derived_data" "$architecture"
         local mcp_staging
         mcp_staging="$(mktemp -d "$temporary_root/mcp.XXXXXX")"
         python3 "$project_root/scripts/package-mcp.py" \
@@ -228,7 +226,9 @@ create_dmg() {
     local app_path="$1"
     local dmg_path="$2"
     local staging_directory
+    local source_dmg
     staging_directory="$(mktemp -d "$temporary_root/dmg.XXXXXX")"
+    source_dmg="${staging_directory}.dmg"
     ditto "$app_path" "$staging_directory/QueryCraft.app"
     ln -s /Applications "$staging_directory/Applications"
     hdiutil create \
@@ -236,7 +236,12 @@ create_dmg() {
         -srcfolder "$staging_directory" \
         -format UDZO \
         -imagekey zlib-level=9 \
-        "$dmg_path"
+        "$source_dmg"
+    # ULMO is supported since macOS 10.15; QueryCraft requires macOS 15.
+    # Recompressing the finished filesystem gave smaller images than creating
+    # ULMO directly, with identical files, permissions and signatures.
+    hdiutil convert "$source_dmg" -format ULMO -o "$dmg_path"
+    rm -f "$source_dmg"
     codesign --force --sign - --timestamp=none "$dmg_path"
     codesign --verify --verbose=2 "$dmg_path"
     hdiutil verify "$dmg_path"
@@ -326,49 +331,17 @@ if [[ "$build_client" == "true" ]]; then
     verify_release_app "$app_path"
     dmg_path="$output_directory/QueryCraft-$release_version-$architecture.dmg"
     create_dmg "$app_path" "$dmg_path"
-fi
-
-if [[ "$build_universal_update" == "true" ]]; then
-    require_environment SPARKLE_PRIVATE_KEY
-    universal_derived_data="$derived_data_root/universal"
-    build_scheme QueryCraft "$universal_derived_data" "" \
-        "ARCHS=x86_64 arm64" \
-        "ONLY_ACTIVE_ARCH=NO"
-    universal_app="$universal_derived_data/Build/Products/Release/QueryCraft.app"
-    universal_binary="$universal_app/Contents/MacOS/QueryCraft"
-    universal_architectures=" $(lipo -archs "$universal_binary") "
-    if [[ "$universal_architectures" != *" x86_64 "* || "$universal_architectures" != *" arm64 "* ]]; then
-        echo "Universal update application is missing an architecture slice." >&2
-        exit 65
+    sign_tool="$(find "$architecture_derived_data" -type f -name sign_update -perm -111 -print -quit)"
+    test -n "$sign_tool"
+    python3 "$project_root/scripts/update-archives.py" package \
+        --app "$app_path" --architecture "$architecture" \
+        --directory "$output_directory" --sign-tool "$sign_tool"
+    python3 "$project_root/scripts/test-sparkle-updates.py" \
+        --sparkle-directory "$(dirname "$(dirname "$sign_tool")")"
+    if [[ "${QUERYCRAFT_BUILD_SKILL:-false}" == "true" && "$architecture" == "arm64" ]]; then
+        python3 "$project_root/scripts/package-components.py" --component skill \
+            --output "$output_directory" --sign-tool "$sign_tool"
     fi
-    prepare_release_app "$universal_app"
-    verify_release_app "$universal_app"
-
-    update_zip="$output_directory/QueryCraft-$release_version.zip"
-    ditto -c -k --sequesterRsrc --keepParent "$universal_app" "$update_zip"
-
-    generate_appcast="$(find "$universal_derived_data" -type f -name generate_appcast -perm -111 -print -quit)"
-    if [[ -z "$generate_appcast" ]]; then
-        echo "Sparkle generate_appcast was not found in universal DerivedData." >&2
-        exit 69
-    fi
-    release_notes="$project_root/docs/releases/$release_version.md"
-    if [[ ! -f "$release_notes" ]]; then
-        echo "Release notes not found: $release_notes" >&2
-        exit 66
-    fi
-    cp "$project_root/appcast.xml" "$appcast_backup"
-    appcast_was_backed_up=true
-    SPARKLE_TOOLS_DIR="$(dirname "$generate_appcast")" \
-    SPARKLE_PRIVATE_KEY="$SPARKLE_PRIVATE_KEY" \
-    QUERYCRAFT_UPDATE_BASE_URL="$update_base_url" \
-    QUERYCRAFT_ALLOW_UNNOTARIZED_UPDATE=true \
-        "$project_root/scripts/generate-appcast.sh" \
-            "$release_version" "$update_zip" "$release_notes"
-    cp "$project_root/appcast.xml" "$output_directory/appcast.xml"
-    cp "$release_notes" "$output_directory/release-notes.md"
-    cp "$appcast_backup" "$project_root/appcast.xml"
-    appcast_was_backed_up=false
 fi
 
 echo "Release artifacts: $output_directory"

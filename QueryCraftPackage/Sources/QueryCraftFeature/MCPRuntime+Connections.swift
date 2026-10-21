@@ -1,8 +1,7 @@
 import Foundation
-import MCP
 
 extension MCPRuntime {
-    func addConnection(_ args: [String: Value], policy: MCPPolicy) async throws -> Value {
+    func addConnection(_ args: [String: MCPJSONValue], policy: MCPPolicy) async throws -> MCPJSONValue {
         guard policy.mode == .fullAccess else { throw MCPFailure("Adding connections requires global full access.", code: .accessDenied) }
         guard let type = DatabaseType(rawValue: try args.requiredString("type")) else { throw MCPFailure("Unsupported database driver.") }
         let port = args.integer("port", default: 0)
@@ -34,7 +33,7 @@ extension MCPRuntime {
         return .object(["connection_id": .string(profile.id.uuidString), "authorized": .bool(policy.allConnections)])
     }
 
-    func mutateConnection(_ tool: String, profile: ConnectionProfile, args: [String: Value], policy: MCPPolicy) async throws -> Value {
+    func mutateConnection(_ tool: String, profile: ConnectionProfile, args: [String: MCPJSONValue], policy: MCPPolicy) async throws -> MCPJSONValue {
         guard policy.effectiveMode(profile, database: nil) == .fullAccess else { throw MCPFailure("Connection changes require full access.", code: .accessDenied) }
         invalidateMetadata(for: profile.id)
         await discardIdleConnection(for: profile.id)

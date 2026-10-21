@@ -1,5 +1,4 @@
 import Foundation
-import MCP
 
 actor MCPRuntime {
     struct Session: Sendable {
@@ -56,7 +55,7 @@ actor MCPRuntime {
     }
     deinit { maintenance?.cancel() }
 
-    func tools() throws -> [Tool] {
+    func tools() throws -> [MCPWireTool] {
         let policy = try store.load()
         guard policy.enabled else { return [] }
         return MCPToolCatalog.definitions.filter {
@@ -69,7 +68,7 @@ actor MCPRuntime {
         }.map(\.tool)
     }
 
-    func call(_ name: String, arguments args: [String: Value]) async throws -> Value {
+    func call(_ name: String, arguments args: [String: MCPJSONValue]) async throws -> MCPJSONValue {
         let started = Date()
         let recordsHistory = (try? store.load().tuning.recordsHistory) == true
         let known = MCPToolCatalog.definitions.contains { "querycraft_" + $0.name == name }
@@ -99,7 +98,7 @@ actor MCPRuntime {
         }
     }
 
-    private func dispatch(_ name: String, arguments args: [String: Value]) async throws -> Value {
+    private func dispatch(_ name: String, arguments args: [String: MCPJSONValue]) async throws -> MCPJSONValue {
         guard name.hasPrefix("querycraft_"), MCPToolCatalog.definitions.contains(where: { "querycraft_" + $0.name == name }) else {
             throw MCPFailure("Unknown QueryCraft MCP tool.")
         }
@@ -125,17 +124,17 @@ actor MCPRuntime {
         try policy.authorize(tool: tool)
         if tool == "list_connections" {
             let profiles = try await repository.fetchAll()
-            var values: [Value] = []
+            var values: [MCPJSONValue] = []
             for p in profiles where policy.permits(p) {
                 values.append(.object(["id": .string(p.id.uuidString), "name": .string(p.name), "type": .string(p.databaseType.rawValue),
-                                       "host": .string(p.host), "port": .int(p.port), "database": p.defaultDatabase.map(Value.string) ?? .null,
+                                       "host": .string(p.host), "port": .int(p.port), "database": p.defaultDatabase.map(MCPJSONValue.string) ?? .null,
                                        "driver_installed": .bool(await registry.isInstalled(p.databaseType))]))
             }
             return .array(values)
         }
         if tool == "plugin_list" {
             return .array(await registry.installedDatabaseTypes().sorted { $0.rawValue < $1.rawValue }.map {
-                .object(["id": .string($0.rawValue), "name": .string($0.title), "tools": .array(MCPToolCatalog.driverTools($0).subtracting(policy.disabledTools).sorted().map(Value.string))])
+                .object(["id": .string($0.rawValue), "name": .string($0.title), "tools": .array(MCPToolCatalog.driverTools($0).subtracting(policy.disabledTools).sorted().map(MCPJSONValue.string))])
             })
         }
         if tool == "add_connection" { return try await addConnection(args, policy: policy) }
@@ -239,7 +238,7 @@ actor MCPRuntime {
                 sessions[sessionID] = Session(id: sessionID, profile: profile, database: database, connection: connection, mode: mode)
                 return .object(["session_id": .string(sessionID), "idle_timeout_seconds": .int(policy.sessionIdleSeconds)])
             }
-            var result: Value
+            var result: MCPJSONValue
             if tool == "begin_transaction" || tool == "commit_transaction" {
                 guard var entry = savedEntry else { throw MCPFailure("A session_id is required.") }
                 let beginning = tool == "begin_transaction"

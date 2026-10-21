@@ -1,5 +1,4 @@
 import Foundation
-import MCP
 import Testing
 @testable import QueryCraftFeature
 
@@ -29,7 +28,7 @@ struct MCPOptimizationTests {
         let driver = MCPProbeDriver(databaseType: type)
         let runtime = MCPRuntime(directory: root, registry: DatabaseDriverRegistry(drivers: [driver]))
         let p = MCPTests().profile(type: type); try await runtime.repository.insert(p)
-        var args: [String: Value] = ["connection_id": .string(p.id.uuidString)]
+        var args: [String: MCPJSONValue] = ["connection_id": .string(p.id.uuidString)]
         _ = try await runtime.call("querycraft_list_tables", arguments: args)
         _ = try await runtime.call("querycraft_list_tables", arguments: args)
         #expect(await driver.createdCount == 1)
@@ -52,7 +51,7 @@ struct MCPOptimizationTests {
         let driver = MCPProbeDriver(databaseType: .mysql)
         let runtime = MCPRuntime(directory: root, registry: DatabaseDriverRegistry(drivers: [driver]))
         let p = MCPTests().profile(); try await runtime.repository.insert(p)
-        let args: [String: Value] = ["connection_id": .string(p.id.uuidString)]
+        let args: [String: MCPJSONValue] = ["connection_id": .string(p.id.uuidString)]
         _ = try await runtime.call("querycraft_list_tables", arguments: args)
         let metadata = try #require(await driver.created.first)
         _ = try await runtime.call("querycraft_execute_query", arguments: args.merging(["sql": "CREATE TABLE audit_log (id INT)", "confirm_high_risk": true]) { _, b in b })
@@ -99,7 +98,7 @@ struct MCPOptimizationTests {
         #expect(names.contains("querycraft_plugin_tools"))
         #expect(!names.contains("querycraft_execute_query"))
         #expect(names.contains("querycraft_rollback_transaction"))
-        let args: [String: Value] = ["connection_id": .string(p.id.uuidString)]
+        let args: [String: MCPJSONValue] = ["connection_id": .string(p.id.uuidString)]
         let schemas = try await runtime.call("querycraft_plugin_tools", arguments: args)
         #expect(schemas.arrayValue?.contains { $0.objectValue?["name"] == "execute_query" } == true)
         let callArgs = args.merging(["tool": "list_tables", "arguments": .object([:])]) { _, b in b }
@@ -159,7 +158,7 @@ struct MCPOptimizationTests {
         let driver = MCPProbeDriver(databaseType: .mysql, started: started.continuation, release: release.stream)
         let p = MCPTests().profile(), runtime = MCPRuntime(directory: root, registry: DatabaseDriverRegistry(drivers: [driver]))
         try await runtime.repository.insert(p)
-        let args: [String: Value] = ["connection_id": .string(p.id.uuidString)]
+        let args: [String: MCPJSONValue] = ["connection_id": .string(p.id.uuidString)]
         let first = Task {
             do { return try await runtime.call("querycraft_list_tables", arguments: args) }
             catch { started.continuation.finish(); throw error }

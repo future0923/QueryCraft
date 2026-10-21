@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import sys
 from urllib.request import urlopen
-import xml.etree.ElementTree as ET
 
 
 def download(url):
@@ -24,20 +23,17 @@ def main():
     updates = {}
     if os.environ.get("QUERYCRAFT_DEPLOY_CLIENT", "true") == "true":
         path = directory / "appcast.xml"
-        ns = {"s": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
-        expected = ET.parse(path).find("./channel/item")
+        import importlib.util
+        import tempfile
+        spec = importlib.util.spec_from_file_location("update_archives", Path(__file__).resolve().parents[1] / "update-archives.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.validate_feed(directory, path, base)
         data = download(base + "/appcast.xml")
-        actual = next(
-            item for item in ET.fromstring(data).findall("./channel/item")
-            if all(item.findtext(key, namespaces=ns)
-                   == expected.findtext(key, namespaces=ns)
-                   for key in ("s:version", "s:shortVersionString"))
-        )
-        for key in ("length", "{" + ns["s"] + "}edSignature"):
-            if not expected.find("enclosure").get(key) or (
-                actual.find("enclosure").get(key) != expected.find("enclosure").get(key)
-            ):
-                raise ValueError("Published update archive metadata does not match")
+        with tempfile.TemporaryDirectory() as temporary:
+            remote = Path(temporary) / "appcast.xml"
+            remote.write_bytes(data)
+            module.validate_feed(directory, remote, base, canonical=True)
         updates[path] = data
     if os.environ.get("QUERYCRAFT_DEPLOY_DRIVERS", "true") == "true":
         all_databases = ("mysql", "postgresql", "doris", "redis", "elasticsearch", "kafka")
