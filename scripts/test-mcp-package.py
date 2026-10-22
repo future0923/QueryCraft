@@ -16,6 +16,11 @@ def run(args, **kwargs):
 
 def verify(app, drivers=None, previous_drivers=None):
     run(['codesign', '--verify', '--deep', '--strict', app])
+    info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+    desktop_info = plistlib.loads((ROOT / 'QueryCraft/Info.plist').read_bytes())
+    for key in ['NSAppTransportSecurity', 'NSLocalNetworkUsageDescription']:
+        assert info.get(key) == desktop_info[key], f'MCP network policy differs from desktop: {key}'
+    print('PASS desktop-equivalent HTTP/TLS and local-network policy')
     with tempfile.TemporaryDirectory(prefix='querycraft-mcp-relocated-') as temporary:
         root = Path(temporary)
         relocated = root / 'Moved App With Spaces.app'

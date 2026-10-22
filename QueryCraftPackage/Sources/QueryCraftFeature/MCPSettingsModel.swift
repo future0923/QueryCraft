@@ -341,16 +341,25 @@ final class MCPSettingsModel {
                 throw MCPFailure(AppCopy.current.text("请升级主程序和 MCP 程序后使用统一凭据授权。", "Update QueryCraft and the MCP runtime to use shared credential authorization."), code: .unsupported)
             }
             let repository = SQLiteConnectionProfileRepository(databaseURL: directory.appending(path: "QueryCraft.sqlite"))
-            let count = try await MCPCredentialAuthorization.authorize(profiles: try await repository.fetchAll(), policy: policy,
-                source: KeychainCredentialStore(directory: directory, allowsInteraction: false), destination: SharedKeychainCredentialStore(directory: directory),
+            let report = try await MCPCredentialAuthorization.authorizeAvailable(profiles: try await repository.fetchAll(), policy: policy,
+                // This is an explicit user action: allow the shared vault's system
+                // grant. KeychainCredentialStore still reads legacy items silently.
+                source: KeychainCredentialStore(directory: directory, allowsInteraction: true),
+                destination: SharedKeychainCredentialStore(directory: directory, allowsInteraction: true),
                 legacy: LegacyKeychainCredentialStore(allowsInteraction: false))
-            status = AppCopy.current.text("已统一授权 \(count) 个连接的凭据", "Authorized credentials for \(count) connections"); error = nil
+            let count = report.authorizedCount
+            status = AppCopy.current.text("已统一授权 \(count) 个连接的凭据", "Authorized credentials for \(count) connections")
+            if report.unavailableProfiles.isEmpty {
+                error = nil
+            } else {
+                let names = report.unavailableProfiles.map { "\($0.name)（\($0.host)）" }.joined(separator: "、")
+                error = AppCopy.current.text(
+                    "已授权 \(count) 个连接；以下连接的密码无法读取：\(names)。请解锁登录钥匙串；若仍失败，在连接编辑器重新输入并保存密码后重试。",
+                    "Authorized \(count) connections. Saved passwords are unavailable for: \(names). Unlock the login Keychain; if access still fails, re-enter and save these passwords in the connection editor, then retry.")
+            }
         } catch {
-            let failure = MCPFailure.normalized(error)
-            self.error = failure.code == .credentialDenied
-                ? AppCopy.current.text("无法静默读取旧凭据。请先解锁登录钥匙串，并在 QueryCraft 中确认该连接可正常连接后重试；不会逐条弹出授权。",
-                    "Cannot read legacy credentials without prompting. Unlock the login Keychain and verify the connection in QueryCraft, then retry.")
-                : failure.localizedDescription
+            status = ""
+            self.error = MCPFailure.normalized(error).message
         }
     }
     func uninstall() async {
