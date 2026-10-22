@@ -1,4 +1,7 @@
-# SQL 事务状态修复 / SQL transaction state fix（待发版 / Unreleased）
+# SQL 事务状态修复 / SQL transaction state fix
+
+本文保留实现提交时的验证与范围记录；发布安排已纳入 [QueryCraft 0.1.12](0.1.12.md)。
+This records the implementation-time validation and scope. Publication is included in [QueryCraft 0.1.12](0.1.12.md).
 
 ## 中文
 

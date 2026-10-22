@@ -1,5 +1,8 @@
 # 更新包瘦身 / Smaller application updates
 
+本文保留实现提交时的测量与范围记录；新格式服务端已于 2026-10-22 部署，客户端发布安排已纳入 [QueryCraft 0.1.12](0.1.12.md)。下文“未发布”等描述指实现提交当时的状态。
+This preserves implementation-time measurements and scope. The new server format was deployed on 2026-10-22 and client publication is included in [QueryCraft 0.1.12](0.1.12.md). Statements below about unreleased work describe that earlier implementation checkpoint.
+
 ## 中文
 
 - Intel 与 Apple Silicon 分别提供签名 `.tar.xz` 更新包，每台 Mac 只下载适用架构；初次安装继续使用 DMG，并优化其压缩封装。

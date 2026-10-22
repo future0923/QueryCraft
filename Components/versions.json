@@ -1,8 +1,8 @@
 {
   "mcp": {
-    "version": "0.1.1",
-    "build": "2",
-    "minimumAppVersion": "0.1.11",
+    "version": "0.1.2",
+    "build": "3",
+    "minimumAppVersion": "0.1.12",
     "driverAPI": 5,
     "storageAPI": 1,
     "credentialAPI": 1,

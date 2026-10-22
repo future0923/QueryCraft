@@ -1,4 +1,7 @@
-# MCP 设置与开发环境隔离 / MCP settings and development isolation（待发版 / Unreleased）
+# MCP 设置与开发环境隔离 / MCP settings and development isolation
+
+本文保留实现提交时的验证与范围记录；发布安排已纳入 [QueryCraft 0.1.12](0.1.12.md) 和 [MCP 0.1.2](mcp/0.1.2.md)。
+This records the implementation-time validation and scope. Publication is included in [QueryCraft 0.1.12](0.1.12.md) and [MCP 0.1.2](mcp/0.1.2.md).
 
 ## 中文
 
