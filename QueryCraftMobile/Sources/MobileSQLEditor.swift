@@ -13,6 +13,8 @@ struct MobileSQLEditor: UIViewRepresentable {
     var executionInput: MobileSQLExecutionInput? = nil
     var snippets: [SQLSnippetCompletionSource] = []
     var snippetContext: MobileSQLSnippetContext? = nil
+    var formattingContext: MobileSQLFormattingContext? = nil
+    var executeAll: (() -> Void)? = nil
     let execute: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
@@ -69,6 +71,11 @@ struct MobileSQLEditor: UIViewRepresentable {
         private var dismissedRevision: SQLSourceRevision?
         private var dismissedSelection = NSRange(location: 0, length: 0)
         private var continuation: (text: String, selection: NSRange)?
+        var formatter: any MobileSQLFormatting = MobileSQLFormatter()
+        private var formattingRevision: UInt64 = 0
+        private var formattingText = ""
+        private var formattingSelection = NSRange(location: 0, length: 0)
+        private var formattingComposing = false
         let snippetSession = SQLSnippetSession()
         private var snippetSources: [SQLSnippetCompletionSource] = []
         private var snippetText = ""
@@ -81,6 +88,7 @@ struct MobileSQLEditor: UIViewRepresentable {
             NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged), name: UIResponder.keyboardDidChangeFrameNotification, object: nil)
             parent.executionInput?.attach(view)
             parent.snippetContext?.attach(view)
+            parent.formattingContext?.attach(view)
             snippetSession.didChange = { [weak self] in self?.updateSnippetPresentation() }
             view.navigateSnippet = { [weak self] delta in self?.navigateSnippet(delta) ?? false }
             view.endSnippet = { [weak self] in
@@ -101,6 +109,12 @@ struct MobileSQLEditor: UIViewRepresentable {
             }
             view.completionLayoutChanged = { [weak self] in self?.popup?.setNeedsLayout() }
             view.executeQuery = { [weak self] in self?.parent.execute() }
+            view.executeDocument = { [weak self] in self?.parent.executeAll?() }
+            view.requestFormatting = { [weak self] in self?.parent.formattingContext?.format(.selectionOrCurrentStatement) }
+            view.formatSQL = { [weak self] request in
+                guard let self else { throw SQLFormattingError.editorUnavailable }
+                return try await self.format(request)
+            }
         }
 
         func update(_ view: MobileSQLTextView, mode: EditorColorMode) {
@@ -175,6 +189,7 @@ struct MobileSQLEditor: UIViewRepresentable {
         }
 
         func schedule(_ view: MobileSQLTextView, manual: Bool = false) {
+            trackFormattingInput(view)
             analysis?.cancel(); token = UUID()
             let oldSnippetText = snippetText
             snippetText = view.text ?? ""
@@ -371,7 +386,46 @@ struct MobileSQLEditor: UIViewRepresentable {
             view.inputAccessoryView = nil
             if view.isFirstResponder { view.reloadInputViews() }
         }
-        func stop() { NotificationCenter.default.removeObserver(self); token = UUID(); analysis?.cancel(); parsed?.cancel(); focusTask?.cancel(); visibleHighlightTask?.cancel(); snippetSession.end(); if let view { parent.snippetContext?.detach(view) }; clearItems() }
+        func stop() { formattingRevision &+= 1; if let view { parent.formattingContext?.detach(view); view.formatSQL = nil; view.requestFormatting = nil }; NotificationCenter.default.removeObserver(self); token = UUID(); analysis?.cancel(); parsed?.cancel(); focusTask?.cancel(); visibleHighlightTask?.cancel(); snippetSession.end(); if let view { parent.snippetContext?.detach(view) }; clearItems() }
+
+        private func trackFormattingInput(_ view: MobileSQLTextView) {
+            let composing = view.markedTextRange != nil
+            guard formattingText != view.text || formattingSelection != view.selectedRange || formattingComposing != composing else { return }
+            formattingRevision &+= 1
+            formattingText = view.text; formattingSelection = view.selectedRange; formattingComposing = composing
+        }
+
+        @discardableResult func format(_ request: SQLFormattingRequest) async throws -> Bool {
+            guard let view else { throw SQLFormattingError.editorUnavailable }
+            guard view.markedTextRange == nil else { throw SQLFormattingError.textCompositionActive }
+            guard view.text.utf8.count <= 262_144 else { throw MobileSQLFormattingError.documentTooLarge }
+            trackFormattingInput(view)
+            let revision = formattingRevision
+            let source = SQLSourceSnapshot(revision: .init(revision), text: view.text)
+            let selection = view.selectedRange
+            clearItems()
+            let edit = try await formatter.edit(for: request, source: source, selection: selection)
+            try Task.checkCancellation()
+            guard self.view === view, formattingRevision == revision, view.text == source.text,
+                  view.selectedRange == selection, view.markedTextRange == nil else { throw SQLFormattingError.sourceChanged }
+            guard let edit else { return false }
+            guard edit.sourceRevision == source.revision, edit.range.location >= 0,
+                  edit.range.upperBound <= view.text.utf16.count else { throw SQLFormattingError.sourceChanged }
+            snippetSession.end()
+            applying = true
+            view.undoManager?.beginUndoGrouping()
+            view.selectedRange = edit.range.nsRange
+            view.insertText(edit.replacement)
+            view.undoManager?.endUndoGrouping()
+            view.selectedRange = clamped(edit.selectedRange, length: view.text.utf16.count)
+            applying = false
+            publishedText = view.text; parent.text = view.text; parent.selection = view.selectedRange
+            pendingEdit = nil; continuation = nil
+            schedule(view)
+            dismissedRevision = self.source.revision; dismissedSelection = view.selectedRange
+            view.scrollRangeToVisible(view.selectedRange)
+            return true
+        }
 
         private func highlightRange(_ view: UITextView) -> NSRange {
             let count = (view.text as NSString).length
@@ -434,6 +488,9 @@ struct MobileSQLEditor: UIViewRepresentable {
     var dismissCompletion: (() -> Void)?
     var moveCompletion: ((Int) -> Void)?
     var executeQuery: (() -> Void)?
+    var executeDocument: (() -> Void)?
+    var formatSQL: ((SQLFormattingRequest) async throws -> Bool)?
+    var requestFormatting: (() -> Void)?
     var hasCompletions = false
     var completionLayoutChanged: (() -> Void)?
     override func layoutSubviews() {
@@ -472,6 +529,8 @@ struct MobileSQLEditor: UIViewRepresentable {
         }
         return [UIKeyCommand(input: " ", modifierFlags: .control, action: #selector(complete)),
          UIKeyCommand(input: "\r", modifierFlags: .command, action: #selector(run)),
+         UIKeyCommand(input: "\r", modifierFlags: [.command, .shift], action: #selector(runDocument)),
+         UIKeyCommand(input: "i", modifierFlags: .command, action: #selector(formatCurrent)),
          UIKeyCommand(input: "\t", modifierFlags: [], action: #selector(tab)),
          UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(escape))]
             + (hasSnippetSession ? [UIKeyCommand(input: "\t", modifierFlags: .shift, action: #selector(backtab))] : [])
@@ -480,7 +539,9 @@ struct MobileSQLEditor: UIViewRepresentable {
                 UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(selectNextCompletion))])
             + (super.keyCommands ?? [])
     }
+    @objc private func formatCurrent() { guard markedTextRange == nil else { return }; requestFormatting?() }
     @objc private func complete() { requestCompletion?() }
+    @objc private func runDocument() { if markedTextRange != nil { unmarkText() } else { executeDocument?() } }
     @objc private func run() { if markedTextRange != nil { unmarkText() } else { executeQuery?() } }
     @objc private func tab() { if navigateSnippet?(1) != true, acceptCompletion?() != true { insertText("    ") } }
     @objc private func backtab() { _ = navigateSnippet?(-1) }

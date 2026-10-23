@@ -46,7 +46,10 @@ struct MobileResultsView: View {
     @State private var find = WorkspaceGridSearchController()
     @State private var findRevision: String?
     @State private var fullscreen: MobileFullscreenGridSelection?
-    @State private var viewport = MobileGridViewport()
+    var retainedViewport: MobileGridViewport? = nil
+    var queryPagination: MobileQueryModel? = nil
+    @State private var localViewport = MobileGridViewport()
+    private var viewport: MobileGridViewport { retainedViewport ?? localViewport }
     @State private var restorationID = UUID()
     @State private var insertDraft: MobileInsertDraft?
     @State private var pendingChanges: MobileTableChanges?
@@ -103,6 +106,15 @@ struct MobileResultsView: View {
                     }.accessibilityLabel("待提交改动，\(editing.changeCount) 行").accessibilityIdentifier("pendingChangesButton")
                 }
                 if let pagination { MobilePageNavigation(model: pagination) }
+                if let queryPagination, queryPagination.hasCachePages {
+                    HStack(spacing: 6) {
+                        Button { queryPagination.pageCache(-1) } label: { Image(systemName: "chevron.left") }
+                            .disabled(!queryPagination.canPageCache || queryPagination.cacheOffset == 0).accessibilityLabel("上一缓存页")
+                        Text("\(queryPagination.cacheOffset + 1)–\(queryPagination.cacheOffset + data.rows.count)").font(.caption.monospacedDigit())
+                        Button { queryPagination.pageCache(1) } label: { Image(systemName: "chevron.right") }
+                            .disabled(!queryPagination.canPageCache || queryPagination.cacheOffset + data.rows.count >= queryPagination.cachedRowCount).accessibilityLabel("下一缓存页")
+                    }.buttonStyle(.bordered).controlSize(.small)
+                }
             }.padding(.horizontal, 12).frame(height: 44) }
         }
         .background(Color(uiColor: .systemGroupedBackground))

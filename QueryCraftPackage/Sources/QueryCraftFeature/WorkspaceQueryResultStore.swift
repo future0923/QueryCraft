@@ -1,6 +1,9 @@
 import Foundation
 import GRDB
 import Synchronization
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 final class WorkspaceQueryResultStore: Sendable {
     private struct Cache: Sendable {
@@ -8,9 +11,9 @@ final class WorkspaceQueryResultStore: Sendable {
         var order: [Int] = []
     }
 
-    private static let pageSize = 256
-    private static let maximumCachedPages = 16
-    private static let maximumResidentRowCount = 50_000
+    private let pageSize: Int
+    private let maximumCachedPages: Int
+    private let maximumResidentRowCount: Int
 
     let id = UUID()
 
@@ -28,9 +31,14 @@ final class WorkspaceQueryResultStore: Sendable {
         diskBacking.withLock { $0 != nil }
     }
 
-    init(temporary: Bool = true) throws {
+    var diskFileURL: URL? { diskBacking.withLock { $0?.fileURL } }
+
+    init(temporary: Bool = true, maximumResidentRowCount: Int = 50_000, pageSize: Int = 256, maximumCachedPages: Int = 16) throws {
+        self.pageSize = max(1, pageSize)
+        self.maximumCachedPages = max(1, maximumCachedPages)
+        self.maximumResidentRowCount = max(0, maximumResidentRowCount)
         var initialResidentRows: [WorkspaceDatabaseDataRow] = []
-        initialResidentRows.reserveCapacity(Self.maximumResidentRowCount)
+        initialResidentRows.reserveCapacity(self.maximumResidentRowCount)
         residentRows = Mutex(initialResidentRows)
         diskCoordinator = WorkspaceQueryResultStoreDiskCoordinator(
             temporary: temporary
@@ -57,7 +65,7 @@ final class WorkspaceQueryResultStore: Sendable {
             guard residentRows != nil else { return false }
             guard
                 residentRows!.count + rows.count
-                    <= Self.maximumResidentRowCount
+                    <= maximumResidentRowCount
             else {
                 return false
             }
@@ -92,7 +100,7 @@ final class WorkspaceQueryResultStore: Sendable {
         if residentLookup.isResident {
             return residentLookup.row
         }
-        let pageIndex = index / Self.pageSize
+        let pageIndex = index / pageSize
         if let row = cachedRow(at: index, pageIndex: pageIndex) {
             return row
         }
@@ -101,7 +109,7 @@ final class WorkspaceQueryResultStore: Sendable {
         guard let databaseQueue = databaseQueue() else { return nil }
         do {
             rows = try databaseQueue.read { database in
-                try Self.readPage(pageIndex, from: database)
+                try Self.readPage(pageIndex, pageSize: self.pageSize, from: database)
             }
         } catch {
             return nil
@@ -124,11 +132,12 @@ final class WorkspaceQueryResultStore: Sendable {
         if residentLookup.isResident {
             return residentLookup.row
         }
-        return cachedRow(at: index, pageIndex: index / Self.pageSize)
+        return cachedRow(at: index, pageIndex: index / pageSize)
     }
 
     func makeDataExportRowSource(
-        rows: WorkspaceGridCopyRows
+        rows: WorkspaceGridCopyRows,
+        maximumBatchBytes: Int? = nil
     ) -> any WorkspaceDataExportRowSource {
         let isResident = residentRows.withLock { $0 != nil }
         let diskBacking = diskBacking.withLock { $0 }
@@ -145,8 +154,39 @@ final class WorkspaceQueryResultStore: Sendable {
         return WorkspaceQueryResultDataExportRowSource(
             store: self,
             databaseURL: fileURL,
-            rows: rows
+            rows: rows,
+            maximumBatchBytes: maximumBatchBytes
         )
+    }
+
+    /// Bounded window read for touch UIs. Disk payloads are decoded one at a
+    /// time, avoiding a large fetchAll when individual cells contain long text.
+    func loadRows(in range: Range<Int>, maximumBytes: Int) async throws -> [WorkspaceDatabaseDataRow] {
+        if let resident = residentRows.withLock({ $0 }) {
+            let start = max(0, range.lowerBound), end = min(range.upperBound, resident.count)
+            guard start < end else { return [] }
+            var rows: [WorkspaceDatabaseDataRow] = [], bytes = 0
+            let encoder = JSONEncoder()
+            for row in resident[start..<end] {
+                let size = try encoder.encode(row).count
+                if !rows.isEmpty, bytes + size > maximumBytes { break }
+                rows.append(row); bytes += size
+            }
+            return rows
+        }
+        guard let databaseQueue = databaseQueue() else { return [] }
+        return try await databaseQueue.read { database in
+            let cursor = try Data.fetchCursor(database,
+                sql: "SELECT payload FROM queryResultRow WHERE position >= ? AND position < ? ORDER BY position",
+                arguments: [range.lowerBound, range.upperBound])
+            var rows: [WorkspaceDatabaseDataRow] = [], bytes = 0
+            let decoder = JSONDecoder()
+            while let payload = try cursor.next() {
+                if !rows.isEmpty, bytes + payload.count > maximumBytes { break }
+                rows.append(try decoder.decode(WorkspaceDatabaseDataRow.self, from: payload)); bytes += payload.count
+            }
+            return rows
+        }
     }
 
     func loadPage(containing index: Int) async throws -> Range<Int>? {
@@ -154,15 +194,15 @@ final class WorkspaceQueryResultStore: Sendable {
         if residentRows.withLock({ $0 != nil }) {
             return 0..<rowCount
         }
-        let pageIndex = index / Self.pageSize
-        let start = pageIndex * Self.pageSize
+        let pageIndex = index / pageSize
+        let start = pageIndex * pageSize
         if cachedRow(at: index, pageIndex: pageIndex) != nil {
-            return start..<min(start + Self.pageSize, rowCount)
+            return start..<min(start + pageSize, rowCount)
         }
 
         guard let databaseQueue = databaseQueue() else { return nil }
         let rows = try await databaseQueue.read { database in
-            try Self.readPage(pageIndex, from: database)
+            try Self.readPage(pageIndex, pageSize: self.pageSize, from: database)
         }
         try Task.checkCancellation()
         storeCachedPage(rows, at: pageIndex)
@@ -286,7 +326,7 @@ final class WorkspaceQueryResultStore: Sendable {
 
     func cachePageIdentifier(containing index: Int) -> Int? {
         guard index >= 0, index < rowCount else { return nil }
-        return index / Self.pageSize
+        return index / pageSize
     }
 
     private func cachedRow(at index: Int, pageIndex: Int)
@@ -302,7 +342,7 @@ final class WorkspaceQueryResultStore: Sendable {
 
     private func cache(_ rows: [WorkspaceDatabaseDataRow]) {
         let rowsByPage = Dictionary(grouping: rows) {
-            $0.id / Self.pageSize
+            $0.id / pageSize
         }
         cache.withLock { cache in
             for (pageIndex, newRows) in rowsByPage {
@@ -318,7 +358,7 @@ final class WorkspaceQueryResultStore: Sendable {
                 }
                 Self.markRecentlyUsed(pageIndex, in: &cache)
             }
-            Self.evictPagesIfNeeded(from: &cache)
+            Self.evictPagesIfNeeded(from: &cache, maximumCachedPages: maximumCachedPages)
         }
     }
 
@@ -329,7 +369,7 @@ final class WorkspaceQueryResultStore: Sendable {
         cache.withLock { cache in
             cache.pages[pageIndex] = rows
             Self.markRecentlyUsed(pageIndex, in: &cache)
-            Self.evictPagesIfNeeded(from: &cache)
+            Self.evictPagesIfNeeded(from: &cache, maximumCachedPages: maximumCachedPages)
         }
     }
 
@@ -341,7 +381,7 @@ final class WorkspaceQueryResultStore: Sendable {
         cache.order.append(pageIndex)
     }
 
-    private static func evictPagesIfNeeded(from cache: inout Cache) {
+    private static func evictPagesIfNeeded(from cache: inout Cache, maximumCachedPages: Int) {
         while cache.order.count > maximumCachedPages {
             let removed = cache.order.removeFirst()
             cache.pages[removed] = nil
@@ -350,6 +390,7 @@ final class WorkspaceQueryResultStore: Sendable {
 
     private static func readPage(
         _ pageIndex: Int,
+        pageSize: Int,
         from database: Database
     ) throws -> [WorkspaceDatabaseDataRow] {
         let start = pageIndex * pageSize
@@ -416,9 +457,13 @@ private struct WorkspaceQueryResultStoreDiskBacking: Sendable {
         let fileURL: URL?
 
         if temporary {
+            #if os(iOS)
+            let directory = WorkspaceMobileQueryCacheDirectory.current
+            #else
             let directory = FileManager.default.temporaryDirectory
                 .appending(path: "QueryCraft", directoryHint: .isDirectory)
                 .appending(path: "Results", directoryHint: .isDirectory)
+            #endif
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true,
@@ -497,3 +542,20 @@ private actor WorkspaceQueryResultStoreCleanup {
         }
     }
 }
+
+#if os(iOS)
+/// Initialized once before this process creates its first cache. Mobile sandbox
+/// contains no other query processes; only our own previous-run directories go.
+enum WorkspaceMobileQueryCacheDirectory {
+    static let current: URL = {
+        let root = FileManager.default.temporaryDirectory.appending(path: "QueryCraft/Results", directoryHint: .isDirectory)
+        let current = root.appending(path: "mobile-" + UUID().uuidString, directoryHint: .isDirectory)
+        if let contents = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+            for url in contents where url.lastPathComponent.hasPrefix("mobile-") {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        return current
+    }()
+}
+#endif

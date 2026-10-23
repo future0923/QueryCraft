@@ -20,6 +20,7 @@ struct MobileSchemaContent: View {
     @Bindable var draft: MobileSchemaDraft
     @State private var edit: MobileSchemaEditSelection?
     @State private var pending = false
+    @State private var options = false
     @State private var viewport = MobileGridViewport()
     @State private var restorationID = UUID()
     @State private var listPosition: String?
@@ -59,6 +60,10 @@ struct MobileSchemaContent: View {
             }
             HStack(spacing: 12) {
                 Menu {
+                    if draft.object.kind == .table {
+                        Button("表选项", systemImage: "slider.horizontal.3") { options = true }
+                            .disabled(draft.snapshot?.options == nil || !controller.canEdit(draft))
+                    }
                     Picker("结构", selection: $draft.section) { ForEach(MobileSchemaDraft.Section.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
                     Picker("显示方式", selection: $draft.presentation) { ForEach(MobileSchemaDraft.Presentation.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
                 } label: { Label(draft.section.rawValue, systemImage: draft.presentation == .table ? "tablecells" : "list.bullet") }.labelStyle(.titleAndIcon)
@@ -89,6 +94,7 @@ struct MobileSchemaContent: View {
             if selection.section == .columns { MobileSchemaColumnEditor(controller: controller, draft: draft, selection: selection) { edit = nil } }
             else { MobileSchemaIndexEditor(controller: controller, draft: draft, selection: selection) { edit = nil } }
         }
+        .sheet(isPresented: $options) { MobileExistingTableOptionsView(controller: controller, draft: draft) { options = false } }
         .sheet(isPresented: $pending) { MobileSchemaPendingView(controller: controller, draft: draft) { pending = false } }
     }
     private var itemIDs: [UUID] { draft.section == .columns ? draft.state.columns.map(\.id) : draft.state.indexes.map(\.id) }

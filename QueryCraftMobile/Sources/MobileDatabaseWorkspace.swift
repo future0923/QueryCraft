@@ -9,13 +9,17 @@ final class MobileDatabaseWorkspace: Identifiable {
     let browser: MobileBrowserModel
     let schema: MobileSchemaController
     let tableActions: MobileTableActionController
+    let newTable: MobileNewTableController
+    @ObservationIgnored var tableMetadataDidChange: ((MobileDatabaseObject) -> Void)?
+    @ObservationIgnored var tableDidCreate: ((MobileDatabaseObject) -> Void)?
     @ObservationIgnored var tableDidChange: ((MobileDatabaseObject, WorkspaceTableActionStatement) -> Void)?
 
-    init(profile: MobileConnectionProfile, password: String?, service: any MobileMySQLServicing, tableActionService: any MobileTableActionServicing = MobileTableActionService(), queryExecutor: any MobileQueryExecuting = MobileMariaDBExecutor(), schemaService: any MobileSchemaServicing = MobileSchemaService()) {
+    init(profile: MobileConnectionProfile, password: String?, service: any MobileMySQLServicing, tableActionService: any MobileTableActionServicing = MobileTableActionService(), queryExecutor: any MobileQueryExecuting = MobileMariaDBExecutor(), schemaService: any MobileSchemaServicing = MobileSchemaService(), newTableService: any MobileNewTableServicing = MobileNewTableService()) {
         self.profile = profile
         browser = MobileBrowserModel(configuration: profile.configuration(password: password), service: service)
         tableActions = MobileTableActionController(configuration: profile.configuration(password: password), safetyLock: browser.safetyLock, service: tableActionService)
         schema = MobileSchemaController(configuration: profile.configuration(password: password), safetyLock: browser.safetyLock, service: schemaService)
+        newTable = MobileNewTableController(configuration: profile.configuration(password: password), safetyLock: browser.safetyLock, service: newTableService)
         browser.schema = schema
         query = MobileQueryModel(executor: queryExecutor, metadataService: service, safetyLock: browser.safetyLock)
         query.host = profile.host
@@ -24,6 +28,7 @@ final class MobileDatabaseWorkspace: Identifiable {
         query.password = password ?? ""
         query.database = profile.database
         query.tlsMode = profile.tlsMode
+        browser.allowsDatabaseChange = { [weak query] in query?.hasPendingChanges == false }
         tableActions.contextID = { [weak browser] in browser?.contextID ?? UUID() }
         tableActions.isCurrent = { [weak browser] draft in
             browser?.selectedDatabase == draft.object.database && browser?.contextID == draft.contextID && browser?.isBackgrounded == false
@@ -31,25 +36,55 @@ final class MobileDatabaseWorkspace: Identifiable {
         tableActions.hasPendingChanges = { [weak self] object in
             guard let self else { return true }
             let table = self.browser.changesByObject[object.id]
-            return self.schema.drafts[object.id]?.hasChanges == true || self.schema.blocksWrites || table?.hasChanges == true || self.query.editing?.object.editingSelection == object.editingSelection && self.query.hasPendingChanges
-                || self.browser.changesByObject.values.contains { $0.isSubmitting } || self.query.editing?.isSubmitting == true
+            return self.query.blocksOtherWrites || self.newTable.blocksWrites || self.schema.drafts[object.id]?.hasChanges == true || self.schema.blocksWrites || table?.hasChanges == true || self.query.hasPendingChanges(for: object)
+                || self.browser.changesByObject.values.contains { $0.isSubmitting } || self.query.hasSubmittingChanges
         }
         browser.allowsDataMutation = { [weak self] in
             guard let self else { return false }
-            return !self.tableActions.blocksWrites && !self.schema.blocksWrites && self.browser.selectedObject.flatMap { self.schema.drafts[$0.id] }.map { !$0.hasChanges && !$0.requiresReload } != false
+            return !self.query.blocksOtherWrites && !self.newTable.blocksWrites && !self.tableActions.blocksWrites && !self.schema.blocksWrites && self.browser.selectedObject.flatMap { self.schema.drafts[$0.id] }.map { !$0.hasChanges && !$0.requiresReload } != false
         }
         query.allowsDataMutation = { [weak self] in
             guard let self else { return false }
-            return !self.tableActions.blocksWrites && !self.schema.blocksWrites && self.query.editing.flatMap { self.schema.drafts[$0.object.id] }.map { !$0.hasChanges && !$0.requiresReload } != false
+            return !self.newTable.blocksWrites && !self.tableActions.blocksWrites && !self.schema.blocksWrites && self.query.editing.flatMap { self.schema.drafts[$0.object.id] }.map { !$0.hasChanges && !$0.requiresReload } != false
         }
+        query.allowsSQLExecution = { [weak self] in
+            guard let self else { return false }
+            return !self.newTable.blocksWrites && !self.tableActions.blocksWrites && !self.schema.blocksWrites
+                && !self.browser.changesByObject.values.contains { $0.hasChanges || $0.isSubmitting || $0.needsVerification }
+                && !self.schema.drafts.values.contains { $0.hasChanges || $0.needsVerification } && !self.newTable.hasPendingChanges
+        }
+        query.didExecuteWrite = { [weak self] in self?.browser.sqlDidWrite(); self?.schema.sqlDidWrite() }
         schema.contextID = { [weak browser] in browser?.contextID ?? UUID() }
         schema.isCurrent = { [weak browser] object in browser?.selectedObject?.editingSelection == object.editingSelection && browser?.isBackgrounded == false }
-        schema.allowsWrites = { [weak tableActions] in tableActions?.blocksWrites == false }
+        schema.allowsWrites = { [weak self] in self.map { !$0.query.blocksOtherWrites && !$0.tableActions.blocksWrites && !$0.newTable.blocksWrites } ?? false }
         schema.hasPendingData = { [weak self] object in
             guard let self else { return true }
-            return self.browser.changesByObject[object.id]?.hasChanges == true
-                || self.query.editing?.object.editingSelection == object.editingSelection && self.query.hasPendingChanges
-                || self.browser.changesByObject.values.contains { $0.isSubmitting } || self.query.editing?.isSubmitting == true
+            return self.query.blocksOtherWrites || self.browser.changesByObject[object.id]?.hasChanges == true
+                || self.query.hasPendingChanges(for: object)
+                || self.browser.changesByObject.values.contains { $0.isSubmitting } || self.query.hasSubmittingChanges
+        }
+        newTable.contextID = { [weak browser] in browser?.contextID ?? UUID() }
+        newTable.isCurrent = { [weak browser] database in
+            browser?.selectedDatabase == database && browser?.catalogKind == .table && browser?.isBackgrounded == false
+        }
+        newTable.allowsWrites = { [weak self] in
+            guard let self else { return false }
+            return !self.query.blocksOtherWrites && !self.tableActions.blocksWrites && !self.schema.blocksWrites
+                && !self.browser.changesByObject.values.contains { $0.isSubmitting } && !self.query.hasSubmittingChanges
+        }
+        newTable.didComplete = { [weak self] object in
+            guard let self, self.browser.selectedDatabase == object.database, !self.browser.isBackgrounded else {
+                return "表已创建，切回目标数据库并使用顶部刷新读取。"
+            }
+            self.browser.acceptCreatedTable(object)
+            self.query.tableDidChange(object)
+            self.tableDidCreate?(object)
+            return await self.browser.refreshAfterTableAction(object: object)
+        }
+        schema.didRead = { [weak self] object, snapshot in
+            guard let self, let options = snapshot.options,
+                  let updated = self.browser.acceptTableComment(options.comment, for: object) else { return }
+            self.tableMetadataDidChange?(updated)
         }
         schema.didApply = { [weak self] object in
             self?.browser.schemaDidChange(object); self?.query.tableDidChange(object)
@@ -68,18 +103,18 @@ final class MobileDatabaseWorkspace: Identifiable {
         }
     }
 
-    var hasPendingChanges: Bool { browser.hasPendingChanges || query.hasPendingChanges || tableActions.blocksWrites || schema.hasPendingChanges }
+    var hasPendingChanges: Bool { browser.hasPendingChanges || query.hasPendingChanges || tableActions.blocksWrites || schema.hasPendingChanges || newTable.hasPendingChanges }
 
     func setBackgrounded(_ backgrounded: Bool) {
-        if backgrounded { tableActions.cancel(); schema.cancel() }
+        if backgrounded { newTable.cancel(); tableActions.cancel(); schema.cancel() }
         browser.setBackgrounded(backgrounded)
         query.setBackgrounded(backgrounded)
     }
 
     func cancelAll() {
-        tableActions.cancel(); schema.cancel()
+        newTable.cancel(); tableActions.cancel(); schema.cancel()
         browser.safetyLock.enable()
-        if query.isLoading || query.isLoadingEditing { query.cancel() }
+        _ = query.disconnectSQL()
         browser.cancelAll()
     }
 }

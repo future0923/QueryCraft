@@ -7,6 +7,54 @@ import QueryCraftFeature
 
 /// The desktop and mobile editors consume the same complete field/index metadata.
 enum MySQLTableSchemaMetadata {
+    static func informationQuery(database: String, name: String) -> String {
+        return
+            """
+            SELECT
+                ENGINE AS table_engine,
+                TABLE_COLLATION AS table_collation,
+                ROW_FORMAT AS row_format,
+                TABLE_ROWS AS estimated_row_count,
+                AUTO_INCREMENT AS next_auto_increment,
+                CREATE_OPTIONS AS create_options,
+                CAST(CREATE_TIME AS CHAR) AS creation_time,
+                CAST(UPDATE_TIME AS CHAR) AS update_time,
+                DATA_LENGTH AS data_size,
+                INDEX_LENGTH AS index_size,
+                TABLE_COMMENT AS table_comment
+            FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = \(literal(database))
+                AND TABLE_NAME = \(literal(name))
+            LIMIT 1
+            """
+    }
+
+    static func information(_ row: [String: String?]) -> WorkspaceDatabaseTableInformation {
+        let createOptions = (row["create_options"] ?? nil) ?? ""
+        return WorkspaceDatabaseTableInformation(
+            dataSize: (row["data_size"] ?? nil).flatMap(Int64.init),
+            indexSize: (row["index_size"] ?? nil).flatMap(Int64.init),
+            comment: (row["table_comment"] ?? nil) ?? "",
+            engine: row["table_engine"] ?? nil,
+            collation: row["table_collation"] ?? nil,
+            rowFormat: row["row_format"] ?? nil,
+            estimatedRowCount: (row["estimated_row_count"] ?? nil)
+                .flatMap(Int64.init),
+            nextAutoIncrement: (row["next_auto_increment"] ?? nil)
+                .flatMap(Int64.init),
+            averageRowLength: WorkspaceDatabaseTableInformation
+                .numericCreateOption("avg_row_length", in: createOptions),
+            minimumRows: WorkspaceDatabaseTableInformation
+                .numericCreateOption("min_rows", in: createOptions),
+            maximumRows: WorkspaceDatabaseTableInformation
+                .numericCreateOption("max_rows", in: createOptions),
+            keyBlockSize: WorkspaceDatabaseTableInformation
+                .numericCreateOption("key_block_size", in: createOptions),
+            creationTime: row["creation_time"] ?? nil,
+            updateTime: row["update_time"] ?? nil
+        )
+    }
+
     static func columnsQuery(database: String, name: String) -> String {
         return """
             SELECT

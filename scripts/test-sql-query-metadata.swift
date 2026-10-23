@@ -3,7 +3,7 @@ import QueryCraftFeature
 #if DORIS_OVERVIEW_FIXTURE
 @testable import QueryCraftDorisDriver
 #else
-import QueryCraftMariaDBTransportV3
+import QueryCraftMariaDBTransportV4
 @testable import QueryCraftPostgreSQLDriver
 #endif
 

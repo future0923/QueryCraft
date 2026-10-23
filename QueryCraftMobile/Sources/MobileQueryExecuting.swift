@@ -3,12 +3,31 @@ import QueryCraftMobileCore
 import QueryCraftMobileTransport
 
 protocol MobileQueryExecuting: Sendable {
+    func batch(configuration: MariaDBTransportConfiguration, statements: [SQLExecutionStatement],
+               receive: @escaping @Sendable (MobileQueryBatchEvent) async throws -> Void) async throws
     func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult
     func preview(configuration: MariaDBTransportConfiguration, sql: String,
                  maximumRows: Int, maximumBytes: Int) async throws -> CDatabaseQueryPreview
 }
 
 extension MobileQueryExecuting {
+    func batch(configuration: MariaDBTransportConfiguration, statements: [SQLExecutionStatement],
+               receive: @escaping @Sendable (MobileQueryBatchEvent) async throws -> Void) async throws {
+        try MobileQueryBatchLimits.validate(statements)
+        for statement in statements { try MobileSQLReadPolicy.validate(statement.sql) }
+        var remaining = MobileQueryBatchLimits.maximumBytes
+        try await SQLExecutionBatchRunner.run(statements) { statement in
+            guard remaining > 0 else { throw MobileQueryBatchError.resultBudget }
+            try await receive(.started(statement.index))
+            let result = try await preview(configuration: configuration, sql: statement.sql,
+                maximumRows: 500, maximumBytes: min(4_194_304, remaining))
+            try Task.checkCancellation()
+            remaining -= MobileQueryBatchLimits.retainedBytes(result)
+            try await receive(.completed(statement.index, result))
+            if result.isTruncated, statement.index != statements.last?.index { throw MobileQueryBatchError.truncatedSession }
+        }
+    }
+
     func preview(configuration: MariaDBTransportConfiguration, sql: String,
                  maximumRows: Int, maximumBytes: Int) async throws -> CDatabaseQueryPreview {
         let result = try await execute(configuration: configuration, sql: sql)
@@ -17,6 +36,38 @@ extension MobileQueryExecuting {
 }
 
 struct MobileMariaDBExecutor: MobileQueryExecuting {
+    func batch(configuration: MariaDBTransportConfiguration, statements: [SQLExecutionStatement],
+               receive: @escaping @Sendable (MobileQueryBatchEvent) async throws -> Void) async throws {
+        try MobileQueryBatchLimits.validate(statements)
+        guard configuration.tlsMode == .disabled || configuration.tlsMode == .required else { throw MobileQueryError.verifiedTLSUnavailable }
+        let client = MariaDBClient(configuration: configuration)
+        do {
+            try Task.checkCancellation(); try await client.connect()
+            let mode = try await client.query("SELECT @@SESSION.sql_mode")
+            guard let sqlMode = mode.rows.first?.first ?? nil else { throw MobileQueryError.invalidServerMetadata }
+            let backslashEscapes = !sqlMode.uppercased().split(separator: ",").contains("NO_BACKSLASH_ESCAPES")
+            // Validate the entire captured plan before executing even its first query.
+            for statement in statements { try MobileSQLReadPolicy.validate(statement.sql, backslashEscapes: backslashEscapes) }
+            try Task.checkCancellation()
+            _ = try await client.query("SET SESSION TRANSACTION READ ONLY")
+            _ = try await client.query("START TRANSACTION READ ONLY")
+            var remaining = MobileQueryBatchLimits.maximumBytes
+            try await SQLExecutionBatchRunner.run(statements) { statement in
+                guard remaining > 0 else { throw MobileQueryBatchError.resultBudget }
+                try await receive(.started(statement.index))
+                try Task.checkCancellation()
+                let preview = try await client.queryPreview(statement.sql, maximumRows: 500, maximumBytes: min(4_194_304, remaining))
+                try Task.checkCancellation()
+                remaining -= MobileQueryBatchLimits.retainedBytes(preview)
+                try await receive(.completed(statement.index, preview))
+                // Truncation deliberately closes the unbuffered connection. Never
+                // silently reconnect and pretend session state was preserved.
+                if preview.isTruncated, statement.index != statements.last?.index { throw MobileQueryBatchError.truncatedSession }
+            }
+            await client.close()
+        } catch { await client.close(); throw error }
+    }
+
     func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         let preview = try await preview(configuration: configuration, sql: sql, maximumRows: 10_000, maximumBytes: 8_388_608)
         guard !preview.isTruncated else { throw MobileQueryError.resultTooLarge }

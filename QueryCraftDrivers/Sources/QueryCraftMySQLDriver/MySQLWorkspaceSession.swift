@@ -1,6 +1,6 @@
 import Foundation
 import QueryCraftFeature
-import QueryCraftMariaDBTransportV3
+import QueryCraftMariaDBTransportV4
 
 actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding, WorkspaceNativeBulkTransferSession, WorkspaceNativeRowSourceSession {
     private let configuration: MySQLConnectionConfiguration
@@ -553,30 +553,13 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
             )
         }
         do {
-            let execution = try await client.queryWithTransactionState(sql)
-            let result = execution.result
-            try Task.checkCancellation()
+            let execution = try await client.queryStream(sql, onBatch: onBatch)
             if maximumRows != nil {
                 _ = try await client.query("SET SESSION SQL_SELECT_LIMIT = DEFAULT")
             }
-            let columns = result.workspaceColumns
-            let rows = result.rows.enumerated().map { index, row in
-                WorkspaceDatabaseDataRow(
-                    id: index,
-                    values: row.map { value in
-                        value.map(WorkspaceDatabaseDataCell.text)
-                            ?? WorkspaceDatabaseDataCell.null
-                    }
-                )
-            }
-            if !columns.isEmpty || !rows.isEmpty {
-                try await onBatch(
-                    WorkspaceDatabaseDataBatch(columns: columns, rows: rows)
-                )
-            }
             return WorkspaceQueryExecutionResult(
-                columns: columns,
-                rowCount: rows.isEmpty ? Int(result.affectedRows) : rows.count,
+                columns: execution.columns,
+                rowCount: execution.columns.isEmpty ? Int(clamping: execution.affectedRows) : execution.rowCount,
                 transactionState: execution.transactionState
             )
         } catch {
@@ -592,49 +575,9 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
         objectName: String
     ) async throws -> WorkspaceDatabaseTableInformation? {
         let tableResult = try await requireClient().query(
-            """
-            SELECT
-                ENGINE AS table_engine,
-                TABLE_COLLATION AS table_collation,
-                ROW_FORMAT AS row_format,
-                TABLE_ROWS AS estimated_row_count,
-                AUTO_INCREMENT AS next_auto_increment,
-                CREATE_OPTIONS AS create_options,
-                CAST(CREATE_TIME AS CHAR) AS creation_time,
-                CAST(UPDATE_TIME AS CHAR) AS update_time,
-                DATA_LENGTH AS data_size,
-                INDEX_LENGTH AS index_size,
-                TABLE_COMMENT AS table_comment
-            FROM information_schema.TABLES
-            WHERE TABLE_SCHEMA = \(hexStringLiteral(database))
-                AND TABLE_NAME = \(hexStringLiteral(objectName))
-            LIMIT 1
-            """
+            MySQLTableSchemaMetadata.informationQuery(database: database, name: objectName)
         )
-        guard let row = tableResult.dictionaryRows.first else { return nil }
-        let createOptions = (row["create_options"] ?? nil) ?? ""
-        return WorkspaceDatabaseTableInformation(
-            dataSize: (row["data_size"] ?? nil).flatMap(Int64.init),
-            indexSize: (row["index_size"] ?? nil).flatMap(Int64.init),
-            comment: (row["table_comment"] ?? nil) ?? "",
-            engine: row["table_engine"] ?? nil,
-            collation: row["table_collation"] ?? nil,
-            rowFormat: row["row_format"] ?? nil,
-            estimatedRowCount: (row["estimated_row_count"] ?? nil)
-                .flatMap(Int64.init),
-            nextAutoIncrement: (row["next_auto_increment"] ?? nil)
-                .flatMap(Int64.init),
-            averageRowLength: WorkspaceDatabaseTableInformation
-                .numericCreateOption("avg_row_length", in: createOptions),
-            minimumRows: WorkspaceDatabaseTableInformation
-                .numericCreateOption("min_rows", in: createOptions),
-            maximumRows: WorkspaceDatabaseTableInformation
-                .numericCreateOption("max_rows", in: createOptions),
-            keyBlockSize: WorkspaceDatabaseTableInformation
-                .numericCreateOption("key_block_size", in: createOptions),
-            creationTime: row["creation_time"] ?? nil,
-            updateTime: row["update_time"] ?? nil
-        )
+        return tableResult.dictionaryRows.first.map(MySQLTableSchemaMetadata.information)
     }
 
     private func dataColumns(

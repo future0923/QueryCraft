@@ -7,6 +7,7 @@ struct MobileSchemaSnapshot: Equatable, Sendable {
     let indexes: [WorkspaceDatabaseIndex]
     let choices: WorkspaceDatabaseSchemaChoices
     let ddl: String
+    var options: WorkspaceDatabaseTableOptions? = nil
     func matchesStructure(_ other: Self) -> Bool {
         columns == other.columns && indexes.count == other.indexes.count && zip(indexes, other.indexes).allSatisfy {
             WorkspaceDatabaseSchemaEditorState.IndexDefinition(index: $0).matches($1)
@@ -52,15 +53,15 @@ struct MobileSchemaService: MobileSchemaServicing {
             guard let statement = ddl.rows.first, statement.count >= 2, let value = statement[1] else { throw MobileQueryError.invalidServerMetadata }
             text = value
         } else { text = "" } // Reading view fields must not require SHOW VIEW privilege.
-        let charset = try await client.query("SHOW CHARACTER SET", bindings: [])
-        let collation = try await client.query("SHOW COLLATION", bindings: [])
-        let choices = WorkspaceDatabaseSchemaChoices(characterSets: charset.dictionaryRows.compactMap { $0["Charset"] ?? nil },
-            collations: collation.dictionaryRows.compactMap { row in
-                guard let name = row["Collation"] ?? nil, let characterSet = row["Charset"] ?? nil else { return nil }
-                return .init(name: name, characterSet: characterSet, isDefault: (row["Default"] ?? nil) == "Yes")
-            })
+        let options: WorkspaceDatabaseTableOptions?
+        if object.kind == .table {
+            let result = try await client.query(MySQLTableSchemaMetadata.informationQuery(database: object.database, name: object.name), bindings: [])
+            guard let row = result.dictionaryRows.first else { throw MobileQueryError.invalidServerMetadata }
+            options = MySQLTableSchemaMetadata.information(row).tableOptions
+        } else { options = nil }
+        let choices = try await MobileSchemaChoices.load(client, includeEngines: object.kind == .table)
         try Task.checkCancellation()
-        return .init(columns: columns, indexes: indexes, choices: choices, ddl: text)
+        return .init(columns: columns, indexes: indexes, choices: choices, ddl: text, options: options)
     }
     func load(object: MobileDatabaseObject, configuration: MariaDBTransportConfiguration) async throws -> MobileSchemaSnapshot {
         let connection = try client(configuration, object: object)
@@ -76,14 +77,19 @@ struct MobileSchemaService: MobileSchemaServicing {
         var completed = 0
         do {
             try Task.checkCancellation(); try await authorize(); try await connection.connect()
-            guard baseline.matchesStructure(try await read(connection, object: object)) else { throw MobileSchemaError.stale }
+            let current = try await read(connection, object: object)
+            guard baseline.matchesStructure(current) else { throw MobileSchemaError.stale }
+            if let change = changes.tableOptionsChange {
+                guard baseline.options == change.original, let actual = current.options,
+                      change.matchesOriginalChangedValues(in: actual) else { throw MobileSchemaError.stale }
+            }
             // Each MySQL DDL commits independently. Never promise rollback or
             // reapply an acknowledged prefix after partial/uncertain failure.
             for statement in plan.statements {
                 try Task.checkCancellation(); try await authorize(); try Task.checkCancellation()
                 do { _ = try await connection.query(statement.sql, bindings: []) }
                 catch {
-                    let serverRejected = (error as? CDatabaseClientError).map { !(2000..<3000).contains($0.code) && $0.sqlState?.hasPrefix("08") != true } == true
+                    let serverRejected = (error as? CDatabaseClientError).map { !(2000..<3000).contains($0.code) && $0.code != 1317 && $0.sqlState?.hasPrefix("08") != true } == true
                     if serverRejected && completed == 0 { throw error }
                     throw MobileSchemaError.partial(completed: completed, total: plan.statements.count, detail: error.localizedDescription)
                 }

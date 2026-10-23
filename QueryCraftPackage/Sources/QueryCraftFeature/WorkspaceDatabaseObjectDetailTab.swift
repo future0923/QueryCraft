@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 enum WorkspaceDatabaseObjectDetailTab: String, CaseIterable, Hashable, Identifiable {
     case data = "Data"
     case structure = "Structure"

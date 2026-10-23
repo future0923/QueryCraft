@@ -18,12 +18,15 @@
 | 表/视图服务端筛选 | Mac 原绑定参数路径保留 | 直接编译同一 MySQL 谓词构造与条件模型；共用字段默认值、菜单值与换字段规则；WHERE 在排序/分页前，刷新保留位置，新条件/页码/排序回首行并保留横向位置 |
 | 表格内查找 | 原行为保留 | 直接编译同一个 `WorkspaceGridSearchWorker/Controller/Operator/Match`；支持列范围、包含/等于/开头/结尾、大小写、上一项/下一项循环定位，不隐藏数据行；范围仍为已加载的当前页/结果 |
 | 表/视图名称模糊搜索与排序 | 完全保留既有匹配分级、分数及同分顺序 | 直接编译同一份 `CompletionLabelMatcher`，桌面与移动对象列表均调用同一个 `matching` 方法；完整目录在本地筛选，不做截断窗口内搜索 |
-| 大结果增量流/磁盘缓存、多语句页签 | 原行为保留 | 尚未移植；SQL 明确截断，表数据分页，不能声称与 Mac 大结果能力等同 |
+| 已有 MySQL 表选项 | 原选项页和变更计划保留 | 同源 information_schema 读取／选项联动／差异 SQL；与字段、索引共用结构草稿、预览、安全锁与刷新 |
+| 新建 MySQL 表 | 原入口、驱动和完整草稿行为保留 | 同源新表草稿／字段／索引／表选项／SQL 计划；原生预览与安全锁，独立连接建表，成功刷新并定位新表 |
+| 大结果增量流/磁盘缓存 | 同一结果缓存；MySQL 查询接入真实分批流 | 同源 GRDB 结果库／有界导出行源；移动立即落盘，500 行／约 4 MiB 缓存页、256 MiB 整批载荷上限，保留部分结果并明确停止 |
+| 写 SQL／跨执行事务 | 现有分类、策略和服务端事务状态保留 | 同源解析／分类／危险语句规则；不可变 SQL 确认、安全锁、同连接跨执行、保存点／提交／回滚、未知写入结果防重放 |
 | 时间戳显示 | 原行为保留 | 直接编译同一 formatter；真实类型/来源、自动/原始值/秒/毫秒、按列菜单及全屏共享状态；原始值保持不变 |
 | 已加载数据导出 | Mac 原导出器与默认值保留，修复重复 JSON 字段后缀冲突 | 同源码 CSV/JSON/XLSX/SQL writer、类型值与选项；系统文件保存、取消及临时文件清理；当前页/预览，不冒充整表 |
 | SQL 语法高亮与上下文补全 | 桌面入口与优化保留 | 同结构解析器、语法/恢复规则、上下文/排行、默认配色；原生触控候选和 UTF-16 插入守卫；元数据同查询/转换源码 |
-| 选区／当前语句执行 | 原解析、范围定位、预检与批量能力保留 | 同源 resolver/preflight，UIKit 实际选区／IME 校验和异步修订防护；每次运行一条只读查询，多条选区明确拒绝；刷新实际结果 SQL |
-| 自定义 SQL 配色、完整编辑等 | 原行为保留 | 尚未移植，当前范围是 MySQL 只读查询与浏览 |
+| 选区／当前语句执行 | 原解析、范围定位、预检与批量能力保留 | 同源 resolver/preflight，UIKit 实际选区／IME 校验和异步修订防护；选区／整篇文稿多语句，写入经确认，多结果独立状态；公共刷新仅重读读取语句 |
+| 自定义 SQL 配色、完整编辑等 | 原行为保留 | 尚未移植完整设置；当前支持 MySQL 查询、写入、事务与浏览 |
 
 PG、Doris、Redis、ES、Kafka 的桌面页面没有改动。共享抽样只是原函数提取，预览只是新增公开访问级别，语义未变；MariaDB 原 `query` 路径仍不施加预览限制。移动版只接 MySQL，其他驱动不会因此自动获得移动支持。
 
@@ -230,3 +233,53 @@ MobileSQLExecutionInput 保留会话选区，挂载时以 UITextView 的实际�
 Mobile now compiles the actual Mac SQLSnippetTemplate, SQLSnippetStore, completion sources/ranking and SQLSnippetSession. Only native view adapters and emphasis rendering differ; placeholder ownership, filled states, empty stops, edit shifts, next/backtab and exit rules share one source. Touch controls and keyboard commands enter that session; IME composition temporarily disables navigation. The existing SQL header opens native management of eleven built-ins and custom definitions, with CRUD/toggle/restore and shared trigger validation. Templates preserve literal SQL punctuation. Custom definitions remain local per device, without synchronization; write templates do not expand SQL execution permissions.
 
 Original shared three-SQL-driver tests run on mobile and Mac. MySQL/PG/Doris matching and dialect behavior remain; Redis/ES/Kafka do not use SQL snippets. Mobile remains MySQL only and external drivers are unchanged. Phone/iPad full suites each 380 passed; Mac complete build and original snippet 56 tests passed. User selected simulator delivery for this increment; installation/process logs are not physical touch acceptance.
+
+
+## SQL 格式化对齐（2026-10-23）
+
+追踪 Mac WorkspaceQueryEditorCommandCoordinator 的 commandI／format → WorkspaceSQLLanguageService.formattingEdit → SQLFormattingWorker → SQLFormatter → 原生文本替换与撤销。移动端直接编译相同 request/worker/formatter/options/edit/error 和 SQLKeywordCase，保留选区、当前语句（含原有语法恢复范围）、整篇文稿、字符串／注释及源修订规则；默认采用 Mac 的标准大写关键字和四空格缩进。尚未提供移动自定义格式偏好。
+
+现有 SQL 操作行提供格式化菜单，外接键盘 ⌘I 处理选区或当前语句。原生 UITextView 替换使用单组撤销并发布实际文稿和选区；格式化不执行 SQL，已有结果／历史／公共刷新目标不变。输入法组合期间明确拒绝，异步结果应用前复查实际文字、UTF-16 选区、文字／光标／组合状态代次和取消。改字或移动光标后又恢复也拒收旧结果；仅补全元数据、主题或可视区高亮调度不误判为文稿修改。离开页面、切换连接和进入后台取消格式化，卸载编辑器使迟到结果失效。有效格式化结束旧片段会话，保留原生编辑和撤销。
+
+六类评估：MySQL 移动 SQL 编辑器适用；MySQL/PostgreSQL/Doris 的 Mac 格式化继续使用原引擎，未更改格式规则。Redis/Elasticsearch/Kafka 的专用请求编辑器不接入此 SQL 功能，也未新增移动支持。格式化只在本地修改文稿，未改协议、Driver API、结果模型或外部驱动，无需重新打包驱动，不把这次编辑器验证作为六类实库验证。
+
+## 只读批量执行与多个结果（2026-10-23）
+
+追踪 Mac 的 CmdReturn／CmdShiftReturn → SQLExecutionTargetResolver → SQLExecutionBatchPreflight → WorkspaceQueryDocumentModel.execute(plan)，包括整批预检、顺序执行、遇错／取消停止和保留完成结果。移动端共用已有解析、范围和预检源码，并将原来的执行循环提取为同一 SQLExecutionBatchRunner，两端均使用该循环；Mac 的会话、策略、写入／事务能力和结果模型保持。
+
+移动端支持当前语句、所选完整多条查询和整个文稿，默认仍为只读；20 条／256 KiB 执行范围，单结果 500 行／4 MiB，整批 8 MiB 原始数据预算。MySQL 批次在同一真实连接和只读事务里先按实际 sql_mode 检查所有语句，再逐条执行。超限预览会主动丢弃未读完连接，后续明确标记未执行；不自动重连、不声称跨执行事务或磁盘缓存已完成。未知／写入／事务语句整批拒绝，不执行安全子集。
+
+每个结果拥有自己的 typed preview、原语句／来源范围、元数据、编辑草稿、网格视口及格式状态；单语句仍保持数据加载与编辑元数据加载分开的原生命周期。新执行保留可见旧结果并标明「上次」，成功才替换；刷新只重读当前语句，失败保留内容。错误、取消和后续未执行均记录到对应结果；切换结果不添加历史，成功回调逐条写历史。所有结果的草稿共同保护连接变更、新执行、结构和表操作；提交后令同表其他旧结果失效，防止继续用旧值编辑。
+
+MySQL 移动表格、查询结果检查器、导出及元数据路径适用；MySQL／PostgreSQL／Doris 的 Mac 批次沿原会话和方言调用共享循环，未增加或削减其写入／事务能力。Redis、Elasticsearch、Kafka 的专用请求链路不接入移动 SQL 批次；各自 Mac 能力保持，也未新增移动支持。Driver API、外置驱动及协议转换未改，本轮无需重新打包驱动；不把移动 MySQL 实库检查当作其余五类实库验证。
+
+
+## 新建表对齐（2026-10-23）
+
+追踪真实 Mac 的 WorkspaceDatabaseObjectFooter → WorkspaceWindowGroup.createTableDraft → WorkspaceNewTableDraft／WorkspaceNewTableDetailView → WorkspaceModel.schemaExecutionPlan／applyTableMutation → MySQLSchemaEditingProvider → MySQLWorkspaceSchemaStatement。将原有 WorkspaceNewTableDraft 原样提取为可跨平台编译的文件，桌面仍使用同一类型；初始化、重置、schema 限定和完成回调行为未改。移动新建表和已有表复用同一原生字段／索引表单，所有定义、类型语义、主键约束、索引引用、字符设置和 SQL 转换均使用现有公共源码。
+
+移动表目录的现有底栏增加新建入口，不额外占用工具栏行。原生三类定义页、固定位置的选项加载／失败提示、不可变 SQL 预览、安全锁确认、独立写连接、发送前取消与上下文复核，以及成功后的目录／选择／数据导航均已接入。未知建表回执保守封锁后续写入；成功后刷新失败不将建表变为可重试。草稿只在当前进程内保留，不增加工作区或 SQL 页签。
+
+六类逐项：MySQL 移动新表实际使用现有 provider 和 builder，覆盖全部十项表选项。PostgreSQL 的 Mac schema 限定、新表能力和方言保留；Doris 的 Mac 自有 provider／能力限制保留，两者尚未迁移到移动端。Redis、Elasticsearch、Kafka 的专有对象创建不套用 SQL 表模型，原 Mac 行为不变，移动端未接入。不把 MySQL 验证算作其余五类实库验证。Driver API 和所有外置驱动源码均未改变，无需重打包驱动或替换用户 Dev；本轮 macOS 编译及实际产物上的共享草稿回归用于确认提取未改变桌面行为。
+
+
+## 已有表选项对齐（2026-10-23）
+
+追踪 Mac WorkspaceDatabaseObjectDetailsTabContent.options → WorkspaceNewTableOptionsView(allowsDatabaseDefaults:false) → schemaEditor.tableOptions／tableOptionsChange → WorkspaceDatabaseSchemaChangeSet → MySQLWorkspaceSchemaStatement.alterTableOptions。移动端在结构页已有菜单加入表选项的原生暂存表单，不增加工具栏或重复刷新按钮。新表与已有表复用同一份 MobileTableOptionsForm，已有表显示「下一个自增值」，且不提供数据库默认值建议。
+
+MySQLWorkspaceSession.fetchTableInformation 原查询／转换提取进已有跨平台 MySQLTableSchemaMetadata；Mac 和移动端共用相同 UTF-8 安全文本条件、information_schema 数据及 WorkspaceDatabaseTableInformation.tableOptions。公共模型及原有 builder 继续处理字符集／排序规则联动、显式变更、清空注释、数值／行格式的默认规则；未另做 ALTER SQL。新增共享 changed-values 比较仅用于移动提交前的并发保护，只核对实际编辑的字段，避免未编辑的动态自增计数导致误拒绝或被写回。Mac 原有提交规则保持。
+
+结构字段、索引、选项共用一份草稿和有序 SQL；原生表单和 SQL 预览各自保留展示时的代次／计划，父视图重建也不会更新确认依据。成功读取后同步目录注释、当前路由和数据对象身份；结构改动继续使表数据／查询编辑元数据失效。既有 pending、失败保留内容、取消和不明回执保护完整沿用。
+
+六类评估：MySQL 表页适用，查询结果页只沿用结构变更后的编辑来源失效，不把表选项套到 SQL 投影。PostgreSQL provider 明确 supportsTableOptions:false；Doris、Redis、Elasticsearch、Kafka 未提供此通用 schemaEditingProvider，保留各自已有专用能力。移动端未接入其余五类，本轮不声称其有实库选项编辑验证。只改变 MySQL 驱动的读取逻辑提取，MariaDBTransport、Driver API、版本和其他驱动源码未变；单独构建／打包 MySQL，并用隔离 Dev 驱动安装器／registry 验证新版包及与原五类包共存，不替换用户正在使用的 Dev。
+
+
+## 大结果缓存与任意 SQL／事务（2026-10-23，替代前文各轮的旧范围限制）
+
+真实 Mac 链路为 SQLExecutionBatchPreflight／SQLStatementKind → WorkspaceQueryDocumentModel → MySQLWorkspaceSession → MariaDB transport → WorkspaceQueryResultStore。移动直接编译相同分类、预检、只读文件写入校验、事务状态、缓存与导出源码；UI 按触控采用缓存页，不把全结果数组放入网格。共享缓存新增可选驻留行数／页大小配置与有界游标窗口，Mac 默认 50,000 行／256 行页／16 页不变。移动驻留阈值为零、缓存页最多 500 行／约 4 MiB、单行 8 MiB、每批编码载荷 256 MiB；长文本与导出也按字节分批。查找当前页，全部缓存导出不重跑 SQL；缓存释放删除数据库及 sidecar，启动清理旧进程目录。
+
+原 MySQL executeQuery 缓冲整结果再发布一次，本轮改为真实 mysql_use_result 流，500 行／1 MiB 背压批次，并保留类型、字段来源与二进制预览；旧 query／queryPreview API 保留。新符号使用 V4 transport，避免先载入已安装旧 Doris V3 导致新 MySQL 绑定缺失符号。MySQL 与 Doris 均独立重编译、打包、验签并在隔离目录验证；没有替换用户在用的驱动。Driver API 5 不改。
+
+写入／事务状态由服务器 OK／EOF 状态提供，支持同连接跨执行、保存点、隐式 DDL 提交；不会仅凭 SQL 文本推断。安全锁和危险语句沿用共享分类，确认捕获全文与配置，发送前复核锁／代次／后台状态。事务或写入在途阻止独立页面写入和连接切换；后台／返回首页断开会话，未提交事务回滚。明确权限／语法拒绝和未知写入结果分开处理；后者需核对服务器才可解除，刷新不重放写入。
+
+六类评估：MySQL Mac 查询及移动链路实库覆盖；Doris 只升级同源 transport V4 及重编译，保留原查询／事务和方言，不假称完成 Doris 实库或移动支持。PostgreSQL 的执行／协议不变，共享缓存默认不变；Redis／Elasticsearch／Kafka 专用链路不接入 SQL 事务，六类加载与会话工厂需逐项验证。移动仍仅支持 MySQL；大结果和事务内结果暂不提供单元格编辑，来源明确且不超过 500 行的读取保留原编辑路径。

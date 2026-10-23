@@ -1,8 +1,13 @@
 import CodeEditLanguages
-import CodeEditTextView
 import Foundation
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
+import CodeEditTextView
 @testable import QueryCraftFeature
+#endif
 
 struct SQLFormatterTests {
     @Test(arguments: [
@@ -357,9 +362,12 @@ struct SQLFormatterTests {
     }
 
     private func fixture(_ name: String, kind pathExtension: String) throws -> String {
-        let fixturesURL = try #require(
-            Bundle.module.url(forResource: "Fixtures", withExtension: nil)
-        )
+        #if os(iOS)
+        let bundle = Bundle(for: MobileSQLFormattingResources.self)
+        #else
+        let bundle = Bundle.module
+        #endif
+        let fixturesURL = try #require(bundle.url(forResource: "Fixtures", withExtension: nil))
         let url = fixturesURL
             .appending(path: "Formatting")
             .appending(path: "\(name).\(pathExtension)")
@@ -389,6 +397,7 @@ struct SQLFormatterTests {
 
 }
 
+#if os(macOS)
 @MainActor
 struct WorkspaceQueryFormattingCommandTests {
     @Test
@@ -505,3 +514,9 @@ struct WorkspaceQueryFormattingCommandTests {
         #expect(textView.string == markedSource)
     }
 }
+
+#endif
+
+#if os(iOS)
+private final class MobileSQLFormattingResources: NSObject {}
+#endif

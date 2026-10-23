@@ -54,6 +54,20 @@ import QueryCraftMobileTransport
         await service.setReadFailure(false); await controller.load(object)?.value
         #expect(!draft.isError); #expect(draft.message == nil); #expect(draft.snapshot == snapshot)
     }
+    @Test func sqlWriteInvalidationRejectsAnOlderInflightMetadataReply() async throws {
+        let service = SchemaStateService(), (controller, object) = fixture(service: service)
+        await controller.load(object)?.value
+        let draft = controller.draft(for: object), prior = draft.snapshot
+        await service.setGate(true)
+        let read = controller.load(object)
+        await service.waitForGate()
+        controller.sqlDidWrite()
+        #expect(!controller.isLoading); #expect(draft.requiresReload)
+        await service.releaseGate(); await read?.value
+        #expect(draft.snapshot == prior); #expect(draft.requiresReload)
+        #expect(!controller.canEdit(draft))
+    }
+
     @Test func lateCancelledReadCannotReplaceNewObjectOrPriorSnapshot() async throws {
         let service = SchemaStateService(); let (controller, object) = fixture(service: service)
         await controller.load(object)?.value; let original = controller.draft(for: object).snapshot
@@ -104,6 +118,8 @@ import QueryCraftMobileTransport
 }
 
 actor SchemaStateService: MobileSchemaServicing {
+    var options: WorkspaceDatabaseTableOptions?
+    func setOptions(_ value: WorkspaceDatabaseTableOptions?) { options = value }
     var applies = 0, writes = 0
     var readFailure = false, partial = false, failAfterApply = false, gate = false, writeGate = false
     private var continuation: CheckedContinuation<Void, Never>?
@@ -119,11 +135,12 @@ actor SchemaStateService: MobileSchemaServicing {
     func load(object: MobileDatabaseObject, configuration: MariaDBTransportConfiguration) async throws -> MobileSchemaSnapshot {
         if gate { await suspend() }
         if readFailure { throw URLError(.notConnectedToInternet) }
-        return Self.snapshot
+        var snapshot = Self.snapshot; snapshot.options = options; return snapshot
     }
     func apply(object: MobileDatabaseObject, baseline: MobileSchemaSnapshot, plan: WorkspaceDatabaseSchemaExecutionPlan, configuration: MariaDBTransportConfiguration, authorize: @escaping @Sendable () async throws -> Void) async throws {
         applies += 1; if writeGate { await suspend() }; try await authorize(); writes += 1
         if partial { throw MobileSchemaError.partial(completed: 1, total: 2, detail: "lost acknowledgement") }
+        if case .changes(let changes) = plan.source, let change = changes.tableOptionsChange { options = change.updated }
         if failAfterApply { readFailure = true }
     }
     static var snapshot: MobileSchemaSnapshot {

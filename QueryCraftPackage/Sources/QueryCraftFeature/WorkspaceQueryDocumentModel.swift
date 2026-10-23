@@ -407,11 +407,11 @@ final class WorkspaceQueryDocumentModel: Identifiable {
             activeConnectionID = try await session.connectionID()
             guard self.executionID == executionID else { return }
 
-            for statement in plan.statements {
+            try await SQLExecutionBatchRunner.run(plan.statements) { statement in
                 guard self.executionID == executionID else {
                     throw CancellationError()
                 }
-                try await executeStatement(
+                try await self.executeStatement(
                     statement,
                     session: session,
                     executionID: executionID,

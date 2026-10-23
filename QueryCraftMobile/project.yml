@@ -15,6 +15,9 @@ settings:
     GENERATE_INFOPLIST_FILE: YES
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
 packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    from: 7.0.0
   CodeEditLanguages:
     path: ../ThirdParty/CodeEditLanguages
   SwiftTreeSitter:
@@ -88,6 +91,10 @@ targets:
     platform: iOS
     sources:
       - Sources
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryResultStore.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryResultDataExportRowSource.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceReadOnlyQueryValidator.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionPolicy.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryResultEditing.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSafetyLock.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceTableAction.swift
@@ -96,7 +103,10 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseSchemaEditorState.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseSchemaExecutionPlan.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseTableMutation.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceNewTableDraft.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseObjectDetailTab.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseTableOptions.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseTableInformation.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseSchemaChoices.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseSchemaEditingDescriptor.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseSchemaChoiceCatalog.swift
@@ -110,10 +120,18 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRowInsertRequest.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLStructuralParser.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSourceRange.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLFormatter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLFormattingRequest.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLFormattingWorker.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLFormattingEdit.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLFormattingOptions.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLFormattingError.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLKeywordCase.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionTarget.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionTargetRequest.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionTargetResolver.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionTargetError.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionBatchRunner.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionBatchPlan.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionBatchPreflight.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionStatement.swift
@@ -159,6 +177,7 @@ targets:
       - target: QueryCraftMobileCore
       - target: QueryCraftMobileTransport
       - package: CodeEditLanguages
+      - package: GRDB
       - package: SwiftTreeSitter
     settings:
       base:
@@ -180,12 +199,14 @@ targets:
     sources:
       - Tests
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLCompletionEngineTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLFormatterTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLSnippetTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLSnippetStoreTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLSnippetCompletionTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLStructuralParserTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLExecutionTargetResolverTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/WorkspaceTableActionTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLExecutionBatchRunnerTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLExecutionBatchPreflightTests.swift
       - path: ../QueryCraftPackage/Tests/QueryCraftFeatureTests/Fixtures
         type: folder

@@ -20,4 +20,4 @@ struct MySQLConnectionTester {
     }
 }
 import QueryCraftFeature
-import QueryCraftMariaDBTransportV3
+import QueryCraftMariaDBTransportV4

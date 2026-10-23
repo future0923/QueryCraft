@@ -12,7 +12,7 @@ enum MobileQueryError: LocalizedError {
         case .verifiedTLSUnavailable:
             "此原型尚未接入 CA 证书和严格身份验证，当前可使用禁用 TLS 或要求 TLS 的连接模式。"
         case .readOnlySQLRequired:
-            "当前版本支持单条只读 SQL：SELECT、WITH、SHOW、DESCRIBE 和 EXPLAIN。请分开执行语句。"
+            "当前执行范围只允许只读查询：SELECT、WITH、SHOW、DESCRIBE 和 EXPLAIN。写入、事务控制或无法可靠分类的语句不会执行。"
         case .resultTooLarge:
             "结果超过加载上限。请缩小查询范围或只选择需要的列。"
         case .invalidConnection:

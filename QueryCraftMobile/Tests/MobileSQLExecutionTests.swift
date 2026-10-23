@@ -58,7 +58,6 @@ import QueryCraftMobileTransport
 
     @Test func multiSelectionWritesTransactionsAndInvalidRangeNeverSendSQL() async throws {
         for (text, selection) in [
-            ("SELECT 1;SELECT 2;", NSRange(location: 0, length: 18)),
             ("UPDATE t SET name='x';SELECT 1;", NSRange(location: 0, length: 0)),
             ("BEGIN;SELECT 1;", NSRange(location: 0, length: 0)),
             ("SELECT 1;", NSRange(location: NSNotFound, length: 0)),

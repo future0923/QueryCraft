@@ -60,7 +60,8 @@ import QueryCraftMobileTransport
         model.sql = "SELECT id FROM sample; DELETE FROM sample;"
         model.executionInput.selection = .init(location: 0, length: model.sql.utf16.count)
         await model.execute()?.value
-        #expect(model.errorMessage == MobileSQLExecutionError.multipleStatements.localizedDescription)
+        #expect(model.sqlConfirmation != nil)
+        model.sqlConfirmation = nil
         #expect(model.result == previous); #expect(model.resultID == identity)
         model.sql = "SELECT COUNT(*) AS n FROM sample;"; model.executionInput.selection = .init(location: 0, length: 0)
         await model.execute()?.value

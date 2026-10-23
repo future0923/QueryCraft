@@ -10,6 +10,8 @@ struct MobileDataExportSnapshot: Sendable {
     var tableIdentifierParts: [String]? = nil
     var allRowsProvider: WorkspaceDataExportAllRowsProvider? = nil
     var hasBinaryColumns = false
+    var allRowsLabel = "全部匹配数据"
+    var isQueryCache = false
 
     var canExport: Bool { !data.rows.isEmpty && !data.columns.isEmpty }
     var hasBinaryValues: Bool {

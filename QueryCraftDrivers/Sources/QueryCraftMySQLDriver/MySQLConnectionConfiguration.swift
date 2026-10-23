@@ -57,4 +57,4 @@ struct MySQLConnectionConfiguration: Equatable, Sendable {
     }
 }
 import QueryCraftFeature
-import QueryCraftMariaDBTransportV3
+import QueryCraftMariaDBTransportV4

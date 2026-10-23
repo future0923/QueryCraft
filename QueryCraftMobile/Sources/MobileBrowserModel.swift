@@ -9,6 +9,7 @@ final class MobileBrowserModel {
     private(set) var revision = UUID()
     private(set) var contextID = UUID()
     @ObservationIgnored var allowsDataMutation: () -> Bool = { true }
+    @ObservationIgnored var allowsDatabaseChange: () -> Bool = { true }
     private(set) var databases: [String]?
     private(set) var selectedDatabase: String?
     private(set) var catalog: MobileObjectCatalog?
@@ -84,6 +85,9 @@ final class MobileBrowserModel {
 
     func selectDatabase(_ name: String?) {
         guard name != selectedDatabase || catalog == nil else { return }
+        guard allowsDatabaseChange() else {
+            catalogError = "请先提交或回滚 SQL 事务，并处理待核实的写入结果后再切换数据库。"; return
+        }
         cancelAll()
         revision = UUID()
         contextID = UUID()
@@ -218,6 +222,17 @@ final class MobileBrowserModel {
 
     /// Adopt only the acknowledged identity change. Reads retain their stable
     /// container and are independently retried through the existing public refresh.
+    func acceptCreatedTable(_ object: MobileDatabaseObject) {
+        guard selectedDatabase == object.database, catalogKind == .table else { return }
+        cancelAll()
+        if let catalog {
+            var objects = catalog.objects.filter { $0.id != object.id }; objects.append(object)
+            self.catalog = .init(objects: MobileCatalogSearch.objects(objects, matching: ""), hasMore: catalog.hasMore)
+        }
+        search = ""
+        _ = selectObject(object)
+    }
+
     func acceptTableAction(_ statement: WorkspaceTableActionStatement, object: MobileDatabaseObject) {
         let affected = selectedObject?.editingSelection == object.editingSelection
         if selectedDatabase == object.database, catalogKind == .table {
@@ -257,11 +272,35 @@ final class MobileBrowserModel {
         return catalogError == nil && tableError == nil ? nil : warning
     }
 
+    func acceptTableComment(_ comment: String, for object: MobileDatabaseObject) -> MobileDatabaseObject? {
+        guard selectedDatabase == object.database, catalogKind == object.kind else { return nil }
+        let updated = MobileDatabaseObject(database: object.database, name: object.name, kind: object.kind, comment: comment)
+        if let catalog {
+            self.catalog = .init(objects: catalog.objects.map { $0.id == object.id ? updated : $0 }, hasMore: catalog.hasMore)
+        }
+        if selectedObject?.id == object.id {
+            selectedObject = updated
+            if let snapshot, snapshot.object.id == object.id {
+                self.snapshot = .init(object: updated, preview: snapshot.preview, columns: snapshot.columns, offset: snapshot.offset,
+                    pageSize: snapshot.pageSize, hasNextPage: snapshot.hasNextPage, hasStableOrder: snapshot.hasStableOrder,
+                    filter: snapshot.filter, sortColumn: snapshot.sortColumn, ascending: snapshot.ascending)
+            }
+        }
+        return updated
+    }
+
     func schemaDidChange(_ object: MobileDatabaseObject) {
         changesByObject[object.id]?.requireSuccessfulReload()
         guard selectedObject?.editingSelection == object.editingSelection else { return }
         cancelTable(); columns = nil; dataFilter = .empty; sortColumn = nil; revision = UUID()
         tableError = "结构已变化，使用顶部刷新读取最新数据。"
+    }
+
+    func sqlDidWrite() {
+        cancelTable()
+        changesByObject.values.forEach { $0.requireSuccessfulReload() }
+        if snapshot != nil { tableError = "SQL 已执行写入，使用顶部刷新核对数据与结构。" }
+        revision = UUID()
     }
 
     func sort(by column: String) {

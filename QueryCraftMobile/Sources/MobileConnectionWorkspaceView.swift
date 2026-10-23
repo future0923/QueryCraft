@@ -32,18 +32,18 @@ struct MobileConnectionWorkspaceView: View {
         .sheet(item: Binding(get: { workspace.tableActions.request }, set: { if $0 == nil { workspace.tableActions.dismiss() } else { workspace.tableActions.request = $0 } })) { draft in
             MobileTableActionView(controller: workspace.tableActions, draft: draft)
         }
+        .sheet(item: Binding(get: { workspace.newTable.request }, set: { if $0 == nil { workspace.newTable.dismiss() } else { workspace.newTable.request = $0 } })) { draft in
+            MobileNewTableView(controller: workspace.newTable, draft: draft)
+        }
         .onChange(of: workspace.browser.selectedObject) { _, selected in
             if selected == nil, case .table = app.destination { app.destination = nil }
         }
         .onChange(of: workspace.browser.selectedDatabase) { _, database in
+            workspace.newTable.cancel()
             workspace.query.database = database ?? ""
             if app.workspaceTab != .query { app.destination = nil }
         }
-        .onChange(of: workspace.query.resultID) { _, _ in
-            if let sql = workspace.query.lastExecutedSQL, let database = workspace.query.lastExecutedDatabase {
-                app.recordQuery(sql: sql, database: database, profileID: workspace.profile.id)
-            }
-        }
+
     }
 
     private var sidebarTitle: String {

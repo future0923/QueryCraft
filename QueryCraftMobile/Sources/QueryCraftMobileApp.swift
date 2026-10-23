@@ -8,6 +8,7 @@ struct QueryCraftMobileApp: App {
     @State private var model: MobileApplicationModel
     @State private var ranLaunchProbe = false
     init() {
+        _ = WorkspaceMobileQueryCacheDirectory.current
         #if DEBUG
         if let port = ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_MYSQL_PORT"].flatMap(Int.init) {
             let editExperience = ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_EDIT_EXPERIENCE"] == "1"

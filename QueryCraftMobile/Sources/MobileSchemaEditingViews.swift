@@ -31,18 +31,20 @@ struct MobileSchemaEditSelection: Identifiable {
 }
 
 struct MobileSchemaColumnEditor: View {
-    let controller: MobileSchemaController
-    @Bindable var draft: MobileSchemaDraft
+    let context: MobileSchemaEditingContext
     let selection: MobileSchemaEditSelection
     let close: () -> Void
     @State private var definition: WorkspaceDatabaseSchemaEditorState.ColumnDefinition
     @State private var primary: Bool
     init(controller: MobileSchemaController, draft: MobileSchemaDraft, selection: MobileSchemaEditSelection, close: @escaping () -> Void) {
-        self.controller = controller; self.draft = draft; self.selection = selection; self.close = close
-        _definition = State(initialValue: draft.state.columns.first { $0.id == selection.itemID }?.definition ?? .init())
-        _primary = State(initialValue: draft.state.isPrimaryKey(columnID: selection.itemID))
+        self.init(context: .init(controller: controller, draft: draft), selection: selection, close: close)
     }
-    private var editable: Bool { draft.epoch == selection.epoch && controller.canEdit(draft) }
+    init(context: MobileSchemaEditingContext, selection: MobileSchemaEditSelection, close: @escaping () -> Void) {
+        self.context = context; self.selection = selection; self.close = close
+        _definition = State(initialValue: context.state.columns.first { $0.id == selection.itemID }?.definition ?? .init())
+        _primary = State(initialValue: context.state.isPrimaryKey(columnID: selection.itemID))
+    }
+    private var editable: Bool { context.epoch == selection.epoch && context.canEdit }
     var body: some View {
         NavigationStack {
             Form {
@@ -79,18 +81,18 @@ struct MobileSchemaColumnEditor: View {
                 }
                 if definition.supportsCharacterSetAndCollation {
                     Section("字符设置") {
-                        MobileSchemaTextField(title: "字符集", text: Binding(get: { definition.characterSet }, set: { definition.applyCharacterSet($0, choices: draft.state.schemaChoices) }), suggestions: [""] + draft.state.schemaChoices.characterSets)
-                        MobileSchemaTextField(title: "排序规则", text: Binding(get: { definition.collation }, set: { definition.applyCollation($0, choices: draft.state.schemaChoices) }), suggestions: [""] + draft.state.schemaChoices.collations.filter { definition.characterSet.isEmpty || $0.characterSet == definition.characterSet }.map(\.name))
+                        MobileSchemaTextField(title: "字符集", text: Binding(get: { definition.characterSet }, set: { definition.applyCharacterSet($0, choices: context.state.schemaChoices) }), suggestions: [""] + context.state.schemaChoices.characterSets)
+                        MobileSchemaTextField(title: "排序规则", text: Binding(get: { definition.collation }, set: { definition.applyCollation($0, choices: context.state.schemaChoices) }), suggestions: [""] + context.state.schemaChoices.collations.filter { definition.characterSet.isEmpty || $0.characterSet == definition.characterSet }.map(\.name))
                     }
                 }
-                if !selection.added { Section { Button("暂存删除字段", role: .destructive) { guard editable else { return }; draft.delete(selection.itemID); close() } } }
+                if !selection.added { Section { Button("暂存删除字段", role: .destructive) { guard editable else { return }; context.delete(selection.itemID); close() } } }
             }.disabled(!editable).textInputAutocapitalization(.never).autocorrectionDisabled()
             .navigationTitle(selection.added ? "新增字段" : "编辑字段").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { if selection.added, draft.epoch == selection.epoch { draft.delete(selection.itemID) }; close() } }
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { if selection.added, context.epoch == selection.epoch { context.delete(selection.itemID) }; close() } }
                 ToolbarItem(placement: .confirmationAction) { Button("暂存") {
                     guard editable else { return }
-                    draft.updateColumn(selection.itemID, definition: definition, primary: primary); close()
+                    context.updateColumn(selection.itemID, definition, primary); close()
                 }.disabled(!editable || definition.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || definition.type.isEmpty) }
             }
             .interactiveDismissDisabled(selection.added)
@@ -99,16 +101,18 @@ struct MobileSchemaColumnEditor: View {
 }
 
 struct MobileSchemaIndexEditor: View {
-    let controller: MobileSchemaController
-    @Bindable var draft: MobileSchemaDraft
+    let context: MobileSchemaEditingContext
     let selection: MobileSchemaEditSelection
     let close: () -> Void
     @State private var definition: WorkspaceDatabaseSchemaEditorState.IndexDefinition
     init(controller: MobileSchemaController, draft: MobileSchemaDraft, selection: MobileSchemaEditSelection, close: @escaping () -> Void) {
-        self.controller = controller; self.draft = draft; self.selection = selection; self.close = close
-        _definition = State(initialValue: draft.state.indexes.first { $0.id == selection.itemID }?.definition ?? .init(firstColumnName: nil))
+        self.init(context: .init(controller: controller, draft: draft), selection: selection, close: close)
     }
-    private var editable: Bool { draft.epoch == selection.epoch && controller.canEdit(draft) }
+    init(context: MobileSchemaEditingContext, selection: MobileSchemaEditSelection, close: @escaping () -> Void) {
+        self.context = context; self.selection = selection; self.close = close
+        _definition = State(initialValue: context.state.indexes.first { $0.id == selection.itemID }?.definition ?? .init(firstColumnName: nil))
+    }
+    private var editable: Bool { context.epoch == selection.epoch && context.canEdit }
     var body: some View {
         NavigationStack {
             Form {
@@ -128,8 +132,8 @@ struct MobileSchemaIndexEditor: View {
                             else {
                                 Picker("字段", selection: $column.name) {
                                     Text("选择字段").tag("")
-                                    ForEach(draft.state.columns.filter { !$0.isDeleted }) { Text($0.definition.name).tag($0.definition.name) }
-                                }.onChange(of: column.name) { _, name in column.sourceColumnID = draft.state.columns.first { $0.definition.name == name && !$0.isDeleted }?.id }
+                                    ForEach(context.state.columns.filter { !$0.isDeleted }) { Text($0.definition.name).tag($0.definition.name) }
+                                }.onChange(of: column.name) { _, name in column.sourceColumnID = context.state.columns.first { $0.definition.name == name && !$0.isDeleted }?.id }
                                 MobileSchemaTextField(title: "前缀长度", text: $column.prefixLength)
                             }
                             Toggle("表达式字段", isOn: $column.isExpression)
@@ -138,18 +142,18 @@ struct MobileSchemaIndexEditor: View {
                     }.onDelete { definition.columns.remove(atOffsets: $0) }
                         .onMove { definition.columns.move(fromOffsets: $0, toOffset: $1) }
                     Button("添加索引字段", systemImage: "plus") {
-                        let first = draft.state.columns.first { !$0.isDeleted }
+                        let first = context.state.columns.first { !$0.isDeleted }
                         definition.columns.append(.init(name: first?.definition.name ?? "", sourceColumnID: first?.id))
                     }
                 } header: { Text("索引字段 · 长按右侧拖动排序") } footer: { Text("索引字段的顺序、前缀长度和排序方向与 Mac 使用同一模型。") }
-                if !selection.added { Section { Button("暂存删除索引", role: .destructive) { guard editable else { return }; draft.delete(selection.itemID); close() } } }
+                if !selection.added { Section { Button("暂存删除索引", role: .destructive) { guard editable else { return }; context.delete(selection.itemID); close() } } }
             }.environment(\.editMode, .constant(.active)).disabled(!editable)
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .navigationTitle(selection.added ? "新增索引" : "编辑索引").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("取消") { if selection.added, draft.epoch == selection.epoch { draft.delete(selection.itemID) }; close() } }
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { if selection.added, context.epoch == selection.epoch { context.delete(selection.itemID) }; close() } }
                     ToolbarItem(placement: .confirmationAction) { Button("暂存") {
-                        guard editable else { return }; draft.updateIndex(selection.itemID, definition: definition); close()
+                        guard editable else { return }; context.updateIndex(selection.itemID, definition); close()
                     }.disabled(!editable || (definition.kind != .primary && definition.name.isEmpty) || definition.columns.isEmpty || definition.columns.contains { $0.name.isEmpty }) }
                 }
                 .interactiveDismissDisabled(selection.added)
@@ -167,10 +171,12 @@ struct MobileSchemaPendingView: View {
     let close: () -> Void
     @State private var unlock = false
     @State private var discard = false
+    @State private var plan: WorkspaceDatabaseSchemaExecutionPlan
     @State private var steps: [MobileSchemaPreviewStep]
     init(controller: MobileSchemaController, draft: MobileSchemaDraft, close: @escaping () -> Void) {
         self.controller = controller; self.draft = draft; self.close = close
         // Immutable preview of this presented operation; not regenerated during loading.
+        _plan = State(initialValue: draft.plan)
         _steps = State(initialValue: draft.plan.statements.map { .init(sql: $0.sql) })
     }
     var body: some View {
@@ -194,8 +200,8 @@ struct MobileSchemaPendingView: View {
                         Button("重新读取结构") { controller.load(draft.object) }.disabled(controller.isSubmitting)
                     } else {
                         Button("提交结构改动", role: .destructive) {
-                            if controller.safetyLock.isEnabled { unlock = true } else { controller.submit(draft) }
-                        }.disabled(!draft.hasChanges || !controller.canEdit(draft))
+                            if controller.safetyLock.isEnabled { unlock = true } else { controller.submit(draft, expectedPlan: plan) }
+                        }.disabled(!draft.hasChanges || !controller.canEdit(draft) || draft.plan != plan)
                         Button("撤销全部结构改动", role: .destructive) { discard = true }.disabled(controller.isSubmitting)
                     }
                 }
@@ -205,7 +211,7 @@ struct MobileSchemaPendingView: View {
                 .onChange(of: draft.epoch) { _, _ in if !draft.hasChanges && !draft.needsVerification && !draft.requiresReload { close() } }
                 .alert("停用安全锁？", isPresented: $unlock) {
                     Button("取消", role: .cancel) {}
-                    Button("解锁并提交", role: .destructive) { controller.safetyLock.disable(); controller.submit(draft) }
+                    Button("解锁并提交", role: .destructive) { controller.safetyLock.disable(); controller.submit(draft, expectedPlan: plan) }
                 } message: { Text("允许执行已预览的表结构变更。") }
                 .alert(draft.needsVerification ? "重新加载并结束此次操作？" : "撤销结构草稿？", isPresented: $discard) {
                     Button("取消", role: .cancel) {}

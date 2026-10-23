@@ -854,3 +854,16 @@ public struct WorkspaceDatabaseTableOptionsChange: Equatable, Sendable {
         self.updated = updated
     }
 }
+
+
+extension WorkspaceDatabaseTableOptionsChange {
+    /// Compare only explicit edits. For example, an unrelated INSERT may advance
+    /// AUTO_INCREMENT without making a comment-only plan stale.
+    func matchesOriginalChangedValues(in current: WorkspaceDatabaseTableOptions) -> Bool {
+        let fields: [KeyPath<WorkspaceDatabaseTableOptions, String>] = [
+            \.engine, \.characterSet, \.collation, \.rowFormat, \.autoIncrement,
+            \.comment, \.averageRowLength, \.minimumRows, \.maximumRows, \.keyBlockSize
+        ]
+        return fields.allSatisfy { original[keyPath: $0] == updated[keyPath: $0] || original[keyPath: $0] == current[keyPath: $0] }
+    }
+}

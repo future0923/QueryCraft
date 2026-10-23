@@ -108,6 +108,18 @@ final class MobileApplicationModel {
             if let password { sessionPasswords[profile.id] = password }
             workspaceTab = .tables
             workspace = MobileDatabaseWorkspace(profile: profile, password: password, service: service)
+            workspace?.tableMetadataDidChange = { [weak self] object in
+                guard let self, self.isWorkspacePresented, self.workspace?.profile.id == profile.id,
+                      case .table(let selected) = self.destination, selected.editingSelection == object.editingSelection else { return }
+                self.reconcilingTableAction = true; self.destination = .table(object); self.reconcilingTableAction = false
+            }
+            workspace?.tableDidCreate = { [weak self] object in
+                guard let self, self.isWorkspacePresented, self.workspace?.profile.id == profile.id else { return }
+                self.workspaceTab = .tables; self.destination = .table(object)
+            }
+            workspace?.query.didExecute = { [weak self] sql, database in
+                self?.recordQuery(sql: sql, database: database, profileID: profile.id)
+            }
             workspace?.tableDidChange = { [weak self] object, statement in
                 guard let self, self.isWorkspacePresented, let workspace = self.workspace,
                       case .table(let current) = self.destination,

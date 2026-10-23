@@ -22,17 +22,21 @@ import QueryCraftMobileTransport
     enum Presentation: String, CaseIterable { case table = "表格", list = "列表" }
     init(object: MobileDatabaseObject) { self.object = object }
     var hasChanges: Bool { state.hasChanges }
-    var changeSet: WorkspaceDatabaseSchemaChangeSet { .init(selection: object.editingSelection, columns: state.columns, indexes: state.indexes) }
+    var changeSet: WorkspaceDatabaseSchemaChangeSet { .init(selection: object.editingSelection, columns: state.columns, indexes: state.indexes, tableOptionsChange: state.tableOptionsChange) }
     var plan: WorkspaceDatabaseSchemaExecutionPlan { MySQLSchemaEditingProvider().makeExecutionPlan(for: changeSet) }
     func receive(_ snapshot: MobileSchemaSnapshot) {
         let selectedName = section == .columns ? state.columns.first { $0.id == selectedID }?.original?.name : state.indexes.first { $0.id == selectedID }?.original?.name
-        self.snapshot = snapshot; state.reset(columns: snapshot.columns, indexes: snapshot.indexes, schemaChoices: snapshot.choices)
+        self.snapshot = snapshot; state.reset(columns: snapshot.columns, indexes: snapshot.indexes, schemaChoices: snapshot.choices, tableOptions: snapshot.options)
         needsVerification = false; requiresReload = false; message = nil; isError = false; epoch = UUID(); revision = UUID()
         selectedID = section == .columns ? state.columns.first { $0.original?.name == selectedName }?.id : state.indexes.first { $0.original?.name == selectedName }?.id
     }
     func discard() { state.discardChanges(); epoch = UUID(); revision = UUID(); selectedID = nil; message = nil; isError = false }
     func updateColumn(_ id: UUID, definition: WorkspaceDatabaseSchemaEditorState.ColumnDefinition, primary: Bool) {
         state.updateColumn(id: id, definition: definition); state.setPrimaryKey(columnID: id, isEnabled: primary); revision = UUID()
+    }
+    func updateOptions(_ options: WorkspaceDatabaseTableOptions) {
+        guard snapshot?.options != nil, !needsVerification, !requiresReload else { return }
+        state.tableOptions = options; revision = UUID()
     }
     func updateIndex(_ id: UUID, definition: WorkspaceDatabaseSchemaEditorState.IndexDefinition) { state.updateIndex(id: id, definition: definition); revision = UUID() }
     func add() -> UUID {
@@ -58,6 +62,7 @@ import QueryCraftMobileTransport
     @ObservationIgnored var contextID: () -> UUID = { UUID() }
     @ObservationIgnored var isCurrent: (MobileDatabaseObject) -> Bool = { _ in false }
     @ObservationIgnored var hasPendingData: (MobileDatabaseObject) -> Bool = { _ in true }
+    @ObservationIgnored var didRead: (MobileDatabaseObject, MobileSchemaSnapshot) -> Void = { _, _ in }
     @ObservationIgnored var didApply: (MobileDatabaseObject) -> Void = { _ in }
     @ObservationIgnored var allowsWrites: () -> Bool = { false }
     @ObservationIgnored private var readTask: Task<Void, Never>?
@@ -70,6 +75,13 @@ import QueryCraftMobileTransport
     }
     var hasPendingChanges: Bool { isSubmitting || drafts.values.contains { $0.hasChanges || $0.needsVerification || $0.requiresReload } }
     var blocksWrites: Bool { isSubmitting || drafts.values.contains { $0.needsVerification } }
+    func sqlDidWrite() {
+        cancelRead()
+        for draft in drafts.values {
+            draft.requiresReload = true
+            draft.message = "SQL 已执行写入，使用顶部刷新核对结构后再编辑。"
+        }
+    }
     func draft(for object: MobileDatabaseObject) -> MobileSchemaDraft {
         if let value = drafts[object.id] { return value }
         let value = MobileSchemaDraft(object: object); drafts[object.id] = value; return value
@@ -87,8 +99,10 @@ import QueryCraftMobileTransport
         let task = Task { [weak self, service, configuration] in
             do {
                 let snapshot = try await service.load(object: object, configuration: configuration); try Task.checkCancellation()
-                guard let self, self.loadID == id, self.contextID() == context, self.isCurrent(object) else { return }
-                draft.receive(snapshot); self.isLoading = false; self.loadingObjectID = nil; self.readTask = nil
+                guard let self, self.loadID == id else { return }
+                self.isLoading = false; self.loadingObjectID = nil; self.readTask = nil
+                guard self.contextID() == context, self.isCurrent(object) else { return }
+                draft.receive(snapshot); self.didRead(object, snapshot)
             } catch {
                 guard let self, self.loadID == id else { return }
                 self.isLoading = false; self.loadingObjectID = nil; self.readTask = nil
@@ -97,9 +111,11 @@ import QueryCraftMobileTransport
         }
         readTask = task; return task
     }
-    @discardableResult func submit(_ draft: MobileSchemaDraft) -> Task<Void, Never>? {
+    @discardableResult func submit(_ draft: MobileSchemaDraft, expectedPlan: WorkspaceDatabaseSchemaExecutionPlan? = nil) -> Task<Void, Never>? {
         guard canEdit(draft), draft.hasChanges, !safetyLock.isEnabled, let baseline = draft.snapshot else { return nil }
-        let plan = draft.plan; let epoch = draft.epoch; let context = contextID()
+        let plan = draft.plan
+        guard expectedPlan == nil || expectedPlan == plan, !plan.statements.isEmpty else { return nil }
+        let epoch = draft.epoch; let context = contextID()
         isSubmitting = true; draft.message = nil; draft.isError = false
         let lifetime = UIApplication.shared.beginBackgroundTask(withName: "Finish schema operation") { [weak self] in
             Task { @MainActor [weak self] in self?.cancel() }
@@ -109,7 +125,7 @@ import QueryCraftMobileTransport
             do {
                 try await service.apply(object: draft.object, baseline: baseline, plan: plan, configuration: configuration) { [weak self] in
                     try await MainActor.run {
-                        guard let self, self.isCurrent(draft.object), self.contextID() == context, draft.epoch == epoch, self.allowsWrites() else { throw MobileSchemaError.stale }
+                        guard let self, self.isCurrent(draft.object), self.contextID() == context, draft.epoch == epoch, draft.plan == plan, self.allowsWrites() else { throw MobileSchemaError.stale }
                         guard !self.hasPendingData(draft.object) else { throw MobileSchemaError.pending }
                         guard !self.safetyLock.isEnabled else { throw WorkspaceDatabaseDataCellEditError.safetyLockEnabled }
                     }
@@ -118,7 +134,7 @@ import QueryCraftMobileTransport
                 if isCurrent(draft.object) {
                     do {
                         let snapshot = try await service.load(object: draft.object, configuration: configuration)
-                        guard isCurrent(draft.object), contextID() == context else { return }; draft.receive(snapshot); draft.message = "结构已更新"
+                        guard isCurrent(draft.object), contextID() == context else { return }; draft.receive(snapshot); didRead(draft.object, snapshot); draft.message = "结构已更新"
                     } catch { draft.isError = true; draft.message = "结构已提交，读取失败。请使用顶部刷新，无需重复提交。\n" + error.localizedDescription }
                 }
             } catch {

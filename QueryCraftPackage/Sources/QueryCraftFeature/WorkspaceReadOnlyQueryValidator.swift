@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 enum WorkspaceReadOnlyQueryValidator {
     static func validate(

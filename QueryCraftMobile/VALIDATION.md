@@ -307,3 +307,87 @@ Read root AGENTS.md and docs/RELEASE_PROCESS.md before the user-requested commit
 Checked the actual last local release tag `v0.1.12`, Config/Shared.xcconfig, Swift Driver API, packaging constant and all six manifest templates. Main version remains 0.1.12/build 22; Swift/packaging API both remain 5 and every manifest receives the same packaging API placeholder. This commit changes no external driver implementation, transport, driver dependencies, packaging, manifest, component identity or protocol. MySQL/PostgreSQL/Doris share the existing completion engine and portable snippet regression coverage; Redis/Elasticsearch/Kafka retain their own editors. Previously recorded original/mixed six-bundle activation/session-factory checks and isolated packaged MySQL/TLS/schema smoke remain evidence for the recovered snapshot, not a new six-live-database claim.
 
 Current commit release decisions: main app, MySQL, PostgreSQL, Doris, Redis, Elasticsearch, Kafka, MCP and Skill are not published or version-bumped; no tag or push is requested. Do not confuse the current diff with the full unpublished branch: relative to v0.1.12, the inherited archive snapshot already contains MySQL/schema and shared MariaDBTransport changes. Any later actual release must therefore reevaluate MySQL and Doris together, validate both architectures and their separate/simultaneous loading and upgrade compatibility, and check the online catalog then. The other four drivers and API/package/manifest identities have no such inherited diff in this branch. No production catalog compatibility or full release readiness is claimed by this functional commit.
+
+
+## SQL formatting — 2026-10-23
+
+Final owned real-MySQL/native full suites: `.build/ios-validation/mysql-first-DFE8BA44-CBD5-4403-BB51-949A1FD64AA6-tests.json` **404 passed / 0 failed / 0 skipped**, 237.007 s including rebuild; phone `.build/ios-validation/mysql-first-ECA68ECD-218B-4708-A9DA-94381CBF653F-tests.json` **404/0/0**, 76.977 s. Same-source original formatter golden/range/idempotence/recovery tests plus eight native checks cover actual workspace publication, unchanged query status/result identity, UTF-16 selection and untouched neighbor statements, whole-document formatting, one-step native undo, IME preservation, blank-document errors, Mac Cmd-I, away-and-back text/caret changes, cancellation/detach, and unchanged highlight scheduling. Existing SQL snippets/completion, controlled writes/schema, foreground, grid/filter/export and owned MySQL regressions also pass. Initial focused build failed because the resource marker in another test file was private; added a formatter-local bundle marker. Corrected focused run passed 22/0/0 before the final two native checks and input-only revision tracking were added. Initial failure is not counted as acceptance.
+
+Phone/iPad actual MobileWorkspaceView light/dark attachments were exported to `.build/formatting-renders-{phone,ipad}` and inspected. No desktop keyboard/mouse input simulation. Full iPad rebuild reports stale artifact warnings from relocating the initial derived-data directory and pre-existing grammar scanner / unnecessary-await warnings; no errors or test failures. Phone final diagnostics contain no errors or test failures. Disposable MySQL fixtures were cleaned by script traps. A first attempt to reuse the retained demo with its old reader account was denied; it was not a feature/test failure. Restored the existing `querycraft-ios-schema-experience` using its actual table-admin demo route; iPad displays the existing action_demo rows successfully with the new app, no demo data/password changes.
+
+Scope: mobile MySQL SQL text formatting, shared unmodified Mac formatter rules, standard uppercase/four-space options. No SQL execution added, no external drivers or Driver API changed, no additional driver packaging or five-other-driver live validation claimed. MySQL/PostgreSQL/Doris Mac formatting source behavior remains unchanged; Redis/Elasticsearch/Kafka specialized requests do not use this mobile SQL feature. No new physical build/install/touch acceptance; latest simulator-delivery override retained. No commit/tag/release or user database mutation.
+
+
+## Read-only SQL batches and independent results — 2026-10-23
+
+Final full owned-MySQL/native suites: iPad `.build/ios-validation/mysql-first-DFE8BA44-CBD5-4403-BB51-949A1FD64AA6-tests.json` **420/0/0**, 97.012 s; phone `.build/ios-validation/mysql-first-ECA68ECD-218B-4708-A9DA-94381CBF653F-tests.json` **420/0/0**, 65.441 s. Both final reports contain no compiler errors or test failures. Initial retained single-query checks passed 19/0/0, expanded focused checks 28/0/0. First full iPad was 419/1/0: it caught isLoading remaining true during optional single-result editing-metadata loading. Restored the original separate row-loading/metadata lifecycle before both final full runs. The failed run is not acceptance.
+
+New tests verify exact selected statements and UTF-16 boundaries, whole-document preflight and 20-statement cap, unsafe/transaction rejection before sending any statement, ordered first-error stop, failed/skipped states, selected-result-only retry after editing the draft, prior visible result retention with an explicit previous-result label, truncation and aggregate byte-budget stops, cancellation/endpoint-switch late replies, hidden pending drafts, per-completion history, shared runner cancellation/order, native Cmd-Shift-Return and retained editor/grid frame while switching results. Owned real MySQL verifies identical CONNECTION_ID across statements, actual Unicode/quoted semicolons, real origins/comments on a successful empty result, server failures, 500-row truncation and active SLEEP cancellation. Existing write/schema/filter/export/completion/snippet/formatting regressions pass. No user database mutations.
+
+Actual phone/iPad light/dark result-view attachments exported to `.build/batch-renders-{phone,ipad}` and inspected. `.build/batch-mac-build.json` succeeds in 222.410 s; source extracts only the shared ordered/cancellable loop, retaining desktop connection/policy/results. `.build/batch-mac-regression-final.log` verifies actual compiled framework target/preflight/order/failure/cancellation behavior over the common SQL path used by MySQL/PG/Doris; it is not three live-server tests. The standalone runner initially needed explicit SDK, C module maps and PACKAGE_RESOURCE_BUNDLE_PATH for the Xcode-built framework/resources; those harness failures are not product failures. Redis/ES/Kafka specialized requests and all external driver binaries/API remain unchanged. No new other-five-driver live verification or driver packaging claimed.
+
+Each current batch is read-only, uses one actual MySQL connection/read-only transaction and retains bounded independent results. It does not provide arbitrary SQL writes, transaction controls, disk-spooled results or persistent/multiple SQL workspaces. Preview truncation closes the session and stops the suffix explicitly. Raw-data budgets exclude metadata/runtime overhead and temporarily retained old visible data. Disposable fixture traps clean their owned containers; retained action_demo simulator fixture remains. Latest simulator delivery override retained; no physical installation/touch acceptance, desktop mouse/keyboard simulation, commit/tag/release.
+
+
+## 新建 MySQL 表 — 2026-10-23
+
+实现从真实 Mac 新表入口追踪至 draft、WorkspaceModel、provider、SQL builder 和独立建表连接。WorkspaceNewTableDraft 原样提取供两端使用；移动新表直接复用公共结构状态／表选项及已有原生字段和索引表单。主程序、Driver API 和外部驱动版本不变，本轮无提交、tag 或发布。
+
+验证证据：
+
+- 初始 iPad 原有结构状态／原生表单回归 11/0/0，59.031 s：`.build/new-table-initial-ipad.json`；新表状态检查 10/0/0，26.833 s：`.build/new-table-state-ipad.json`。
+- 完整隔离 MySQL 测试：iPad 438/0/0，116.901 s，`.build/new-table-final-ipad.json`；iPhone 438/0/0，74.242 s，`.build/new-table-final-phone.json`。两份报告均无编译警告、错误或测试失败。
+- 新增真实 MySQL 五项：中文／反引号表列索引名、默认值和注释、实际生成值、主键／自增初值、主键和索引前缀／方向、全部表选项提交；重复建表 1050 与只读账户 1142 保持已知失败；末次授权拒绝不发送；实际自动提交 CREATE 后丢弃回执并读回确认存在，关闭重开仍禁止重复；真实 App 创建后清搜索、刷新目录、导航并读取新空表。只操作测试脚本新建的自有临时 MySQL 容器，结束删除容器和卷。
+- 新增状态检查覆盖 Mac 共享草稿默认／重置／索引引用／类型语义，保留和丢弃、锁及其他写入、过期预览、选项加载失败／重试／迟到响应、重复点击、后台和上下文变化、已成功但刷新失败与回执不明封锁。原有字段／索引编辑测试随完整套件再次通过。
+- macOS 完整构建成功，63.159 s，`.build/new-table-mac-build.json`。实际编译的 QueryCraftFeature.framework 草稿回归通过，`.build/new-table-mac-regression.log`：默认字段、主键约束、重命名索引引用、PostgreSQL schema 限定、完成回调及重置保留选项。不改变 Mac 新表业务逻辑。
+- 原生 UIKit/XCTest 渲染导出至 `.build/new-table-renders-ipad` 和 `.build/new-table-renders-phone`；目录底栏、实际原生 sheet、字段／索引／选项、SQL 预览、安全锁与未知结果画面已检查。模拟器截图不作为真机触摸验收。
+
+驱动范围：MySQL 移动新表实库覆盖；PG／Doris 的 Mac 新表能力及方言保持，未移植移动端；Redis／Elasticsearch／Kafka 的专用对象模型和创建入口未改。没有其余五类的本轮实库验证；没有外置驱动源码改动，无需独立重编译／打包或替换用户 Dev。尚未提供已有表选项修改、外键设计、任意写 SQL 或跨启动草稿。继续按用户最新选择仅交付模拟器，未操作物理设备或用户数据库。
+
+
+补充原生验收：为避开系统分段控件尚未完成的渲染，截图等待稳定后明确检查实际 UISegmentedControl 的选中索引，并滚动到高级选项。首次补充测试 2/1 是定位错误：SwiftUI 的 accessibilityIdentifier 位于包装层，不能据此寻找内部 UITextField；画面实际已正确显示键块大小。改为检查真实原生 placeholder 后，iPad 3/0/0（39.230 s）、iPhone 3/0/0（29.307 s），均无诊断；报告 `.build/new-table-native-final-{ipad,phone}.json`，失败证据保留在 `.build/new-table-native-selector-ipad.json`。最终明暗与高级选项截图在 `.build/new-table-native-renders-{ipad,phone}-final`，均已检查。此轮只完善测试，完整 438 项通过后的应用源码未再修改。
+
+两台模拟器恢复至保留的自有 `querycraft-ios-schema-experience` 测试库，入口在目录底栏「新建表」，默认安全锁开启。没有操作真实桌面鼠标／键盘或安装物理设备。
+
+
+## 已有 MySQL 表选项 — 2026-10-23
+
+真实 Mac 选项页／绑定／tableOptionsChange／provider／ALTER SQL 路径已追踪。移动结构页已有菜单打开原生暂存表单，十项表选项与字段、索引进入同一结构草稿；新表和已有表共用选项表单，默认值建议及自增标签按用途区分。选项从 Mac 驱动的查询和转换提取进 MySQLTableSchemaMetadata，两端直接共用；SQL builder、Driver API 及共享 transport 未改变。
+
+初始原结构状态／原生表单 11/0/0（70.969 s），`.build/options-initial-ipad.json`；新增选项状态 8/0/0（63.664 s），`.build/options-state-ipad.json`。首次新增测试编译失败来自 WritableKeyPath 参数不满足 Swift Testing 的跨隔离 Sendable 要求；改为参数化字段编号，在测试函数内创建 key path。失败保留 `.build/options-state-keypath-compile.json`，不计为通过。
+
+首轮完整隔离 MySQL iPad 454/0/0（246.013 s），`.build/options-first-ipad.json`。五项新增实库测试覆盖：InnoDB 改为 MyISAM 后数据保持、行格式和注释、实际下一自增值、AVG_ROW_LENGTH／MIN_ROWS／MAX_ROWS／KEY_BLOCK_SIZE 的真实保存及清空；更改默认字符集不转换已有文本列，并发 INSERT 不把原自增值写回；已编辑选项被外部修改时拒绝、ALTER 权限拒绝；实际执行 ALTER 后丢失回执、明确核对后只重新读取；App 侧栏注释、当前路由和数据对象身份同步、待提交选项保护数据编辑。所有写入均在脚本新建的自有临时容器中进行，结束清理容器和卷。
+
+Mac 主程序编译成功（74.154 s），`.build/options-mac-build.json`。MySQL 外置驱动独立编译成功（280.443 s），`.build/options-mysql-build.json`；本地打包和严格签名通过，`.build/options-mysql-package.log`，隔离 ZIP `mysql-driver-1.0.8-x86_64-7d13ca46e7ca9d04.zip`。版本和 build 保留原值，本包仅本地验证，未上传或发布；未声明 ARM64 驱动包已验证。
+
+`.build/options-driver-load.log` 验证新的 MySQL 包通过实际 Dev 的 DatabaseDriverPackageInstaller／签名与 API 检查／registry 激活，从 `.build/options-driver-mixed/MySQL-x86_64.querycraftdriver` 加载，并通过 TLS 连接保留的自有 action_demo 读取真实选项，再检查注释变更计划不夹带自增修改（只预览，不写入保留示例）。原 PostgreSQL、Doris、Redis、Elasticsearch、Kafka 包与新包同时激活，六类 session factory 全部通过。最初独立检查器错误地给 Redis 传 required TLS，触发其真实不支持错误；改为只有 MySQL 使用 TLS／数据库参数后全部通过，初始证据 `.build/options-driver-harness-initial.log`。没有把这个检查器参数错误算作产品故障。
+
+六类范围：MySQL 移动真实表适用；SQL 查询结果不提供表选项，仅沿用结构提交后的元数据失效。PG 明确不支持通用表选项，Doris／Redis／Elasticsearch／Kafka 使用各自能力且未提供此通用编辑器；未新增其移动接入或实库选项写入。共享查询、类型、来源、注释和现有加载规则保持。只验证本机 x86_64 外置驱动；没有替换用户正在使用的 Dev、安装物理设备、提交、tag 或发布。
+
+
+最终 iPad `.build/options-final-ipad.json` 454/0/0（143.236 s），无警告、错误或失败。首轮通过后补强了原生表单捕获代次和 SQL 预览的 State 归属：父视图重建不更新正在编辑的来源或已展示计划；原生刷新失效测试通过重新构造父视图覆盖这一情况。已有表的引擎／字符集／排序规则也不能清空后制造没有 SQL 的假改动，与 Mac 不提供空选项的入口保持一致。更新后完整套件再次通过。
+
+最终 iPad 原生明暗／高级滚动／失效表单／待提交 SQL 画面导出并检查：`.build/options-final-renders-ipad`。实际模拟器恢复到保留测试库的 action_demo 结构页，`.build/options-restored-ipad.json` 启动成功，`.build/options-restored-ipad-screenshot.jpg` 已检查；安全锁保持开启，没有自动暂存或提交。
+
+限制保持真实：information_schema 返回引擎报告的选项，未报告的数字留空；并发核对是发送前的快照检查，不提供跨外部 DDL 的原子锁。DDL 自动提交及引擎／版本限制由服务器处理；其他五类驱动无本轮实库选项写入。原生程序化截图不代替真机触摸／弱网／旋转验收。
+
+
+最终 iPhone `.build/options-final-phone.json` 454/0/0（91.979 s），无警告、错误或失败；与最终 iPad 使用相同应用源码，覆盖所有原 SQL／新表／结构／结果／编辑／导出回归。手机原生深浅色、滚动到高级选项、失效状态及同一 SQL 预览截图导出至 `.build/options-final-renders-phone` 并检查。两台模拟器已恢复自有测试库结构页，原有底部菜单可进入表选项，无待提交改动，未操作真实桌面鼠标／键盘。
+
+## SQL 分批磁盘缓存与写 SQL／事务（2026-10-23）
+
+在 `codex/ios-ipad-editor` 的独立 worktree 验证，继续使用模拟器交付；未安装物理设备、替换用户驱动、提交、打 tag 或发版。
+
+- iPad Pro 13 M5／iOS 26.3：完整回归 467 passed / 0 failed / 0 skipped，250.006 s，`.build/sql-session-ipad4.json`；最后新增的刷新保护等 SQL／缓存／原生页面补验 14/0/0，47.599 s，`.build/sql-session-ipad-focused.json`。
+- iPhone 17 Pro／iOS 26.3：完整回归 468/0/0，124.070 s，`.build/sql-session-phone.json`。新增一次用例覆盖首次空结果刷新，以及写入失败后旧读取结果仍显示时刷新不得退回执行编辑器。
+- 真实自有 MySQL/TLS：100,000 行缓存与完整导出，不截成 500 行；缓存翻页无需再查询；字段类型／来源／别名／NULL／二进制与空结果；超长文本页／导出批次按字节有界；编码载荷预算跨语句共享；释放实际 SQLite／WAL／SHM 后确认文件消失。
+- 真实写入：首写安全锁确认、危险语句再次确认、不可变 SQL 失效、权限拒绝、影响行数／插入 ID；跨执行 connection ID、事务内读自己写入、保存点回滚、COMMIT／ROLLBACK、DDL 隐式提交、失败后不执行后续语句、后台断开回滚和连接变更保护。长写取消保留“待核实”防重放栅栏，核对后才解除。
+- 原生渲染附件：`.build/sql-cache-renders-ipad-final` 与 `.build/sql-cache-renders-phone-final`，实际缓存下一页、明暗模式、确认页完整 SQL。iPad 同时捕获实际可见窗口，确认等待 sheet 动画结束后 SQL／数据库／警示／执行按钮均可见；未模拟真实鼠标或键盘。
+- 手机模拟器停止／重启应用：只在本应用沙盒 Results 中放置自有 `mobile-startup-probe-*` 标记，真实启动清理删除成功，未读写用户连接配置或钥匙串。
+- Mac 主程序构建通过，223.873 s，`.build/sql-cache-mac-build.json`。共享缓存／查询文档／只读文件写入校验 41/0/0，312.485 s，`.build/sql-cache-mac-tests2.json`；Mac 原 50,000 行驻留阈值及换页／导出行为保持。
+- MySQL 独立构建 94.457 s、Doris 独立构建 39.496 s，分别打包／签名校验通过。新 V4 在真实 Dev installer／registry 的隔离目录激活，新 MySQL 真实读取 999 行返回多个带类型批次；先加载旧 V3 后再加载新 V4，确认实际映像来自新打包的 MySQL bundle。六类驱动 activate／会话工厂全部通过，`.build/sql-cache-driver-load.log`。
+
+范围：移动仍只有 MySQL。Doris 没有本轮实库查询，PostgreSQL／Redis／Elasticsearch／Kafka 没有本轮实库验证；其专用协议与桌面行为没有套用移动 SQL 规则。大结果和活动事务内结果暂不提供单元格编辑；查找只查当前缓存页。二进制保留长度与 128 字节预览，SQL 导出拒绝二进制值。256 MiB 是整批编码缓存载荷，SQLite 页／WAL 另有开销；刷新保留旧快照或导出窗口持有缓存时会暂时并存，释放后删除，下次启动清理残留，不持久恢复工作区。
+
+
+最终补验：手机 SQL／缓存／原生页面／结构状态 24/0/0（44.315 s，`.build/sql-session-phone-focused.json`）；iPad 新的结构过期响应检查所在状态套件 10/0/0（21.250 s，`.build/sql-cache-ipad-schema-final.json`）。SQL 写入确认后会取消此前尚未完成的结构读取，避免旧回复解除刷新要求；新加闸门用例已覆盖。所有最终结构化报告均无编译或测试诊断。两端实际可见窗口截图均已核对，完整 SQL、库名、提示及确认按钮可见。

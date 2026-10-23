@@ -7,8 +7,8 @@ import QueryCraftFeature
 import QueryCraftMobileCore
 #endif
 
-// Keep the source-facing name. The V3 module can coexist with V2 when an older
-// Doris/MySQL bundle loads first; V2 does not export queryWithTransactionState.
+// Keep the source-facing name. V4 can coexist with older installed driver
+// transports; V3 does not export the typed streaming API.
 public typealias MariaDBClient = MariaDBConnection
 
 public final class MariaDBConnection: @unchecked Sendable {
@@ -99,6 +99,109 @@ public final class MariaDBConnection: @unchecked Sendable {
 
     public static func transactionState(serverStatus: UInt32) -> WorkspaceQueryTransactionState {
         serverStatus & UInt32(SERVER_STATUS_IN_TRANS) == 0 ? .autoCommit : .inTransaction
+    }
+
+    /// Unbuffered typed results with one-batch backpressure. An interrupted
+    /// response discards the connection, so unread packets can never be reused.
+    public func queryStream(_ sql: String, maximumRowBytes: Int? = nil,
+        onBatch: @escaping @Sendable (WorkspaceDatabaseDataBatch) async throws -> Void
+    ) async throws -> CDatabaseQueryStreamResult {
+        let channel = WorkspaceTransferBatchChannel(), cancellation = MariaDBLoadCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withThrowingTaskGroup(of: CDatabaseQueryStreamResult?.self) { group in
+                group.addTask {
+                    do {
+                        return try await self.runOnQueue {
+                            guard let handle = self.handle else { throw WorkspaceSessionError.notConnected }
+                            try cancellation.install(Int(mysql_thread_id(handle)))
+                            defer { cancellation.finish() }
+                            guard sql.withCString({ mysql_real_query(handle, $0, UInt(sql.utf8.count)) }) == 0 else {
+                                throw self.error(from: handle)
+                            }
+                            guard let result = mysql_use_result(handle) else {
+                                guard mysql_field_count(handle) == 0 else { throw self.error(from: handle) }
+                                let summary = CDatabaseQueryStreamResult(columns: [], rowCount: 0,
+                                    affectedRows: mysql_affected_rows(handle), insertID: mysql_insert_id(handle),
+                                    transactionState: Self.transactionState(serverStatus: handle.pointee.server_status))
+                                channel.finish()
+                                return summary
+                            }
+                            var complete = false
+                            defer {
+                                if !complete { _ = Darwin.shutdown(Int32(mysql_get_socket(handle)), SHUT_RDWR) }
+                                mysql_free_result(result)
+                                if !complete { mysql_close(handle); self.handle = nil; self.cachedServerVersion = nil }
+                            }
+                            let count = Int(mysql_num_fields(result)), fields = mysql_fetch_fields(result)
+                            let columns = (0..<count).map { index -> WorkspaceDatabaseDataColumn in
+                                guard let field = fields?[index] else { return .init(id: index, name: "column_\(index)") }
+                                let origin: WorkspaceDatabaseDataColumn.Origin?
+                                if let db = field.db, let table = field.org_table, let name = field.org_name,
+                                   db.pointee != 0, table.pointee != 0, name.pointee != 0 {
+                                    origin = .init(databaseName: String(cString: db), tableName: String(cString: table), columnName: String(cString: name))
+                                } else { origin = nil }
+                                return .init(id: index, name: String(cString: field.name), type: MariaDBColumnType.name(for: field), origin: origin)
+                            }
+                            var rows: [WorkspaceDatabaseDataRow] = [], total = 0, bytes = 0
+                            while let values = mysql_fetch_row(result) {
+                                let lengths = mysql_fetch_lengths(result)
+                                if let maximumRowBytes {
+                                    var rowBytes = 0
+                                    for index in 0..<count {
+                                        let length = Int(clamping: lengths?[index] ?? 0)
+                                        guard length <= maximumRowBytes - rowBytes else { throw CDatabaseQueryStreamError.rowTooLarge }
+                                        rowBytes += length
+                                    }
+                                }
+                                var cells: [WorkspaceDatabaseDataCell] = []
+                                for index in 0..<count {
+                                    guard let value = values[index] else { cells.append(.null); continue }
+                                    let length = Int(clamping: lengths?[index] ?? 0)
+                                    let buffer = UnsafeRawBufferPointer(start: value, count: length)
+                                    let binary = fields.map { $0[index].charsetnr == 63 && [MYSQL_TYPE_TINY_BLOB, MYSQL_TYPE_MEDIUM_BLOB,
+                                        MYSQL_TYPE_LONG_BLOB, MYSQL_TYPE_BLOB, MYSQL_TYPE_STRING, MYSQL_TYPE_VAR_STRING,
+                                        MYSQL_TYPE_VARCHAR, MYSQL_TYPE_GEOMETRY, MYSQL_TYPE_BIT].contains($0[index].type) } ?? false
+                                    cells.append(binary ? .binary(byteCount: length, preview: Array(buffer.prefix(128))) :
+                                        .text(String(bytes: buffer, encoding: .utf8) ?? String(bytes: buffer, encoding: .isoLatin1) ?? ""))
+                                    bytes += binary ? min(length, 128) : length
+                                }
+                                rows.append(.init(id: total, values: cells)); total += 1
+                                if rows.count >= 500 || bytes >= 1_048_576 {
+                                    try channel.send(.init(columns: columns, rows: rows)); rows = []; bytes = 0
+                                }
+                            }
+                            guard mysql_errno(handle) == 0 else { throw self.error(from: handle) }
+                            if !rows.isEmpty || total == 0 { try channel.send(.init(columns: columns, rows: rows)) }
+                            let summary = CDatabaseQueryStreamResult(columns: columns, rowCount: total,
+                                affectedRows: 0, insertID: mysql_insert_id(handle),
+                                transactionState: Self.transactionState(serverStatus: handle.pointee.server_status))
+                            complete = true; channel.finish(); return summary
+                        }
+                    } catch { channel.fail(error); throw error }
+                }
+                group.addTask {
+                    do {
+                        while let batch = try await channel.next() { try await onBatch(batch) }
+                        return nil
+                    } catch { channel.fail(error); throw error }
+                }
+                do {
+                    var summary: CDatabaseQueryStreamResult?
+                    for try await result in group { if let result { summary = result } }
+                    guard let summary else { throw WorkspaceNativeBulkError.invalidStreamState }
+                    // An acknowledged write stays acknowledged if cancellation races
+                    // with its OK packet. The caller must never replay it automatically.
+                    return summary
+                } catch { channel.fail(error); group.cancelAll(); throw error }
+            }
+        } onCancel: {
+            channel.fail(CancellationError())
+            cancellation.cancel { id in
+                guard let killer = try? self.openConnection(database: nil) else { return }
+                defer { mysql_close(killer) }; _ = try? self.query("KILL QUERY \(id)", handle: killer)
+            }
+        }
     }
 
     public func loadLocal(sql: String, token: String, stream: WorkspaceNativeBulkStream) async throws -> Int {

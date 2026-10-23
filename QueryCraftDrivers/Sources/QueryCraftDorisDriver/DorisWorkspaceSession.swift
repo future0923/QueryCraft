@@ -1,6 +1,6 @@
 import Foundation
 import QueryCraftFeature
-import QueryCraftMariaDBTransportV3
+import QueryCraftMariaDBTransportV4
 
 actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProviding, WorkspaceSQLObjectOverviewProviding, WorkspaceNativeRowSourceSession {
     nonisolated let capabilities = WorkspaceSessionCapabilities.dorisReadOnly

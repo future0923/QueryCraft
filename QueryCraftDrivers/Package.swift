@@ -64,7 +64,7 @@ let package = Package(
                     name: "QueryCraftFeature",
                     package: "QueryCraftPackage"
                 ),
-                .product(name: "QueryCraftMariaDBTransportV3", package: "MariaDBTransport"),
+                .product(name: "QueryCraftMariaDBTransportV4", package: "MariaDBTransport"),
             ],
             swiftSettings: [
                 .unsafeFlags(["-enable-testing"]),
@@ -77,7 +77,7 @@ let package = Package(
                     name: "QueryCraftFeature",
                     package: "QueryCraftPackage"
                 ),
-                .product(name: "QueryCraftMariaDBTransportV3", package: "MariaDBTransport"),
+                .product(name: "QueryCraftMariaDBTransportV4", package: "MariaDBTransport"),
             ],
             swiftSettings: [
                 .unsafeFlags(["-enable-testing"]),
@@ -153,7 +153,7 @@ let package = Package(
             name: "QueryCraftMySQLDriverTests",
             dependencies: [
                 "QueryCraftMySQLDriver",
-                .product(name: "QueryCraftMariaDBTransportV3", package: "MariaDBTransport"),
+                .product(name: "QueryCraftMariaDBTransportV4", package: "MariaDBTransport"),
                 .product(name: "CMariaDB", package: "MariaDBTransport"),
                 .product(
                     name: "QueryCraftFeature",
@@ -176,7 +176,7 @@ let package = Package(
             name: "QueryCraftDorisDriverTests",
             dependencies: [
                 "QueryCraftDorisDriver",
-                .product(name: "QueryCraftMariaDBTransportV3", package: "MariaDBTransport"),
+                .product(name: "QueryCraftMariaDBTransportV4", package: "MariaDBTransport"),
                 .product(
                     name: "QueryCraftFeature",
                     package: "QueryCraftPackage"

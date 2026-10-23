@@ -1,5 +1,8 @@
 import Foundation
 import GRDB
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 actor WorkspaceQueryResultDataExportRowSource:
     WorkspaceDataExportRowSource
@@ -12,20 +15,30 @@ actor WorkspaceQueryResultDataExportRowSource:
     private let rows: WorkspaceGridCopyRows
     private var nextRowIndex: Int?
     private var databaseQueue: DatabaseQueue?
+    private let maximumBatchBytes: Int?
 
     init(
         store: WorkspaceQueryResultStore,
         databaseURL: URL,
-        rows: WorkspaceGridCopyRows
+        rows: WorkspaceGridCopyRows,
+        maximumBatchBytes: Int? = nil
     ) {
         self.store = store
         self.databaseURL = databaseURL
         self.rows = rows
+        self.maximumBatchBytes = maximumBatchBytes
         nextRowIndex = rows.first
     }
 
     func nextBatch() async throws -> [WorkspaceDatabaseDataRow]? {
         try Task.checkCancellation()
+        if let maximumBatchBytes, case let .range(range) = rows, let start = nextRowIndex {
+            let end = min(range.upperBound + 1, start + Self.rangeBatchSize)
+            let batch = try await store.loadRows(in: start..<end, maximumBytes: maximumBatchBytes)
+            guard let last = batch.last else { throw WorkspaceDataExportError.missingRow }
+            nextRowIndex = last.id < range.upperBound ? last.id + 1 : nil
+            return batch
+        }
         guard let positions = nextPositions(), !positions.isEmpty else {
             return nil
         }

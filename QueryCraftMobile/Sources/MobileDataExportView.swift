@@ -16,7 +16,7 @@ struct MobileDataExportView: View {
                     if model.snapshot.allRowsProvider != nil {
                         Picker("范围", selection: $model.scope) {
                             Text(model.snapshot.scopeDescription).tag(WorkspaceDataExportScope.currentData)
-                            Text("全部匹配数据").tag(WorkspaceDataExportScope.allTableRows)
+                            Text(model.snapshot.allRowsLabel).tag(WorkspaceDataExportScope.allTableRows)
                         }.accessibilityIdentifier("dataExportScope")
                     } else { LabeledContent("范围", value: model.snapshot.scopeDescription) }
                     LabeledContent("行数", value: model.scope == .allTableRows ? "生成时统计" : "\(model.snapshot.data.rows.count)")
@@ -26,8 +26,12 @@ struct MobileDataExportView: View {
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
                         if model.scope == .allTableRows {
+                            if model.snapshot.isQueryCache {
+                                Text("分批导出本次查询的磁盘缓存，不会重新执行 SQL。")
+                            } else {
                             Text("按打开导出时的筛选与排序分批读取全部数据，时间戳保持原始值。")
                             Text("分批读取期间服务器的数据变化可能影响结果。")
+                            }
                         } else { Text("仅导出已加载的服务器数据，不包含暂存修改；时间戳保持原始值。") }
                         if model.snapshot.hasBinaryValues, model.format != .sql {
                             Text("二进制仅导出字节数说明，不包含完整字节。")

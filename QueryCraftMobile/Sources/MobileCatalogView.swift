@@ -65,6 +65,11 @@ struct MobileCatalogView: View {
                 Text(app.message ?? browser.catalogError ?? catalogStatus)
                     .font(.caption).foregroundStyle(app.message != nil || browser.catalogError != nil ? Color.red : .secondary).lineLimit(2)
                 Spacer(minLength: 0)
+                if kind == .table, let database = browser.selectedDatabase, let controller = app.workspace?.newTable {
+                    Button(controller.draft == nil ? "新建表" : "新表草稿", systemImage: "plus") { controller.present(database: database) }
+                        .font(.caption).disabled(controller.isSubmitting || browser.isBackgrounded)
+                        .accessibilityIdentifier("newTableButton")
+                }
             }.padding(.horizontal, 20).frame(height: 44).background(canvas)
         }
     }

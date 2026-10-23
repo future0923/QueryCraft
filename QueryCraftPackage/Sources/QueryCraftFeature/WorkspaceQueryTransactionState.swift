@@ -25,12 +25,12 @@ public extension WorkspaceQueryTransactionState {
     }
 }
 
-enum WorkspaceQueryTransactionCommand: Equatable, Sendable {
+public enum WorkspaceQueryTransactionCommand: Equatable, Sendable {
     case begin
     case commit
     case rollback
 
-    var sql: String {
+    public var sql: String {
         switch self {
         case .begin: "START TRANSACTION;"
         case .commit: "COMMIT;"
@@ -38,7 +38,7 @@ enum WorkspaceQueryTransactionCommand: Equatable, Sendable {
         }
     }
 
-    var operation: SQLStatementKind.TransactionOperation {
+    public var operation: SQLStatementKind.TransactionOperation {
         switch self {
         case .begin: .begin
         case .commit: .commit

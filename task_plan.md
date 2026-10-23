@@ -238,3 +238,47 @@ Current delivery override: user said “先用模拟器吧” during snippet wor
 ## User-requested Git commit - 2026-10-23
 
 Release process and root instructions read again; current diff and last-tag driver scope checked. Create `codex/ios-ipad-editor` from recovered detached snapshot and save all authorized source/test/validation changes as one functional commit. Preserve existing version/API/driver identities and snapshot history. Existing final validation is unchanged; no remote push, tag or release requested.
+
+
+## SQL formatting — 2026-10-23
+
+1. Complete: reuse Mac SQLFormatter/Worker/request/options/edit and original formatter tests, with native mobile toolbar and Cmd-I entry.
+2. Complete: eight native IME/selection/undo/stale/cancellation/teardown/workspace checks plus original shared formatter regressions; final owned-MySQL full iPad/phone each 404/0/0, native light/dark renders exported and inspected. Existing iPad owned action_demo experience restored, disposable fixtures cleaned.
+3. Scope: mobile MySQL editor only; desktop SQL formatting behavior and all external drivers unchanged. PG/Doris retain the same desktop formatter; Redis/Elasticsearch/Kafka specialized requests are not mobile SQL formatting targets. Latest simulator delivery override retained.
+
+
+## Read-only SQL batch execution and independent results — 2026-10-23
+
+1. Complete implementation: reuse Mac resolver/preflight and extracted shared ordered/cancellable batch runner; preflight the whole plan, bounded same-session MySQL batch, stop on first error/cancellation/truncation, mark untouched suffix explicitly.
+2. Complete implementation: selected/current/all execution and keyboard commands; per-result typed data/metadata/drafts/viewport, current-result refresh, history-on-completion and cross-result schema/write guards. Preserve prior selected data during new loads; label it as previous until success.
+3. Complete: final owned-MySQL phone/iPad each 420/0/0; actual light/dark renders inspected; Mac build and actual compiled common SQL runner regression passed. Initial single-result loading regression corrected and documented. Latest simulator-delivery override remains. No additional mobile drivers or arbitrary SQL writes/transactions.
+
+
+## New MySQL table creation — 2026-10-23
+
+1. Complete implementation: trace actual Mac footer/draft/model/provider/statement/session path; extract exact shared draft, reuse editor state/options/MySQL plan and existing native field/index forms. Six-driver applicability reviewed; mobile remains MySQL only.
+2. Complete implementation: existing catalog footer entry, retained draft, structure/index/options forms, immutable preview and safety lock; pre-send authorization/cancellation, unknown outcome fence and acknowledged-success navigation/refresh.
+3. Complete: full owned real-MySQL iPad/phone each 438/0/0; final native light/dark/advanced-scroll checks each 3/0/0; screenshots inspected. Mac full build and actual compiled shared draft regression pass. Simulators restored to owned live fixture; docs complete. Simulator-only delivery remains; no commit/tag/release.
+
+
+## Existing MySQL table options — 2026-10-23
+
+1. Complete implementation: trace Mac options tab/metadata/editor changes/provider/DDL; share extracted exact MySQL information query/conversion, existing table options and change set. Existing mobile structure menu opens a native local staging form.
+2. Complete implementation: preserve metadata/columns/index drafts, compare explicit changed options before DDL without treating an unrelated AUTO_INCREMENT advance as an edit, capture preview plans, refresh comment identity and preserve uncertain/successful-write fences. MySQL only; PG/Doris/Redis/Elasticsearch/Kafka capabilities unchanged.
+3. Complete: final full owned-MySQL iPad 454/0/0 (143.236 s), phone 454/0/0 (91.979 s), no diagnostics; actual native light/dark/advanced/expired/SQL renders inspected. Mac main build and independent MySQL build/package/signature/new-bundle TLS metadata + six-driver Dev activation passed. Both simulators restored to owned schema demo. Simulator delivery; no physical install, commit/tag/release.
+
+## Large SQL results and SQL writes/transactions — 2026-10-23
+
+User explicitly requests both remaining items 2 and 3. Keep existing worktree and uncommitted formatting/batch/table changes; no main checkout edits or MCP work.
+
+1. Complete: trace actual Mac result store, stream transport, execution policy/preflight and transaction session/controls. Determine shared boundaries and six-driver impact.
+2. Complete implementation: mobile bounded-memory incremental typed results backed by the exact Mac disk store; paged native grid/record/find/export behavior, retained content on refresh and cancellation/stale response fencing.
+3. Complete implementation: explicit write authorization, same-session SQL writes and transaction controls, truthful server transaction state, endpoint/background cleanup and no replay of writes or unknown commit.
+4. Complete: meaningful shared/state/native/owned MySQL integration tests, full iPhone/iPad regression, Mac and affected MySQL+Doris transport build/package/load verification; update docs and restore simulator demos. Simulator-only delivery, no release/commit.
+
+
+Validation: iPad full 467/0/0 + final SQL/cache/native 14/0/0 + final schema state 10/0/0; phone full 468/0/0 + final SQL/cache/native/schema 24/0/0. Mac full build + shared regression 41/0/0; MySQL/Doris independent V4 builds/packages and actual packaged new MySQL typed streaming + six-driver activation passed. Real app startup cleanup verified, simulator demos restored. Docs updated. No commit/tag/release or physical installation.
+
+## Save completed mobile SQL work on branch — 2026-10-23
+
+User explicitly requested a branch commit. Re-read root AGENTS.md and docs/RELEASE_PROCESS.md; checked v0.1.12 baseline, app 0.1.12 (22), Driver API 5 and all six driver impacts. Reattached detached worktree to existing codex/ios-ipad-editor at identical HEAD, preserving changes. Reused verified full/focused simulator, Mac and packaged-driver results; bilingual pending release note records future MySQL/Doris dual-architecture gates and unchanged other drivers. Commit all accumulated authorized formatting, batch, table/options, disk cache and transaction sources/tests/docs; no tag/release or remote push requested.
