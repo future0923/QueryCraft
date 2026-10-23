@@ -14,6 +14,8 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
+import datetime
+import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -115,6 +117,7 @@ def package(build, output, development=False, archive_enabled=True, architecture
             'CFBundleName': 'QueryCraft Dev MCP' if development else 'QueryCraft MCP',
             'CFBundleDisplayName': 'QueryCraft Dev MCP' if development else 'QueryCraft MCP', 'CFBundleExecutable': 'querycraft-mcp', 'CFBundlePackageType': 'APPL',
             'CFBundleShortVersionString': version, 'CFBundleVersion': metadata['build'], 'QCMCPVersion': version, 'LSMinimumSystemVersion': '15.0',
+            'QCRuntimeBuild': datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8],
             'LSUIElement': True, 'QCAppVersion': app_version, 'QCCredentialHelperRequired': True, 'QCSharedCredentialHelperRequired': True,
             'QCComponentCatalogBaseURL': 'https://querycraft.debug-tools.cc/components/',
             'QCComponentPublicKey': '8dcu6cE1Vh6kUXtkeuDsSEWIy6sLbuHaqdnnZhE3rP8='}

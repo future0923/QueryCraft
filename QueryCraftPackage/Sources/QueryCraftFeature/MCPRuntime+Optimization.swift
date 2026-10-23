@@ -58,7 +58,7 @@ extension MCPRuntime {
         let current = try? store.load()
         guard !stopped, !Task.isCancelled, current == policy, policy.permits(profile), policy.tuning.maximumIdleConnections > 0,
               idleConnections.count < policy.tuning.maximumIdleConnections,
-              sessions.count + pendingConnections + idleConnections.count <= policy.maximumSessions else {
+              activeConnectionCount + idleConnections.count <= policy.maximumSessions else {
             await connection.close(); return
         }
         idleConnections.append(.init(profile: profile, database: database, mode: mode, connection: connection, returned: Date()))
@@ -73,7 +73,7 @@ extension MCPRuntime {
             return expired
         }
         let allowedIdle = min(policy?.tuning.maximumIdleConnections ?? 0,
-                              max(0, (policy?.maximumSessions ?? 0) - sessions.count - pendingConnections))
+                              max(0, (policy?.maximumSessions ?? 0) - activeConnectionCount))
         while idleConnections.count > allowedIdle { retired.append(idleConnections.removeFirst()) }
         for entry in retired { await entry.connection.close() }
     }

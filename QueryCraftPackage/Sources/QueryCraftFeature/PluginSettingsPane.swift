@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct PluginSettingsPane: View {
+    var openSSH: (() -> Void)? = nil
     @State private var model = PluginSettingsModel()
+    @State private var sshModel = SSHPluginSettingsModel()
     @State private var requestedAction: PluginSettingsAction?
     @State private var actionRequestID: UUID?
     @State private var uninstallCandidate: DatabaseDriverCatalogItem?
@@ -48,6 +50,9 @@ struct PluginSettingsPane: View {
                     )
                 }
             }
+            if model.searchText.isEmpty || "SSH libssh2 服务器".localizedCaseInsensitiveContains(model.searchText) {
+                SSHPluginSettingsSection(model: sshModel, openServers: openSSH)
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
@@ -59,6 +64,7 @@ struct PluginSettingsPane: View {
         .task {
             await model.load()
         }
+        .task { await sshModel.refresh() }
         .task(id: actionRequestID) {
             guard actionRequestID != nil else { return }
             if let requestedAction {
@@ -72,6 +78,7 @@ struct PluginSettingsPane: View {
                 }
             } else {
                 await model.refresh()
+                await sshModel.refresh()
             }
             actionRequestID = nil
         }

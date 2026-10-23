@@ -18,7 +18,7 @@ struct MCPPermissionsSettingsSections: View {
                 .font(MCPSettingsType.detail).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        } header: { Text(copy("哪些连接可以访问", "Which connections can AI access?")) }
+        } header: { Text(copy("数据库连接范围", "Database connection scope")) }
         .id("permission-scope")
         Section {
             if !model.policy.enabled {
@@ -44,7 +44,7 @@ struct MCPPermissionsSettingsSections: View {
                 .frame(maxWidth: .infinity, alignment: .leading).help(accessHelpText)
         } header: {
             HStack(spacing: 12) {
-                Text(copy("连接权限", "Connection access"))
+                Text(copy("数据库连接权限", "Database connection access"))
                 Spacer(minLength: 8)
                 Button {
                     model.connectionFilterVisible.toggle()

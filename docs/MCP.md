@@ -5,6 +5,8 @@
 QueryCraft MCP 是独立的原生 macOS 程序。安装后，数据库工具不依赖
 QueryCraft 主窗口；只有 `open_table` 和 `execute_and_show` 需要打开桌面应用。
 支持范围跟随已安装的 MySQL、PostgreSQL、Doris、Redis、Elasticsearch、Kafka 驱动。
+
+可选的独立 SSH 插件提供服务器账号、连接测试、命令执行、SFTP 文件操作和可断线重连的长任务，采用单独授权；安装、工具与限制见 [SSH_MCP.md](SSH_MCP.md)。
 不需要安装 Node.js、npm、Docker 或数据库代理中间件。
 
 ## 安装与接入
@@ -223,3 +225,9 @@ querycraft-mcp --update-skill --skill-target codex --data-dir /absolute/data-dir
 Skill 按兼容 MCP 范围选择版本。MCP 回退后，再更新 Skill 会选择仍兼容的版本；对仍兼容的 Skill 不自动降级。安装和卸载保留本地修改；MCP、Skill 和主程序不要求版本号一一相同。六类驱动仍按现有 Driver API 独立安装，本次组件拆分不增加驱动版本。
 
 开发组件源与生产组件源隔离：Dev 只读取 `QUERYCRAFT_DEV_COMPONENT_CATALOG_BASE_URL` 或应用的 `QCDevelopmentComponentCatalogBaseURL`，不会继承生产变量或生产默认地址。未配置时，MCP/Skill 的检查、安装、升级及修复都会返回明确提示并保留本地组件，不发起生产下载。正式版继续使用 `QUERYCRAFT_COMPONENT_CATALOG_BASE_URL` / `QCComponentCatalogBaseURL`。独立 MCP 的组件 CLI 也按 `--data-dir` 选择相同渠道。当前未配置开发源，Dev 组件由本地构建安装；没有发布独立开发源。
+
+SSH 传输新增 MCP 专用的 `ssh_start_transfer`、`ssh_transfer_status`、`ssh_cancel_transfer`、`ssh_forget_transfer`。进度来自 0.5 插件实际字节，结果可跨客户端重连查询，旧插件保留无实时进度的兼容行为。详见 [SSH_MCP.md](SSH_MCP.md#传输进度与结果ssh-插件-050)。
+
+SSH 0.6.0 还支持保存的跳板链、本机 SSH agent，以及在 SSH 设置中预览导入 ~/.ssh/config。账号及授权继续由同一份配置供页面和 MCP 使用；使用新配置前重连更新后的 stdio 客户端。详见 [SSH 说明](SSH_MCP.md)。
+
+`querycraft_runtime_info` 可查看当前进程实际使用的宿主/SSH 插件版本、能力及是否需要重连，不会为了自检连接服务器。SSH 0.7.0 错误还可返回具体账号、跳数和失败阶段；老插件保留原错误格式。详见 [SSH 诊断说明](SSH_MCP.md#逐跳诊断与版本自检070)。

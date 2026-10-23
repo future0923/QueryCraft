@@ -1,7 +1,7 @@
 {
   "mcp": {
-    "version": "0.1.2",
-    "build": "3",
+    "version": "0.1.3",
+    "build": "4",
     "minimumAppVersion": "0.1.12",
     "driverAPI": 5,
     "storageAPI": 1,
@@ -14,6 +14,15 @@
     "minimumAppVersion": "0.1.10",
     "minimumMCPVersion": "0.1.0",
     "maximumMCPVersionExclusive": "1.0.0",
+    "driverAPI": 5,
+    "storageAPI": 1,
+    "credentialAPI": 1,
+    "desktopAPI": 1
+  },
+  "ssh": {
+    "version": "0.7.0",
+    "build": "7",
+    "minimumAppVersion": "0.1.12",
     "driverAPI": 5,
     "storageAPI": 1,
     "credentialAPI": 1,

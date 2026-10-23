@@ -9,7 +9,7 @@ on:
         default: false
         type: boolean
       publish_components:
-        description: Publish changed MCP/Skill components independently
+        description: Publish changed MCP/Skill/SSH components independently
         type: boolean
         default: false
       source_run_id:
@@ -67,6 +67,7 @@ jobs:
       build_ref: ${{ steps.artifacts.outputs.build_ref }}
       mcp_changed: ${{ steps.components.outputs.mcp_changed }}
       skill_changed: ${{ steps.components.outputs.skill_changed }}
+      ssh_changed: ${{ steps.components.outputs.ssh_changed }}
       publish_components: ${{ steps.release.outputs.publish_components }}
     steps:
       - uses: actions/checkout@v7
@@ -76,6 +77,7 @@ jobs:
         run: |
           python3 scripts/test-component-release-plan.py
           python3 scripts/test-release-artifact-plan.py
+          python3 scripts/test-ssh-distribution.py
           python3 scripts/test-update-archives.py
       - id: components
         env:
@@ -190,6 +192,7 @@ jobs:
       SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
       QUERYCRAFT_BUILD_MCP: ${{ needs.metadata.outputs.mcp_changed }}
       QUERYCRAFT_BUILD_SKILL: ${{ needs.metadata.outputs.skill_changed }}
+      QUERYCRAFT_BUILD_SSH: ${{ needs.metadata.outputs.ssh_changed }}
       QUERYCRAFT_BUILD_CLIENT: true
       QUERYCRAFT_BUILD_DRIVERS: false
       QUERYCRAFT_BUILD_UNIVERSAL_UPDATE: false
@@ -363,7 +366,7 @@ jobs:
     needs: [metadata, build_client, build_drivers]
     if: >-
       ${{ always() && needs.metadata.result == 'success' &&
-          needs.metadata.outputs.mcp_changed == 'true' &&
+          (needs.metadata.outputs.mcp_changed == 'true' || needs.metadata.outputs.ssh_changed == 'true') &&
           contains(fromJSON('["success","skipped"]'), needs.build_client.result) &&
           contains(fromJSON('["success","skipped"]'), needs.build_drivers.result) }}
     permissions:
@@ -381,6 +384,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.build_ref }}
       - uses: actions/download-artifact@v8
         if: needs.metadata.outputs.source_run_id != ''
         with:
@@ -396,7 +401,11 @@ jobs:
           path: runtime-artifacts
           merge-multiple: true
       - name: Verify standalone MCP and all six driver families
+        if: needs.metadata.outputs.mcp_changed == 'true'
         run: python3 scripts/ci/verify-release-runtime.py runtime-artifacts
+      - name: Verify native SSH package, ABI and optional capabilities
+        if: needs.metadata.outputs.ssh_changed == 'true'
+        run: python3 scripts/test-ssh-package.py --directory runtime-artifacts
 
   publish:
     needs:
@@ -413,7 +422,7 @@ jobs:
           contains(fromJSON('["success","skipped"]'), needs.build_client.result) &&
           contains(fromJSON('["success","skipped"]'), needs.build_update.result) &&
           contains(fromJSON('["success","skipped"]'), needs.build_drivers.result) &&
-          (needs.metadata.outputs.mcp_changed != 'true' || needs.verify_runtime.result == 'success') }}
+          ((needs.metadata.outputs.mcp_changed != 'true' && needs.metadata.outputs.ssh_changed != 'true') || needs.verify_runtime.result == 'success') }}
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -476,6 +485,7 @@ jobs:
         env:
           MCP_CHANGED: ${{ needs.metadata.outputs.mcp_changed }}
           SKILL_CHANGED: ${{ needs.metadata.outputs.skill_changed }}
+          SSH_CHANGED: ${{ needs.metadata.outputs.ssh_changed }}
         run: python3 scripts/deploy-components.py --directory dist --github
       - name: Synchronize canonical published download URLs
         if: needs.metadata.outputs.publish == 'true' || needs.metadata.outputs.publish_drivers == 'true'

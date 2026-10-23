@@ -677,7 +677,7 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
         return info
     }
 
-    private nonisolated static func verifySignature(at bundleURL: URL) throws {
+    nonisolated static func verifySignature(at bundleURL: URL) throws {
         var staticCode: SecStaticCode?
         let creationStatus = SecStaticCodeCreateWithPath(
             bundleURL as CFURL,

@@ -338,6 +338,17 @@ if [[ "$build_client" == "true" ]]; then
         --directory "$output_directory" --sign-tool "$sign_tool"
     python3 "$project_root/scripts/test-sparkle-updates.py" \
         --sparkle-directory "$(dirname "$(dirname "$sign_tool")")"
+    if [[ "${QUERYCRAFT_BUILD_SSH:-false}" == "true" ]]; then
+        ssh_packages="$temporary_root/ssh-packages"
+        signing_identity="$(cat "$project_root/Config/CodeSigningIdentity.txt")"
+        python3 "$project_root/scripts/build-ssh-plugin.py" --arch "$architecture" \
+            --identity "$signing_identity" --output "$ssh_packages"
+        python3 "$project_root/scripts/package-ssh-catalog.py" --arch "$architecture" \
+            --packages "$ssh_packages" --output "$output_directory" \
+            --base-url "${QUERYCRAFT_COMPONENT_DOWNLOAD_BASE_URL:-https://querycraft.debug-tools.cc/components}" \
+            --sign-tool "$sign_tool"
+        python3 "$project_root/scripts/test-ssh-package.py" --directory "$output_directory"
+    fi
     if [[ "${QUERYCRAFT_BUILD_SKILL:-false}" == "true" && "$architecture" == "arm64" ]]; then
         python3 "$project_root/scripts/package-components.py" --component skill \
             --output "$output_directory" --sign-tool "$sign_tool"

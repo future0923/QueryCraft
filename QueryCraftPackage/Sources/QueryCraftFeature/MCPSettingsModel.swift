@@ -71,7 +71,7 @@ final class MCPSettingsModel {
     var settingsScrollTarget: String?
     var settingsNavigationRevision = 0
     private let store: MCPPolicyStore
-    private let directory: URL
+    let directory: URL
     private let installation: MCPInstallation
     private let service: MCPServiceManager
     private let settingsLoader: @Sendable () async throws -> MCPSettingsSnapshot
@@ -292,7 +292,7 @@ final class MCPSettingsModel {
     }
     func save() {
         guard didLoad else { return }
-        do { captureQueryTimeout(); try store.save(policy); error = nil; status = AppCopy.current.text("已保存；权限立即生效，HTTP 监听地址变更需重启服务", "Saved; permissions apply immediately. Restart HTTP to apply listening address changes.") }
+        do { captureQueryTimeout(); try store.savePreservingSSH(policy); error = nil; status = AppCopy.current.text("已保存；权限立即生效，HTTP 监听地址变更需重启服务", "Saved; permissions apply immediately. Restart HTTP to apply listening address changes.") }
         catch { self.error = error.localizedDescription }
     }
     func install() async {
@@ -332,7 +332,7 @@ final class MCPSettingsModel {
     func authorizeCredentials() async {
         guard didLoad, !isBusy else { return }; isBusy = true; defer { isBusy = false }
         do {
-            captureQueryTimeout(); try store.save(policy)
+            captureQueryTimeout(); try store.savePreservingSSH(policy)
             error = nil
             status = AppCopy.current.text("正在统一授权已选连接…", "Authorizing selected connections…")
             let supported = try? await MCPProcess.run(URL(fileURLWithPath: executable), arguments: ["--credential-protocol"])
@@ -375,7 +375,7 @@ final class MCPSettingsModel {
         do {
             // Stopping must remain possible even when the editor contains invalid values.
             if running {
-                captureQueryTimeout(); try store.save(policy)
+                captureQueryTimeout(); try store.savePreservingSSH(policy)
                 try await service.start(executable: executable, settings: policy.http)
             }
             else { try await service.stop() }
@@ -438,7 +438,7 @@ final class MCPSettingsModel {
 
 actor MCPServiceManager {
     static let shared = MCPServiceManager()
-    private let directory: URL
+    let directory: URL
     private let label: String
     private let agentsDirectory: URL
     init(directory: URL = QueryCraftStorageLocation.applicationSupportDirectory,

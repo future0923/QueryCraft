@@ -19,7 +19,7 @@ struct MCPToolsExecutionSettingsSections: View {
                 }.fixedSize()
             }
         }
-        Text(copy("启用工具不会增加连接的读写权限，每次调用仍按目标连接的实际权限检查。", "Enabling a tool never increases connection access. Every call is checked against its target connection's effective permissions."))
+        Text(copy("此处是所有账号共用的全局总开关，无需逐账号重复配置。具体账号授权在“连接权限”或“SSH 服务器”管理；两处 SSH 授权同步。", "Global switches apply to all accounts. Configure account grants in Connections or SSH Servers; SSH grants are shared between both views."))
             .font(MCPSettingsType.detail).foregroundStyle(.secondary)
         ForEach(MCPPermissionToolGroup.allCases) { group in
             MCPPermissionToolSection(group: group, disabledTools: $model.policy.disabledTools)

@@ -11,11 +11,21 @@ actor MCPRuntime {
         var transaction = false
         let mode: MCPExecutionMode
     }
+    let runtimeInfo: MCPRuntimeInfo
     let serverIdentity: MCPServerIdentity
     let store: MCPPolicyStore
     let repository: SQLiteConnectionProfileRepository
     let credentials: any CredentialStore
     let registry: DatabaseDriverRegistry
+    let sshConnections: SSHConnectionStore
+    let sshTransport: (any SSHTransport)?
+    var sshOperations: [UUID: SSHOperation] = [:]
+    var sshTransfers: [UUID: Task<Void, Never>] = [:]
+    var pendingSSHConnections = 0
+    var mutatingSSHConnections: Set<UUID> = []
+    var sshReuseConfiguration: SSHReuseConfiguration?
+    var sshPoolRetirement: (id: UUID, task: Task<Void, Never>)?
+    var activeConnectionCount: Int { sessions.count + pendingConnections + pendingSSHConnections + sshOperations.count }
     var sessions: [String: Session] = [:]
     var pendingConnections = 0
     var metadataCache: [String: MetadataCacheEntry] = [:]
@@ -25,12 +35,16 @@ actor MCPRuntime {
     var stopped = false
     private var maintenance: Task<Void, Never>?
 
-    init(directory: URL, credentials: (any CredentialStore)? = nil, registry: DatabaseDriverRegistry = .shared) {
+    init(directory: URL, credentials: (any CredentialStore)? = nil, registry: DatabaseDriverRegistry = .shared,
+         sshTransport: (any SSHTransport)? = nil) {
+        runtimeInfo = MCPRuntimeInfo(directory: directory)
         serverIdentity = MCPServerIdentity(directory: directory)
         store = MCPPolicyStore(directory: directory)
         history = MCPHistoryStore(directory: directory)
         repository = SQLiteConnectionProfileRepository(databaseURL: directory.appending(path: "QueryCraft.sqlite"))
         self.credentials = credentials ?? MCPCredentialStore(directory: directory); self.registry = registry
+        sshConnections = SSHConnectionStore(directory: directory)
+        self.sshTransport = sshTransport ?? (try? SSHPlugin(bundleURL: SSHPlugin.bundleURL(in: directory)))
     }
 
     func startMaintenance() {
@@ -43,7 +57,14 @@ actor MCPRuntime {
         }
     }
     private func maintainSessions() async {
+        await reconcileSSHConnections()
         let policy = try? store.load()
+        let profiles = try? sshConnections.load()
+        for operation in sshOperations.values {
+            if let policy, let profiles, sshOperationPermitted(operation, policy: policy, profiles: profiles) { continue }
+            operation.task.cancel()
+        }
+        await sshTransport?.pruneIdleConnections()
         await retireIdleConnections(policy: policy)
         let invalid = sessions.values.filter { entry in
             guard !entry.busy else { return false }
@@ -60,10 +81,11 @@ actor MCPRuntime {
         guard policy.enabled else { return [] }
         return MCPToolCatalog.definitions.filter {
             guard !policy.disabledTools.contains($0.name) else { return false }
+            if MCPToolCatalog.sshTools.contains($0.name) { return availableSSHTools.contains($0.name) }
             switch policy.tuning.discovery {
             case .both: return true
             case .flat: return !MCPToolCatalog.metaTools.contains($0.name)
-            case .lazy: return ["list_connections", "plugin_list", "plugin_tools", "plugin_call", "close_session", "rollback_transaction", "add_connection", "duplicate_connection", "remove_connection", "open_table", "execute_and_show"].contains($0.name)
+            case .lazy: return ["runtime_info", "list_connections", "plugin_list", "plugin_tools", "plugin_call", "close_session", "rollback_transaction", "add_connection", "duplicate_connection", "remove_connection", "open_table", "execute_and_show"].contains($0.name)
             }
         }.map(\.tool)
     }
@@ -121,7 +143,10 @@ actor MCPRuntime {
         var policy = try store.load()
         await expireSessions(policy: policy)
         policy = try store.load()
+        if tool.hasPrefix("ssh_") { await reconcileSSHConnections(); policy = try store.load() }
         try policy.authorize(tool: tool)
+        if MCPToolCatalog.sshTools.contains(tool) { return try await callSSH(tool, args: args, policy: policy) }
+        if tool == "runtime_info" { return runtimeInfo.value(ssh: sshTransport?.runtimeInfo) }
         if tool == "list_connections" {
             let profiles = try await repository.fetchAll()
             var values: [MCPJSONValue] = []
@@ -133,9 +158,27 @@ actor MCPRuntime {
             return .array(values)
         }
         if tool == "plugin_list" {
-            return .array(await registry.installedDatabaseTypes().sorted { $0.rawValue < $1.rawValue }.map {
+            var plugins: [MCPJSONValue] = await registry.installedDatabaseTypes().sorted { $0.rawValue < $1.rawValue }.map {
                 .object(["id": .string($0.rawValue), "name": .string($0.title), "tools": .array(MCPToolCatalog.driverTools($0).subtracting(policy.disabledTools).sorted().map(MCPJSONValue.string))])
-            })
+            }
+            if sshTransport != nil { plugins.append(.object(["id": "ssh", "name": "SSH", "runtime": sshTransport?.runtimeInfo?.value ?? .null, "tools": .array(availableSSHTools.subtracting(policy.disabledTools).sorted().map(MCPJSONValue.string))])) }
+            return .array(plugins)
+        }
+        if ["plugin_tools", "plugin_call"].contains(tool), args.string("plugin_id") == "ssh" {
+            guard sshTransport != nil else { throw MCPFailure("Install the SSH plugin first.", code: .unsupported) }
+            let names = availableSSHTools.subtracting(policy.disabledTools)
+            if tool == "plugin_tools" {
+                return .array(MCPToolCatalog.definitions.filter { names.contains($0.name) }.map {
+                    .object(["name": .string($0.name), "description": .string($0.description), "inputSchema": $0.tool.inputSchema])
+                })
+            }
+            let target = try args.requiredString("tool")
+            guard names.contains(target), var delegated = args["arguments"]?.objectValue else { throw MCPFailure("SSH tool is unavailable.", code: .accessDenied) }
+            if let connection = args.string("connection_id") {
+                guard delegated.string("connection_id").map({ $0 == connection }) ?? true else { throw MCPFailure("Plugin calls cannot switch connections.", code: .accessDenied) }
+                delegated["connection_id"] = .string(connection)
+            }
+            return try await dispatch("querycraft_" + target, arguments: delegated)
         }
         if tool == "add_connection" { return try await addConnection(args, policy: policy) }
 
@@ -201,7 +244,7 @@ actor MCPRuntime {
         let connection: any WorkspaceSession
         if let savedEntry { connection = savedEntry.connection; sessions[savedEntry.id]?.busy = true }
         else {
-            guard sessions.count + pendingConnections < policy.maximumSessions else { throw MCPFailure("Connection capacity reached.", code: .capacity) }
+            guard activeConnectionCount < policy.maximumSessions else { throw MCPFailure("Connection capacity reached.", code: .capacity) }
             pendingConnections += 1
             reservedConnection = true
             if metadataOnly, policy.tuning.maximumIdleConnections > 0, let reused = try await acquireMetadataConnection(profile: profile, database: database, mode: mode) {
@@ -339,6 +382,14 @@ actor MCPRuntime {
     func shutdown() async {
         stopped = true
         maintenance?.cancel(); maintenance = nil
+        let transfers = Array(sshTransfers.values)
+        for task in transfers { task.cancel() }
+        for task in transfers { await task.value }
+        let ssh = Array(sshOperations.values); sshOperations.removeAll()
+        for operation in ssh { operation.task.cancel() }
+        for operation in ssh { _ = await operation.task.result }
+        if let retirement = sshPoolRetirement { await retirement.task.value }
+        await sshTransport?.invalidate(connectionID: nil)
         metadataCache.removeAll(); metadataGeneration &+= 1
         let idle = idleConnections; idleConnections.removeAll()
         for entry in idle { await entry.connection.close() }

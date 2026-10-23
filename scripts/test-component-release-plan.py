@@ -10,7 +10,7 @@ class ReleasePlanTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory(prefix='qc-release-plan-');self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name);PLAN.ROOT=self.root
         self.git('init','-q');self.git('config','user.email','fixture@example.invalid');self.git('config','user.name','Fixture')
-        self.versions={'mcp':{'version':'0.1.0','build':'1'},'skill':{'version':'1.0.0','build':'1'}}
+        self.versions={'mcp':{'version':'0.1.0','build':'1'},'skill':{'version':'1.0.0','build':'1'},'ssh':{'version':'0.7.0','build':'7'}}
         self.write('Components/versions.json',json.dumps(self.versions))
         self.write('scripts/driver-package-common.sh','querycraft_driver_api_version=5\n')
         for driver in PLAN.DRIVERS:self.write(f'scripts/package-{driver}-driver.sh','driver_version="${DRIVER_VERSION:-1.0.0}"\ndriver_build="${DRIVER_BUILD:-1}"\nbuild_driver\n')
@@ -38,6 +38,22 @@ class ReleasePlanTests(unittest.TestCase):
     def test_skill_change_selects_skill_only(self):
         self.write('Components/Skill/querycraft/SKILL.md','Workflow instructions')
         result=self.result();self.assertTrue(result['components']['skill']['changed']);self.assertFalse(result['components']['mcp']['changed'])
+    def test_ssh_native_change_only_selects_ssh(self):
+        self.write('QueryCraftSSHPlugin/src/ssh_plugin.c','int plugin;')
+        result=self.result();self.assertEqual([k for k,v in result['components'].items() if v['changed']],['ssh'])
+        self.assertFalse(any(item['changed'] for item in result['drivers'].values()))
+    def test_ssh_settings_only_does_not_select_components(self):
+        self.write('QueryCraftPackage/Sources/QueryCraftFeature/SSHPluginSettingsSection.swift','struct View {}')
+        self.assertFalse(any(v['changed'] for v in self.result()['components'].values()))
+    def test_ssh_host_change_selects_mcp(self):
+        self.write('QueryCraftPackage/Sources/QueryCraftFeature/SSHPlugin.swift','struct Host {}')
+        result=self.result();self.assertEqual([k for k,v in result['components'].items() if v['changed']],['mcp'])
+    def test_ssh_shared_header_change_selects_both(self):
+        self.write('QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/include/QueryCraftSSHPlugin.h','void api(void);')
+        result=self.result();self.assertEqual([k for k,v in result['components'].items() if v['changed']],['mcp','ssh'])
+    def test_ssh_version_only_is_rejected(self):
+        self.versions['ssh']['build']='8';self.write('Components/versions.json',json.dumps(self.versions))
+        with self.assertRaisesRegex(ValueError,'without implementation changes'):self.result()
     def test_driver_version_only_is_rejected(self):
         path=self.root/'scripts/package-mysql-driver.sh';path.write_text(path.read_text().replace('1.0.0','1.0.1'))
         with self.assertRaisesRegex(ValueError,'unchanged driver'):self.result()

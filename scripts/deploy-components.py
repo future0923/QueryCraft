@@ -16,19 +16,22 @@ def digest(path):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--directory',type=Path,required=True);parser.add_argument('--github',action='store_true');parser.add_argument('--validate-only',action='store_true');args=parser.parse_args()
-    selected=[kind for kind in ['mcp','skill'] if os.environ.get(kind.upper()+'_CHANGED')=='true']
+    selected=[kind for kind in ['mcp','skill','ssh'] if os.environ.get(kind.upper()+'_CHANGED')=='true']
     records={}
+    versions=json.loads((ROOT/'Components/versions.json').read_text())
     for kind in selected:
         entries=[]
         for record in args.directory.glob(f'querycraft-{kind}-*.release.json'):
             envelope=json.loads(record.read_text());release=json.loads(base64.b64decode(envelope['payload'],validate=True))
             if release['component']!=kind or len(base64.b64decode(envelope['signature'],validate=True))!=64:raise ValueError('Invalid component release record')
+            expected_metadata=dict(versions[kind],component=kind,architectures=release['architectures'])
+            if {k:v for k,v in release.items() if k not in ('url','size','sha256')}!=expected_metadata:raise ValueError('Component artifact does not match the selected source metadata')
             name=Path(urlparse(release['url']).path).name;archive=args.directory/name
             if archive.stat().st_size!=release['size'] or digest(archive)!=release['sha256']:raise ValueError('Component artifact checksum mismatch')
             notes=ROOT/f"docs/releases/{kind}/{release['version']}.md"
             if not notes.is_file():raise ValueError('Component release notes are missing')
             entries.append((record,release,archive,notes))
-        expected={'x86_64','arm64'} if kind=='mcp' else {'any'}
+        expected={'x86_64','arm64'} if kind in ('mcp','ssh') else {'any'}
         if {r[1]['architectures'][0] for r in entries}!=expected or len(entries)!=len(expected):raise ValueError(f'Incomplete {kind} architecture matrix')
         if len({(r[1]['version'],r[1]['build']) for r in entries})!=1:raise ValueError('Component architecture versions disagree')
         records[kind]=entries

@@ -49,11 +49,11 @@ MySQL 和 Doris 共用 `QueryCraftDrivers/MariaDBTransport` 动态库。该目�
 
 ### 独立 MCP 与 Skill 发布检查
 
-主程序不得内置 MCP 安装包或 Skill 资源。主程序、MCP、Skill 及六类驱动各自维护版本与发布决定。
+主程序不得内置 MCP 安装包或 Skill 资源。主程序、MCP、Skill、SSH 插件及六类数据库驱动各自维护版本与发布决定。
 
-- `Components/versions.json` 是 MCP/Skill 独立版本及兼容范围的来源。对应说明为 `docs/releases/mcp/<version>.md`、`docs/releases/skill/<version>.md`，必须包含中文与 English。
+- `Components/versions.json` 是 MCP/Skill/SSH 独立版本及兼容范围的来源。对应说明为 `docs/releases/mcp/<version>.md`、`docs/releases/skill/<version>.md`、`docs/releases/ssh/<version>.md`，必须包含中文与 English。
 - `scripts/component-release-plan.py --require-notes` 相对各组件已发布 tag（首次发布回退至上一个主程序 tag）判断实际改动。MCP 设置界面变化不单独触发 MCP 包发布；Skill 内容变化只触发 Skill。版本号或 build 单独变化不得被当作实现改动。已发布组件发生实现改动时必须提供新的 version/build 身份。
-- Actions 自动构建、签名并发布相关组件；未改动组件保持已有发布。手动 `publish_components` 可独立发布变更的 MCP/Skill，支持 `source_run_id` 复用原构建产物。生产环境审批和发布令牌要求与现有资源发布一致。
+- Actions 自动构建、签名并发布相关组件；未改动组件保持已有发布。手动 `publish_components` 可独立发布变更的 MCP/Skill，支持 `source_run_id` 复用原构建产物。SSH 随两个原生客户端任务生成独立附件，未改动时不重建或上传；复用缓存时仍须在两个架构运行签名、原生加载及扩展能力验证。生产环境审批和发布令牌要求与现有资源发布一致。
 - 选择 `publish_drivers` 时只允许发布实际变动的驱动；无相关改动或仅变动版本号/build 必须失败。共享 MariaDBTransport 涉及 MySQL/Doris，Driver API 不兼容变化涉及全部六类。
 - 构建矩阵、服务端部署、发布后清单同步和 GitHub 驱动附件使用同一份实际变更名单。复用旧 run 时，产物目录中残留的其他驱动包不得随之上传；只修改驱动测试也不触发驱动发版。Swift 与打包脚本的 Driver API 常量不一致时必须失败。
 - 主程序 `QueryCraftPackage` 不得依赖 MCP SDK、Logging 或 NIO；协议入口、stdio/HTTP 传输只在独立的 `QueryCraftMCPPackage`。需要 MCP 产物时，先构建 `QueryCraft`，再以相同架构、配置和 DerivedData 构建 `querycraft-mcp`，最后运行 `scripts/package-mcp.py`。MCP 必须动态链接同一份 `QueryCraftFeature.framework`，禁止把 Feature 静态复制进可执行文件。
@@ -64,6 +64,19 @@ MySQL 和 Doris 共用 `QueryCraftDrivers/MariaDBTransport` 动态库。该目�
 - LicenseServer 提供 MCP 管理、Skill 管理、上传草稿/发布/下架/删除草稿、管理员/CSRF、部署令牌和审计。服务端只持有发行公钥；CI 对单个不可变发行记录签名，服务端聚合已发布记录供客户端下载。
 - 发布前先部署支持 `/components/` 及对应管理/部署路由的服务端。Nginx 使用新配置，或使用已验证的大包上传兼容入口 `/admin/resources/deploy/drivers?component=mcp|skill`；兼容入口仍走组件鉴权、签名与独立存储。组件包、签名记录及双语说明全部就绪后再发布。核对三处版本：包内、下载清单、GitHub Release。
 - 新版入口 `<数据目录>/MCP/bin/querycraft-mcp` 固定不变。原 `<数据目录>/MCP/QueryCraft MCP.app` 保留给旧客户端；更新后在设置中重新添加客户端即可迁移。保留不可变旧版本供已有会话及回退使用，不自动删除运行中的资源。
+
+
+### SSH 插件分发与更新
+
+- SSH 是独立组件 `ssh`，不是第七类数据库驱动。更改 `QueryCraftSSHPlugin`、C ABI 头或 SSH 打包逻辑触发 SSH 发布；宿主 SSH Swift 逻辑触发 MCP 发布；修改公共 C ABI 头同时检查两者。未改动的六类数据库驱动保持版本/build。
+- `scripts/build-ssh-plugin.py` 从 `Components/versions.json.ssh` 读取版本/兼容范围，在固定证书签名前写入 `Contents/Resources/component.json`。禁止把本地 OpenSSL override 包用于分发。固定依赖源码及摘要，无远端新增运行时。
+- `scripts/package-ssh-catalog.py` 校验双架构身份、实际 Mach-O CPU、ABI、许可与包内元数据，生成 `querycraft-ssh-<version>-<build>-<arch>.zip`、`.package.json`、Ed25519 签名 `.release.json` 和本地验收目录。CI 单架构任务用 `--arch`；正式发布前必须凑齐两架构，禁止改写相同身份的不同内容。
+- `publish_components` 同时涵盖实际变更的 SSH。`scripts/deploy-components.py` 只选 `SSH_CHANGED=true` 的 SSH 包，检查包与当前源码版本/兼容信息相同、两架构齐全、摘要一致，再通过已有大包入口 `/admin/resources/deploy/drivers?component=ssh` 发布；GitHub tag 为 `ssh-v<version>+<build>`。现有数据库驱动发布参数语义不变。
+- **先部署 sibling QueryCraft/LicenseServer 的 SSH 支持，再发布安装包。** 服务端启用 SQLite 事务迁移以保留原 MCP/Skill 清单、状态和唯一身份约束；管理入口 `/admin/resources/ssh`，沿用管理员、CSRF、部署令牌、审计、不可变记录及发布/下架/删除草稿规则。
+- 服务端聚合 `/components/ssh-x86_64.json` 和 `/components/ssh-arm64.json`，不能用本地单记录目录覆盖线上历史。发布后逐架构检查签名、包摘要、目录版本、公开下载和 GitHub 附件一致；未发布的架构不能声称可更新。
+- 客户端“插件 → SSH · libssh2 → 管理 → 下载并安装”复用组件源，按当前架构及兼容范围选择发行版；包内兼容描述必须与签名记录一致。拒绝在线降级；失败保留 Current，成功原子切换至不可变版本目录，已有进程不卸载，重连 MCP 后生效。显式本地导入仍兼容旧的签名 bundle/ZIP。
+- Dev 组件源保持独立：未配置 `QUERYCRAFT_DEV_COMPONENT_CATALOG_BASE_URL` 时不读取或安装生产组件。测试下载在隔离的本机目录/临时 HTTP 服务进行，不能替换生产配置或常驻 HTTP 服务。
+- 验证入口：`test-component-release-plan.py`、`test-release-artifact-plan.py`、`test-ssh-distribution.py`，原生 `test-ssh-package.py --directory <产物目录>`，以及 `test-ssh-desktop.py --distribution-only --previous-package <旧签名ZIP> ...`。LicenseServer 的 store/resources/web 测试覆盖迁移、验签、幂等发布、下架历史与权限；`TestPackagedComponentArtifacts` 可用真实打包产物及公开验签密钥联验。
 
 
 DMG 仍为双击挂载、拖入 Applications 的标准安装形式。最终镜像使用 ULMO/LZMA（系统支持 10.15+，本项目最低 15）；先创建完成的临时文件系统镜像，再无损转换为 ULMO，保留原应用签名。发布前应校验镜像、挂载后固定证书、文件摘要、权限和符号链接；不要通过减少图标尺寸或删减驱动能力缩小安装包。
