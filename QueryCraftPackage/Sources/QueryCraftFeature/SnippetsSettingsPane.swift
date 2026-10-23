@@ -367,18 +367,12 @@ private struct SnippetEditorSheet: View {
     }
 
     private var triggerValidation: String? {
-        if trimmedTrigger.isEmpty {
-            return showsValidation ? copy.snippetValidationTriggerRequired : nil
+        switch store.triggerIssue(trimmedTrigger, excluding: snippet?.id) {
+        case .required: showsValidation ? copy.snippetValidationTriggerRequired : nil
+        case .whitespace: copy.snippetValidationTriggerInvalid
+        case .duplicate: copy.snippetValidationTriggerDuplicate
+        case nil: nil
         }
-        if trimmedTrigger.contains(where: { $0.isWhitespace }) {
-            return copy.snippetValidationTriggerInvalid
-        }
-        let isDuplicate = store.snippets.contains { existing in
-            existing.id != snippet?.id
-                && existing.trigger.caseInsensitiveCompare(trimmedTrigger)
-                    == .orderedSame
-        }
-        return isDuplicate ? copy.snippetValidationTriggerDuplicate : nil
     }
 
     private var contentValidation: String? {

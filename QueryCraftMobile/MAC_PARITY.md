@@ -122,7 +122,7 @@ MySQL 驱动的目录/字段 SQL 与原字典转换提取为同驱动模块的 M
 
 六类评估：MySQL/PG/Doris 的桌面 SQL 引擎、方言与高亮语义保留；Redis/ES/Kafka 不套用 SQL 补全，没有改变其专用编辑入口。移动端只支持 MySQL。Mac 完整构建、实际编译引擎三方言/高亮/IME 插入守卫与六类驱动加载通过；修改后的 MySQL 驱动独立重建/打包/验签，并通过实际 Dev registry/session 在隔离包目录验证真实目录、视图、78 字段、序号及原 TLS/筛选/分页链路。未替换用户已安装的 Mac/Dev 或驱动库，其他五类本轮未做实库查询。
 
-直接复用原 Mac 解析/补全测试及语法夹具，另测移动 IME、撤销、UTF-16、中途光标、过期响应、主题、原生长文本滚动和真实 MySQL 元数据。自定义主题/片段管理、多光标、格式化及桌面语句执行选择尚未移植；只读/单语句执行限制保持原样。真机第三方输入法、外接键盘和物理旋转仍需人工体验，模拟器渲染不替代这些验收。
+直接复用原 Mac 解析/补全测试及语法夹具，另测移动 IME、撤销、UTF-16、中途光标、过期响应、主题、原生长文本滚动和真实 MySQL 元数据。自定义主题、多光标和格式化尚未移植；片段管理与语句执行选择见下方后续增量，只读／单语句执行限制保持原样。真机第三方输入法、外接键盘和物理旋转仍需人工体验，模拟器渲染不替代这些验收。
 
 
 ## 全部匹配数据导出对齐（2026-10-22）
@@ -211,3 +211,22 @@ MobileSQLExecutionInput 保留会话选区，挂载时以 UITextView 的实际�
 发送前的取消不执行语句；发送期间取消/客户端连接错误按结果不明处理，保留原操作并锁定写入，关闭/重开或探测网络都不能自动解除。用户核对服务器后才明确结束该次操作，不自动重放。后台通过系统有限时间清理连接；已确认操作在后台完成仍记为成功，保留待刷新状态。返回前台不自动执行表操作。
 
 六类评估：MySQL 移动六项均实库验证；PG 的 schema、CONTINUE IDENTITY RESTRICT 和所属序列逻辑保持；Doris 仅 rename/drop/truncate 的原语法与限制保持；Redis/Elasticsearch/Kafka 明确不支持 SQL 表操作，专用动作不受影响。实际 Mac 构建及六类能力/SQL 检查、六类原驱动加载通过；此轮没有外部驱动源码或 ABI 改动，不需重打包或替换用户 Dev。其余五类未做本轮实库变更，移动端仍仅支持 MySQL。
+
+## 表结构编辑与两种展示（2026-10-23）
+
+追踪实际 Mac 的编辑状态、描述、提供器、执行计划和 MySQL session；移动端直接编译同一份字段／索引草稿、类型／字符设置联动、主键／索引引用更新、验证和 SQL 生成。表格与列表共用草稿、选择和 SQL 计划。字段支持新增、修改、暂存删除／恢复、类型、NULL、默认值／表达式、自增、注释、可见性、生成列和字符设置；索引支持种类、字段顺序、前缀、降序、表达式、方法、可见性和注释。原生输入左标签、右值，键盘完成只收起键盘。
+
+完整结构转换提取为两端同源的 MySQLTableSchemaMetadata，同时修正 Mac 原先未读取真实生成列表达式的问题。视图保留结构只读，读取字段不增加 SHOW VIEW 权限。结构提交后同步失效相关表数据、查询编辑来源、目录和补全元数据。提交先预览共享 SQL、显式解锁，再在同一新连接重读结构并逐条授权。MySQL DDL 分别自动提交；部分执行、结果不明或取消后禁止重放，需显式核对。已确认成功但刷新失败只允许重读。目标切换、后台和过期回包受代次约束；公共刷新不能覆盖未提交草稿。
+
+读取保留固定容器、进度与错误底栏；刷新不清空已有内容，空状态只对应当前成功的空快照。表格保留宽度／视口，列表身份稳定，刷新后按原名称恢复选择。iPad 目录、导航和底栏使用基础层级系统背景，继续适配深浅色和高对比度；Mac 设置使用一致的不透明语义背景，保留原生分组控件。另修复移动 SQL 文字／光标改变后旧候选延迟清除的问题，接收校验和共享匹配规则不变。
+
+六类评估：MySQL 移动结构编辑实库覆盖，Mac 新元数据链路由新包的真实 TLS session 验证。PostgreSQL／Doris 保留各自 Mac 提供器和方言；Redis／Elasticsearch／Kafka 不适用 SQL 字段／索引编辑，其专用功能不变。六类真实 bundle 激活和 registry session 工厂检查通过。新版 MySQL 独立编译、打包、签名并在隔离目录实际加载，用户安装的 Dev 驱动未覆盖。其余五类没有本轮新增实库操作，移动端仍仅支持 MySQL。
+
+
+2026-10-23 移动补全触控适配：普通词接受后的空格复用／补齐通过共享 SQLCompletionApplication 的显式选项完成，Mac 默认精确插入及函数／片段光标不变。下一步候选直接使用同一个共享引擎的空前缀上下文结果，以原文和光标约束生命周期；不另外维护关键词／字段预测规则。iPad 完整键盘上方候选栏使用不透明明暗底色，浮动／外接键盘仍使用光标旁列表。MySQL／PG／Doris 桌面方言与排行未改变，移动端仍仅 MySQL；Redis／ES／Kafka 不适用 SQL 补全。本轮未修改外部驱动或结果元数据链路。
+
+## SQL snippets on mobile (2026-10-23)
+
+Mobile now compiles the actual Mac SQLSnippetTemplate, SQLSnippetStore, completion sources/ranking and SQLSnippetSession. Only native view adapters and emphasis rendering differ; placeholder ownership, filled states, empty stops, edit shifts, next/backtab and exit rules share one source. Touch controls and keyboard commands enter that session; IME composition temporarily disables navigation. The existing SQL header opens native management of eleven built-ins and custom definitions, with CRUD/toggle/restore and shared trigger validation. Templates preserve literal SQL punctuation. Custom definitions remain local per device, without synchronization; write templates do not expand SQL execution permissions.
+
+Original shared three-SQL-driver tests run on mobile and Mac. MySQL/PG/Doris matching and dialect behavior remain; Redis/ES/Kafka do not use SQL snippets. Mobile remains MySQL only and external drivers are unchanged. Phone/iPad full suites each 380 passed; Mac complete build and original snippet 56 tests passed. User selected simulator delivery for this increment; installation/process logs are not physical touch acceptance.

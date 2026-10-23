@@ -135,6 +135,8 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLCompletionDialect.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLStaticCatalog.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSnippet.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSnippetStore.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSnippetSession.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSchemaCatalogSnapshot.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorColorSettings.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/CompletionLabelMatcher.swift
@@ -178,6 +180,9 @@ targets:
     sources:
       - Tests
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLCompletionEngineTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLSnippetTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLSnippetStoreTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLSnippetCompletionTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLStructuralParserTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLExecutionTargetResolverTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/WorkspaceTableActionTests.swift

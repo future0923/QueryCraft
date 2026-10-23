@@ -48,8 +48,11 @@ import QueryCraftMobileTransport
         let service = SchemaStateService(); let (controller, object) = fixture(service: service)
         await controller.load(object)?.value; let draft = controller.draft(for: object), epoch = draft.epoch, snapshot = draft.snapshot
         await service.setReadFailure(true); await controller.load(object)?.value
-        #expect(draft.snapshot == snapshot); #expect(draft.epoch == epoch); #expect(draft.message != nil)
+        #expect(draft.snapshot == snapshot); #expect(draft.epoch == epoch); #expect(draft.message != nil); #expect(draft.isError)
         try stage(draft); #expect(controller.load(object) == nil); #expect(draft.hasChanges); #expect(draft.epoch == epoch)
+        draft.discard(); #expect(!draft.isError)
+        await service.setReadFailure(false); await controller.load(object)?.value
+        #expect(!draft.isError); #expect(draft.message == nil); #expect(draft.snapshot == snapshot)
     }
     @Test func lateCancelledReadCannotReplaceNewObjectOrPriorSnapshot() async throws {
         let service = SchemaStateService(); let (controller, object) = fixture(service: service)
@@ -74,7 +77,7 @@ import QueryCraftMobileTransport
         let service = SchemaStateService(); let (controller, object) = fixture(service: service)
         await controller.load(object)?.value; let draft = controller.draft(for: object); try stage(draft)
         await service.setFailAfterApply(true); controller.safetyLock.disable(); await controller.submit(draft)?.value
-        #expect(draft.requiresReload); #expect(controller.submit(draft) == nil); #expect(await service.applies == 1)
+        #expect(draft.requiresReload); #expect(draft.isError); #expect(controller.submit(draft) == nil); #expect(await service.applies == 1)
         await service.setReadFailure(false); await controller.load(object)?.value
         #expect(!draft.requiresReload); #expect(!draft.hasChanges); #expect(await service.applies == 1)
     }

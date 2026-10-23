@@ -197,9 +197,44 @@ User feedback: iOS home mixes too many unrelated controls.
 3. Complete: owned six-action semantics and denial/FK/no-auto/unknown/lifecycle/App-route checks; final phone/iPad each 324/0/0, native forms and simulator restoration, Mac full build/actual six-driver checks and ARM64 signature passed. Physical phone disconnected, not installed; docs complete, no commit/tag/release.
 
 
-## Mobile schema editing and two presentations — 2026-10-23
+## Mobile schema editing and two presentations - 2026-10-23
 
-1. In progress: trace Mac schema metadata/editor/provider/plan/apply lifecycle and six-driver applicability; share exact portable state/validation/SQL.
-2. Pending: mobile full metadata, common per-object schema draft, field/index native editing and preview/lock/commit, context/pending/background/partial-outcome guards.
-3. Pending: table/list schema presentations sharing selection/drafts, native compact controls and stable loading; field/index support follows actual MySQL descriptor.
-4. Pending: owned real schema operations/failures/state/native tests, phone/iPad regressions/renders, Mac/driver checks, signed builds/physical updates and docs.
+1. Complete: recovered the accidentally archived source snapshot in an attached independent worktree, unarchived original chat; actual Mac/shared metadata, editor state/provider/SQL chain and six-driver applicability reviewed.
+2. Complete: native field/index editing and shared table/list drafts, loading/error feedback, iPad base-surface sidebar and opaque macOS Settings backgrounds verified. Stale SQL completion display invalidation fixed during regression.
+3. Complete: rebuilt ignored dependencies, final phone/iPad each 343/0/0; actual table/list/field/index and light/dark renders inspected. Mac complete build, independent MySQL build/package/TLS metadata/plan check and original/mixed six-driver activation/session factories passed.
+4. Complete: final signed ARM64 and strict deep signature verified; both physical iPhone and iPad installed/launched successfully. Simulators restored to owned live schema fixture, safety lock on, no pending changes. Docs complete. No new feature commit/tag/release or changes to main checkout.
+
+
+## iPad SQL completion visibility - 2026-10-23
+
+1. Complete: traced Mac caret popup and mobile accessory; iPad now has a window-bounded caret overlay avoiding keyboard, with reusable scrolling candidates and unchanged shared matching/insertion guards. Phone keeps its accessory.
+2. Complete: iPad/phone full real-MySQL/native suites each 345/0/0; new geometry invariants and native scroll-to-last/touch/lifecycle pass. Actual live SQL render confirms real fields and types near caret. No desktop input simulation.
+3. Complete for user-selected simulator delivery: signed ARM64/signature passed; attempted device install failed after disconnect, then user explicitly chose simulator instead. iPad simulator retained on actual SQL completion experience, docs updated. No new commit/tag/release.
+
+
+## iPad software keyboard and touch completion - 2026-10-23
+
+1. Complete: enabled actual Simulator software keyboard and inspected the live SQL editor. iPad docked keyboards use a stable 76-point shelf with large, horizontally scrolling candidates; hardware/floating keyboards retain the caret list. User delegated the final placement choice.
+2. Complete: iPad full real-MySQL/native regression 346/0/0 and phone focused native editor regression 8/0/0, no diagnostics. Actual keyboard/shelf screenshot inspected; simulator retained for use. Shared engine and desktop behavior preserved; simulator-only delivery, no commit/tag/release.
+
+## Completion acceptance and opaque keyboard shelf - 2026-10-23
+
+1. Complete: traced actual Mac/shared insertion and trigger model; opt-in shared token separation, exact-text/caret continuation and same-revision dismissal prevent old-token reopening. Functions/placeholders/qualification and native undo preserved.
+2. Complete: opaque light/dark shelf inspected with actual software keyboard. Initial native 13/0/0; final iPad full 351/0/0 and phone focused 13/0/0, no diagnostics. Latest signed ARM64 build/install/launch on paired physical iPad succeeded (PID 1174), strict deep signature passed. Ongoing iPad delivery preference recorded; no commit/tag/release.
+
+
+## Ongoing user delivery preference - 2026-10-23
+
+For each mobile change, complete relevant verification then rebuild, install and launch the latest app on the user's paired iPad (73ACA305-F559-5859-843F-872DEE35CD07). The user explicitly authorizes this each time; do not stop at simulator delivery or ask permission again. If disconnected or installation fails, report the actual blocker. Do not infer physical touch acceptance from process launch.
+
+## SQL snippets on iPhone/iPad - 2026-10-23
+
+1. Complete: actual Mac template/store/ranking/session sources compiled on mobile with conditional native adapters. Native CRUD/toggle/restore, literal template input, touch and Tab/backtab navigation, hints, empty stops, edit/IME/undo/source guards implemented; Mac trigger validation shares the store rule.
+2. Complete for user-selected simulator delivery: focused 39/0/0; full iPad/phone each 380/0/0; Mac complete build and 56 original snippet tests passed. Final DEBUG-only live-render trigger rebuilt with native presentation 2/0/0. Native navigation and manager renders inspected; both live simulator scenes ready with sel candidates and software keyboards.
+3. Previous completion fix installed on iPhone; launch timed out, then device became unavailable. Latest signed snippet app installed on iPad, but automatic launch was denied while locked. User then selected simulator delivery; physical retries and unlock waiting stopped. No physical snippet touch acceptance claimed.
+
+Current delivery override: user said “先用模拟器吧” during snippet work. This increment is simulator delivery; do not continue requesting device unlocks or retrying physical installs/launches. Previous standing iPad update preference does not override this newer instruction.
+
+## User-requested Git commit - 2026-10-23
+
+Release process and root instructions read again; current diff and last-tag driver scope checked. Create `codex/ios-ipad-editor` from recovered detached snapshot and save all authorized source/test/validation changes as one functional commit. Preserve existing version/API/driver identities and snapshot history. Existing final validation is unchanged; no remote push, tag or release requested.

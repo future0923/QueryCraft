@@ -97,6 +97,15 @@ final class SQLSnippetStore {
             .map(SQLSnippetCompletionSource.init(snippet:))
     }
 
+    enum TriggerIssue: Equatable { case required, whitespace, duplicate }
+    func triggerIssue(_ trigger: String, excluding id: UUID? = nil) -> TriggerIssue? {
+        let trimmed = trigger.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return .required }
+        if trimmed.contains(where: { $0.isWhitespace }) { return .whitespace }
+        if snippets.contains(where: { $0.id != id && $0.trigger.caseInsensitiveCompare(trimmed) == .orderedSame }) { return .duplicate }
+        return nil
+    }
+
     func add(_ snippet: SQLSnippet) {
         snippets.append(snippet)
     }

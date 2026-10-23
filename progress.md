@@ -453,3 +453,42 @@ Authorized field/index editing plus table/list presentation. Reading actual Mac 
 
 
 Schema intermediate verification: full phone 343/0/0 (62.103 s); native 340-case predecessor also passed but wrapper failed due a mid-run script edit (now frozen and bash syntax valid). Mac complete build succeeded 385.076 s; signed third-party stripping warnings only. New MySQL driver is rebuilding separately. Final small presentation corrections preserve list row identities/selection over metadata refresh, make SQL preview rows immutable, and explicitly report/close confirmed success after reload. Final native checks and iPad full suite must include these corrections.
+
+
+## Recovery in continuation chat — 2026-10-23
+
+Original worktree was accidentally archived during handoff. Recovered all tracked/untracked source through archive snapshot 3195231 in `/Users/weilai/.codex/worktrees/ios-ipad-continue/QueryCraftPublic`, attached to this chat. Original chat unarchived without restarting its stalled turn. Ignored `.build` outputs were removed by archival, so previous reports are historical evidence only; rebuild final acceptance here. Remaining user requests include iPad sidebar darkness and macOS Settings darkness. Physical iPad connected, iPhone currently disconnected. Main checkout's unrelated SSH changes untouched.
+
+
+Continuation verification: full phone 343/0/0 (176.766 s); initial iPad 342/1/0 (215.650 s) found asynchronous SQL completion display invalidation, fixed by clearing text/caret-mismatched candidates immediately and preserving same-context candidates. Native iPad sidebar canvases and schema column/grid/list images inspected; Mac general/appearance/query/data light/dark windows captured independently via ScreenCaptureKit, no desktop input or activation. Mac full build 582.420 s, signed ARM64 build 149.519 s and strict deep signature passed. Final suites must include the completion fix and modern trait initializer.
+
+
+## Schema editing and appearance complete - 2026-10-23
+
+Final normal-source suites: phone 343/0/0 (82.983 s), iPad 343/0/0 (133.231 s). New MySQL build 494.541 s, isolated package/signature and actual Dev API/registry TLS metadata/generated-plan smoke passed; original and new-MySQL mixed six-driver factories passed. Mac build 582.420 s and eight actual Settings light/dark renders passed. iPad/sidebar and both native table/list/column/index experiences inspected; DEBUG render ordering corrected before capturing true index sheets. Full tests preceded that fixture-only reorder; final simulator build 35.557 s and final signed ARM64 20.203 s passed afterwards.
+
+Both final physical installs succeeded and strict deep signature passed. Final iPhone launch PID 4206, iPad PID 988; no injected environment/profile or uninstall. Physical touch/IME/rotation/database acceptance not claimed. Both simulators retain owned live action_demo schema experience in dark mode, default safety lock and no drafts; temporary test containers removed, only querycraft-ios-schema-experience remains. Detailed initial failures and wrapper-vs-test/render distinction recorded in VALIDATION. Source worktree attached here, original chat unarchived, main SSH work untouched. No feature commit/tag/release.
+
+
+Started iPad completion visibility fix in the recovered worktree. Existing uncommitted schema/appearance changes retained; no branch switch or release action.
+
+
+## iPad SQL completion visibility completed - 2026-10-23
+
+Replaced bottom iPad accessory with native caret-anchored table overlay; vertical scroll, two-line labels/type details, keyboard avoidance, native selection/touch/Return/Tab and lifecycle cleanup. Mac shared parser/catalog/ranking/source guards remain; phone accessory preserved. Actual Mac caret/window behavior traced before implementing iPad presentation.
+
+Final full iPad 345/0/0 (225.858 s), phone 345/0/0 (136.464 s), no diagnostics. Native new tests cover reachable last row, acceptance dispatch, dismissal/focus and window/column/keyboard bounds under portrait/landscape/narrow/no/docked/floating layouts. Real owned MySQL SQL editor render inspected at ios-validation/ipad-completion-caret.jpg; candidates at caret. ARM64 33.787 s and deep strict signature passed. Device disconnected before installation; user explicitly selected simulator delivery, so no device success claimed. Simulator retained on owned live SQL completion scene. No desktop input or user database mutation.
+
+
+User wants an on-screen keyboard and finds below-SQL candidates uncomfortable. Prior live render only exercised simulator hardware keyboard mode. Disabled Simulator hardware-keyboard connection via preferences and reopened Simulator without desktop input simulation, then captured actual software-keyboard scene before further layout decisions.
+
+2026-10-23 SQL snippets complete for user-selected simulator delivery: shared Mac store/template/ranking/session plus native management and touch navigation. Corrected IME mutation replay using separately observed native text. Focused final 39/0/0; full phone/iPad each 380/0/0; Mac complete build and original snippet 56/0/0 passed. Final fixture-only snippet trigger rebuild/native presentation 2/0/0. Native phone/iPad light/dark navigation and manager/template renders inspected; actual live SQL scenes ready with sel candidates and software keyboards. Previous completion fix installed on phone but launch failed over connection; signed snippet build installed on iPad but launch denied while locked. User then selected simulator delivery, so no further physical actions or unlock waiting. No desktop input simulation, user DB changes or commit/tag/release.
+
+
+2026-10-23 touch completion complete: adopted user-delegated keyboard-top shelf for docked iPad software keyboards, caret list for hardware/floating keyboards, and original phone accessory. Final `.build/completion-touch-ipad-full.json` 346/0/0 in 76.273 s; `.build/completion-touch-phone-native.json` focused editor suite 8/0/0 in 53.038 s; no diagnostics. Actual live keyboard/candidate render inspected at `.build/ios-validation/ipad-completion-software-shelf.jpg`. Simulator-only delivery per user request; latest shelf change is not installed on physical devices. No desktop input simulation, user database changes, commit/tag/release.
+
+
+2026-10-23 iPad reconnect/install complete: paired iPad now connected/available. Latest keyboard-top touch shelf rebuilt/signed/installed/launched successfully in 23.069 s, PID 1146, no diagnostics; deep strict signature passed. Report `.build/completion-touch-ipad-wireless-run.json`. No proof launch environment, new source behavior, physical input simulation or iPhone update.
+
+
+2026-10-23 completion acceptance/readability complete: native 13/0/0; final iPad full 351/0/0 (133.311 s) and phone focused 13/0/0 (92.582 s), no diagnostics. Actual opaque shelf software-keyboard renders inspected in light/dark. Signed ARM64 build/install/launch on physical iPad succeeded in 77.086 s (PID 1174), strict deep signature passed; report `.build/completion-chain-ipad-device-run.json`. User's standing preference is to deliver each verified mobile change to this iPad automatically; recorded in task plan. No physical input simulation, user DB changes or commit/tag/release.

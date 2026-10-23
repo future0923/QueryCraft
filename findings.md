@@ -291,3 +291,55 @@ Mac has portable WorkspaceDatabaseSchemaEditorState + editing descriptor + provi
 - Corrected a read-only regression before acceptance: reading view fields must not add a SHOW VIEW privilege requirement. View structure uses real shared column metadata and no table/index mutation/DDL. Added actual SELECT-only view metadata coverage, background-cancel state and actual cancellation between two DDL statements. Partial errors preserve the single original error/count instead of nested wrapping.
 
 - Native follow-up underlying test report passed 340/0/0 (59.464 s), no diagnostics. Its wrapper failed after tests with an unexpected EOF because the fixture script was edited while Bash was still reading it; source now passes bash -n. Treat wrapper as failed, preserve report, freeze fixture script during final runs. Three additional view/cancellation regressions require final 343-case acceptance.
+
+
+## Continuation audit — 2026-10-23
+
+The mobile catalog already uses opaque semantic systemBackground for content/navigation/footer in the recovered source. Verify split sidebar native rendering in dark mode. Mac Settings currently leaves both List sidebar and grouped Form detail backgrounds transparent, allowing the split-view material/window backing to appear brighter. Apply a consistent opaque semantic background while keeping native grouped controls and the existing settings/navigation architecture.
+
+- Recovery removed ignored native SDK slices and prior test reports; rebuilt isolated CMake dependency and started checksum-verified OpenSSL/MariaDB slices for simulator/device. Docker was not running, so started it in background for the existing disposable test fixture. The installed Docker CLI predates `docker desktop start`; no user containers or databases were changed.
+- iPad UIKit split sidebars may resolve systemBackground using elevated appearance. Resolve the sidebar surface with base interface level plus the current SwiftUI color scheme/contrast, including navigation/footer, so it follows light/dark without a brighter elevated backing.
+
+- Continuation phone full acceptance passed 343/0/0. Initial iPad run 342/1/0: `MobileSQLEditorTests.testStaleSuggestionsCannotChangeMovedCaretOrNewTextAndCommandsRemainNative` exposed stale completion candidates remaining visible while replacement parsing/debounce ran. Acceptance was already guarded, but display invalidation waited for async completion. Retire text/caret-mismatched candidates synchronously and assert that immediate invariant; preserve candidates on same-context metadata work. Rerun final native/full suites.
+- iPad native dark catalog render confirms matching black sidebar/detail canvases; native schema field/grid/list renders captured. Mac native cacheDisplay attempt produced an incomplete offscreen image, so it is not visual acceptance; switch to a properly sized on-screen background window capture without desktop input. Mac complete build passed 582.420 s and signed ARM64 149.519 s, strict deep signature verified.
+
+- Final acceptance resolved the sole iPad completion failure; phone/iPad each 343/0/0. Post-test wrapper render shutdown errors were handled by separate boot/install/capture, not hidden as passes. Actual schema index capture initially showed a field editor due DEBUG setup ordering; selected presentation/section before loading and inspected corrected index forms on both devices. Final fixture-only source change rebuilt for simulator and ARM64.
+- Newly packaged MySQL actual registry/TLS smoke confirmed generation expression, hidden columns and prefix/direction/visibility/comment preservation plus generated-column edit SQL. Six original and six mixed-package factories passed. Both physical devices reconnected; latest signed product installed and launched successfully on each. No physical interaction acceptance inferred from launch.
+
+
+## iPad completion visibility report
+
+User reports SQL candidates at the very bottom, clipped and unusable. Current implementation always assigns a horizontal 44-point UIInputView as UITextView.inputAccessoryView, so iPad candidates follow keyboard location instead of caret. Geometry tests did not verify this actual presentation. Keep shared Mac completion engine/catalog/UTF-16 guards; iPad needs its own window-contained caret overlay that avoids keyboard and keeps selection reachable. Phone's existing accessory remains appropriate and must be checked.
+
+- Actual Mac SuggestionController uses a caret anchor and constrains its popup above/below visible screen bounds. New iPad presentation follows that behavior using the actual editor window/safe area and keyboard geometry, without a second completion engine. Popup touch hit testing passes outside events through, vertically reusable rows expose details, selected rows scroll into view, and blur/Escape/deactivation remove the overlay. Phone keeps its native accessory.
+- First native baseline 5/0/0 passed. Cancelled an accidentally duplicated test build before running tests concurrently on the same simulator; not acceptance. Docker was stopped, so the first full wrapper could not start; restarted the owned fixture service. An owned demo setup attempted before MySQL was ready failed; readiness checked before the successful retry. No user databases involved.
+
+- Final iPad completion full run passed 345/0/0, including new native scroll-to-last/touch/lifecycle and portrait/landscape/narrow/floating/docked invariants. Actual SQL alias field candidates render adjacent to the caret with type details. Physical installation was attempted but failed because the previously connected iPad disconnected; user asked to reconnect. ARM64 and signature already pass.
+
+
+## Touch-first iPad keyboard follow-up
+
+Actual software keyboard was absent from the previous live render. Set Simulator ConnectHardwareKeyboard=false and reopened Simulator without synthetic desktop input; the first reopen raced asynchronous quit (-600), subsequent reopen succeeded. Actual keyboard render confirms the floating caret panel overlays the result area. User wants the software keyboard and dislikes below-SQL prompts; offered keyboard-top shelf versus a smaller caret list, proceeding with the stated keyboard-top recommendation while retaining hardware/floating-keyboard caret mode.
+
+The iPad shelf is 76 points high with 64-point two-line touch targets and horizontal scrolling. Docked software-keyboard frames select it; external/floating modes use the existing caret popup. Candidate invalidation preserves shelf height while typing/metadata resolve so keyboard geometry does not bounce. Empty shelf is removed when the keyboard mode changes back, and all existing source/selection/IME guards remain.
+
+
+Touch completion acceptance: user delegated placement. A docked full iPad software keyboard now uses a 76-point accessory shelf with 64-point two-line candidate cards and horizontal scrolling. Retaining the empty shelf while typing prevents keyboard layout jumps during parsing/metadata work; switching to hardware mode retires it and restores the caret overlay. Actual software-keyboard screenshot `ipad-completion-software-shelf.jpg` confirms three real field candidates above the keyboard without covering SQL. Floating-keyboard placement remains covered by injected geometry rather than a physical floating-keyboard session. Native transition tests remove real keyboard notification observers before injected frames, preventing mixed real/synthetic geometry from invalidating the test. Final iPad full 346/0/0 and phone focused 8/0/0, no diagnostics.
+
+
+## Accepted completion repetition and shelf readability (2026-10-23)
+
+Traced actual Mac `WorkspaceSQLCompletionService` and CodeEdit trigger model: original items insert exact text, function cursor offsets/placeholders are explicit, and the shared engine already returns contextual candidates at an empty prefix when explicitly requested. Mobile immediately rescheduled at the inserted word end, recreating the same-prefix candidates, while its display filter rejected empty-prefix next-context results. Keyboard UIInputView and collection had transparent surfaces.
+
+Added an opt-in shared insertion plan for mobile token separation; default insertion remains exact for desktop. It appends one separator at document end or advances across an existing space/tab, without splitting punctuation/identifier suffixes, consuming newlines or moving function/placeholder/database carets. Continuation display is tied to the exact resulting text/caret, and accepted non-advancing tokens are dismissed at the new revision. Manual completion now also respects subsequent Escape dismissal during late work. Full docked shelf and collection use opaque semantic backgrounds with a top separator. First native 13/0/0; final full rerun additionally dispatches the shelf's actual collection selection callback.
+
+Scope evaluation: MySQL/PG/Doris shared matching/ranking/context and Mac insertion entry remain unchanged; optional separator plan is currently selected only by the mobile MySQL editor. Redis/Elasticsearch/Kafka do not use SQL completion; no external driver protocol/model/package or result/table page changes.
+
+
+## Mobile SQL snippets — 2026-10-23
+
+User confirmed Mac SQL snippets (trigger expansion plus editable placeholders) and requested latest completion behavior on iPhone as well as iPad. Previous completion fix installed successfully on iPhone, but launch timed out and retry could not discover the device; final snippet delivery must recheck.
+
+Traced Mac settings/store, `SQLSnippetTemplate`, completion sources/ranking, `WorkspaceSQLCompletionService` and `SQLSnippetSession`. Mobile now compiles the actual store and session with conditional native view adapters; placeholder ownership, range shifts, empty stops, Tab/backtab wrapping, filled hints and exit positions remain one shared implementation. Mac trigger validation now also delegates to a shared store rule without changing whitespace/case/duplicate behavior. Mobile uses the same eleven built-ins and native CRUD/toggle/restore UI with per-device persistence (no cloud sync), and existing SQL header touch controls. Read-only execution policy is unchanged by templates.
+
+First focused run 38 passed / 1 failed: UIKit IME emits repeated selection/text callbacks while parser source is intentionally frozen during composition. Using parser source to derive every session edit replayed the same mutation and ended the snippet. Added a separate last-observed native text for snippet edit extraction, updated before callbacks, leaving parsing/highlighting/completion suppression during marked text intact. Native template-content input also disables smart quotes/dashes and autocorrection to retain literal SQL and placeholder punctuation. First native dark/light navigation and manager/template renders inspected; final acceptance pending.

@@ -1,10 +1,26 @@
 import Foundation
 import Testing
 
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 @MainActor
 struct SQLSnippetStoreTests {
+    @Test
+    func validatesTriggersWithTheSameRulesForAllEditors() throws {
+        let store = SQLSnippetStore(userDefaults: makeUserDefaults())
+        let select = try #require(store.snippets.first { $0.trigger == "sel" })
+        #expect(store.triggerIssue(" \n") == .required)
+        #expect(store.triggerIssue("two words") == .whitespace)
+        #expect(store.triggerIssue(" SEL ") == .duplicate)
+        #expect(store.triggerIssue("SEL", excluding: select.id) == nil)
+        #expect(store.triggerIssue("my_custom") == nil)
+    }
+
     @Test
     func seedsTheDefaultSnippetsWhenNothingIsStored() {
         let store = SQLSnippetStore(userDefaults: makeUserDefaults())

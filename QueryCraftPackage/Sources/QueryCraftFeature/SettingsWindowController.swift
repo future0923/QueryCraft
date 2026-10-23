@@ -60,6 +60,7 @@ public final class SettingsWindowController: NSWindowController,
         window.toolbarStyle = .automatic
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
+        window.backgroundColor = .textBackgroundColor
         window.minSize = NSSize(width: 680, height: 500)
         window.delegate = self
         window.contentViewController = NSHostingController(

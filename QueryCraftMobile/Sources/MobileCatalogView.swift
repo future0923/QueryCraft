@@ -5,7 +5,18 @@ struct MobileCatalogView: View {
     @Bindable var browser: MobileBrowserModel
     let kind: MobileDatabaseObject.Kind
     @FocusState private var searchFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
     private var noun: String { kind == .view ? "视图" : "表" }
+    // Split-view sidebars can have an elevated UIKit appearance. Resolve the
+    // base surface explicitly so it matches the adjacent data canvas.
+    private var canvas: Color {
+        Color(uiColor: UIColor.systemBackground.resolvedColor(with: UITraitCollection {
+            $0.userInterfaceStyle = colorScheme == .dark ? .dark : .light
+            $0.userInterfaceLevel = .base
+            $0.accessibilityContrast = contrast == .increased ? .high : .normal
+        }))
+    }
     var body: some View {
         List(selection: $app.destination) {
             Section {
@@ -38,8 +49,8 @@ struct MobileCatalogView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color(uiColor: .systemBackground))
-        .toolbarBackground(Color(uiColor: .systemBackground), for: .navigationBar)
+        .background(canvas)
+        .toolbarBackground(canvas, for: .navigationBar)
         .toolbarBackgroundVisibility(.visible, for: .navigationBar)
         .accessibilityIdentifier("connectionCatalog")
         .searchable(text: $browser.search, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索" + noun)
@@ -54,7 +65,7 @@ struct MobileCatalogView: View {
                 Text(app.message ?? browser.catalogError ?? catalogStatus)
                     .font(.caption).foregroundStyle(app.message != nil || browser.catalogError != nil ? Color.red : .secondary).lineLimit(2)
                 Spacer(minLength: 0)
-            }.padding(.horizontal, 20).frame(height: 44).background(Color(uiColor: .systemBackground))
+            }.padding(.horizontal, 20).frame(height: 44).background(canvas)
         }
     }
     private var catalogStatus: String {

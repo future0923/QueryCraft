@@ -13,6 +13,9 @@ struct MobileWorkspaceView: View {
     @State private var editorSchema = MobileSQLSchemaCatalog()
     @State private var ranEditorProbe = false
     @State private var findingResults = false
+    @State private var snippets = SQLSnippetStore.shared
+    @State private var snippetContext = MobileSQLSnippetContext()
+    @State private var showingSnippets = false
     var body: some View {
         VStack(spacing: 0) {
             if !findingResults { VStack(alignment: .leading, spacing: 8) {
@@ -46,14 +49,18 @@ struct MobileWorkspaceView: View {
                                 .accessibilityLabel("补全元数据暂不可用：" + message)
                         }
                         Spacer()
+                        MobileSQLSnippetControls(context: snippetContext)
+                        Button { editorFocused = false; showingSnippets = true } label: { Image(systemName: "curlybraces").frame(width: 32, height: 44).contentShape(.rect) }
+                            .accessibilityLabel("代码片段").accessibilityIdentifier("sqlSnippets")
                         if editorFocused {
                             Button { editorFocused = false } label: { Image(systemName: "keyboard.chevron.compact.down") }
                                 .accessibilityLabel("收起键盘")
                         }
                         if sizeClass == .regular { Text("⌘ Return 执行").font(.caption2).foregroundStyle(.tertiary) }
-                    }.padding(.horizontal, 14).padding(.top, 12)
+                    }.frame(height: 44).padding(.horizontal, 14).padding(.top, 12)
                     MobileSQLEditor(text: $model.sql, selection: Binding(get: { model.executionInput.selection }, set: { model.executionInput.selection = $0 }), isFocused: $editorFocused,
-                                    schema: editorSchema, defaultDatabase: model.database, executionInput: model.executionInput) { model.execute() }
+                                    schema: editorSchema, defaultDatabase: model.database, executionInput: model.executionInput,
+                                    snippets: snippets.completionSources, snippetContext: snippetContext) { model.execute() }
                         .frame(height: verticalSizeClass == .compact ? 60 : 130).padding(.horizontal, 8).padding(.bottom, 8)
                         .accessibilityLabel("SQL 编辑器").accessibilityIdentifier("sqlEditor")
                 }.background(Color(uiColor: .systemBackground), in: .rect(cornerRadius: 14))
@@ -80,14 +87,17 @@ struct MobileWorkspaceView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("SQL 查询").navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingSnippets) { MobileSQLSnippetsView(store: snippets) }
         .onChange(of: model.editorConfiguration, initial: true) { _, configuration in editorSchema.configure(configuration) }
         .onChange(of: model.resultID) { _, _ in
             editorSchema.invalidate()
             #if DEBUG
             if !ranEditorProbe, model.result != nil, ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_SQL_EDITOR"] == "1" {
                 ranEditorProbe = true
-                model.sql = "SELECT u.us FROM admin_user u"
-                model.executionInput.selection = .init(location: (model.sql as NSString).range(of: "u.us").upperBound, length: 0)
+                let snippetTrigger = ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_SQL_SNIPPET"]
+                model.sql = snippetTrigger ?? "SELECT u.us FROM admin_user u"
+                model.executionInput.selection = .init(location: snippetTrigger == nil
+                    ? (model.sql as NSString).range(of: "u.us").upperBound : model.sql.utf16.count, length: 0)
                 editorFocused = true
             }
             #endif

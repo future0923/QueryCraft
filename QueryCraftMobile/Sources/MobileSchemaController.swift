@@ -30,7 +30,7 @@ import QueryCraftMobileTransport
         needsVerification = false; requiresReload = false; message = nil; isError = false; epoch = UUID(); revision = UUID()
         selectedID = section == .columns ? state.columns.first { $0.original?.name == selectedName }?.id : state.indexes.first { $0.original?.name == selectedName }?.id
     }
-    func discard() { state.discardChanges(); epoch = UUID(); revision = UUID(); selectedID = nil; message = nil }
+    func discard() { state.discardChanges(); epoch = UUID(); revision = UUID(); selectedID = nil; message = nil; isError = false }
     func updateColumn(_ id: UUID, definition: WorkspaceDatabaseSchemaEditorState.ColumnDefinition, primary: Bool) {
         state.updateColumn(id: id, definition: definition); state.setPrimaryKey(columnID: id, isEnabled: primary); revision = UUID()
     }
@@ -83,7 +83,7 @@ import QueryCraftMobileTransport
         let draft = draft(for: object)
         guard reconcile || !draft.needsVerification else { draft.message = "结果待核对。核对后使用“重新加载结构”结束此次操作。"; return nil }
         guard reconcile || !draft.hasChanges || draft.requiresReload else { draft.message = "先提交或撤销结构改动，再刷新。"; return nil }
-        readTask?.cancel(); let id = UUID(); let context = contextID(); loadID = id; isLoading = true; loadingObjectID = object.id; draft.message = nil
+        readTask?.cancel(); let id = UUID(); let context = contextID(); loadID = id; isLoading = true; loadingObjectID = object.id; draft.message = nil; draft.isError = false
         let task = Task { [weak self, service, configuration] in
             do {
                 let snapshot = try await service.load(object: object, configuration: configuration); try Task.checkCancellation()
@@ -119,7 +119,7 @@ import QueryCraftMobileTransport
                     do {
                         let snapshot = try await service.load(object: draft.object, configuration: configuration)
                         guard isCurrent(draft.object), contextID() == context else { return }; draft.receive(snapshot); draft.message = "结构已更新"
-                    } catch { draft.message = "结构已提交，读取失败。请使用顶部刷新，无需重复提交。\n" + error.localizedDescription }
+                    } catch { draft.isError = true; draft.message = "结构已提交，读取失败。请使用顶部刷新，无需重复提交。\n" + error.localizedDescription }
                 }
             } catch {
                 if case MobileSchemaError.partial = error {

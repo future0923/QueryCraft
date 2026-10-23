@@ -55,10 +55,10 @@ struct QueryCraftMobileApp: App {
                         if ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_TABLE"] == "1", let object = workspace.browser.catalog?.objects.first(where: { $0.name == preferredObject }) ?? workspace.browser.catalog?.objects.first {
                             model.destination = .table(object)
                             if ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_SCHEMA"] == "1" {
-                                workspace.browser.tab = .structure; await workspace.browser.loadTable()?.value
                                 let draft = workspace.schema.draft(for: object)
                                 if ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_SCHEMA_LIST"] == "1" { draft.presentation = .list }
                                 if ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_SCHEMA_INDEX"] == "1" { draft.section = .indexes }
+                                workspace.browser.tab = .structure; await workspace.browser.loadTable()?.value
                                 return
                             }
                             if ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_SERVER_FILTER"] == "1" {

@@ -1,5 +1,11 @@
+#if os(iOS)
+import UIKit
+typealias SQLSnippetTextView = UITextView
+#else
 import AppKit
 import CodeEditTextView
+typealias SQLSnippetTextView = TextView
+#endif
 
 /// A snippet owns one real selection. Other unfinished stops are only hints;
 /// editing within a stop (including deleting it to an empty anchor) preserves navigation.
@@ -16,16 +22,21 @@ final class SQLSnippetSession {
     private var placeholders: [Placeholder] = []
     private(set) var currentIndex = 0
     private var exitLocation = 0
+    #if !os(iOS)
     private var lastEmphases: [Emphasis] = []
     private var lastCurrentEmphases: [Emphasis] = []
     private var appearanceObservation: NSKeyValueObservation?
-    private weak var textView: TextView?
+    #else
+    var didChange: (() -> Void)?
+    var currentEditingRange: SQLSourceRange? { editingIndex.map { placeholders[$0].range } }
+    #endif
+    private weak var textView: SQLSnippetTextView?
 
     var placeholderRanges: [SQLSourceRange] { placeholders.map(\.range) }
     var isActive: Bool { textView != nil && !placeholders.isEmpty }
 
     var highlightedRanges: [SQLSourceRange] {
-        let selection = textView?.selectedRange()
+        let selection = selectedRange
         let editing = editingIndex
         return placeholders.enumerated().compactMap { index, placeholder in
             guard !placeholder.isFilled,
@@ -39,7 +50,7 @@ final class SQLSnippetSession {
 
     /// A caret or partial selection inside a stop gets a border without covering its text.
     private var editingIndex: Int? {
-        guard let selection = textView?.selectedRange(),
+        guard let selection = selectedRange,
               selection.location != NSNotFound
         else { return nil }
         let selected = SQLSourceRange(selection)
@@ -51,12 +62,16 @@ final class SQLSnippetSession {
     }
 
     func start(
-        textView: TextView,
+        textView: SQLSnippetTextView,
         placeholderRanges: [SQLSourceRange],
         exitLocation: Int? = nil
     ) {
         end()
+        #if os(iOS)
+        let textLength = (textView.text as NSString).length
+        #else
         let textLength = (textView.string as NSString).length
+        #endif
         guard !placeholderRanges.isEmpty,
               placeholderRanges.allSatisfy({
                   $0.location >= 0 && $0.length > 0 && $0.upperBound <= textLength
@@ -71,25 +86,33 @@ final class SQLSnippetSession {
             placeholderRanges.last?.upperBound ?? 0,
             exitLocation ?? placeholderRanges.last?.upperBound ?? 0
         ))
+        #if !os(iOS)
         appearanceObservation = textView.observe(\.effectiveAppearance) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.updateEmphasis() }
         }
+        #endif
         selectCurrentPlaceholder()
     }
 
     func end() {
+        #if !os(iOS)
         textView?.emphasisManager?.removeEmphases(for: Self.emphasisGroup)
         textView?.emphasisManager?.removeEmphases(for: Self.currentEmphasisGroup)
         appearanceObservation = nil
+        #endif
         textView = nil
         placeholders = []
         currentIndex = 0
         exitLocation = 0
+        #if !os(iOS)
         lastEmphases = []
         lastCurrentEmphases = []
+        #else
+        didChange?()
+        #endif
     }
 
-    func endIfTextViewChanged(_ textView: TextView) {
+    func endIfTextViewChanged(_ textView: SQLSnippetTextView) {
         guard isActive, self.textView !== textView else { return }
         end()
     }
@@ -101,8 +124,13 @@ final class SQLSnippetSession {
             let view = textView
             let location = exitLocation
             end()
+            #if os(iOS)
+            view?.selectedRange = NSRange(location: location, length: 0)
+            view?.scrollRangeToVisible(NSRange(location: location, length: 0))
+            #else
             view?.selectionManager.setSelectedRange(NSRange(location: location, length: 0))
             view?.scrollSelectionToVisible()
+            #endif
             return true
         }
         currentIndex += 1
@@ -181,12 +209,28 @@ final class SQLSnippetSession {
 
     private func selectCurrentPlaceholder() {
         guard isActive else { return }
+        #if os(iOS)
+        textView?.selectedRange = placeholders[currentIndex].range.nsRange
+        textView?.scrollRangeToVisible(placeholders[currentIndex].range.nsRange)
+        #else
         textView?.selectionManager.setSelectedRange(placeholders[currentIndex].range.nsRange)
         textView?.scrollSelectionToVisible()
+        #endif
         updateEmphasis()
     }
 
+    private var selectedRange: NSRange? {
+        #if os(iOS)
+        textView?.selectedRange
+        #else
+        textView?.selectedRange()
+        #endif
+    }
+
     private func updateEmphasis() {
+        #if os(iOS)
+        didChange?()
+        #else
         guard let textView, let manager = textView.emphasisManager else { return }
         let appearance = textView.effectiveAppearance
         let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -217,5 +261,6 @@ final class SQLSnippetSession {
             manager.replaceEmphases(current, for: Self.currentEmphasisGroup)
             lastCurrentEmphases = current
         }
+        #endif
     }
 }

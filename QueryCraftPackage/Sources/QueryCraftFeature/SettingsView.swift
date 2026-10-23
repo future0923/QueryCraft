@@ -17,6 +17,8 @@ struct SettingsView: View {
                     .tag(tab)
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .background(Color(nsColor: .textBackgroundColor))
             .modifier(SettingsSidebarScrollEdgeEffectModifier())
             .navigationTitle(copy.settings)
             .navigationSplitViewColumnWidth(min: 180, ideal: 190, max: 220)
@@ -27,9 +29,12 @@ struct SettingsView: View {
                 preferences: preferences,
                 mcpModel: mcpModel
             )
+            .background(Color(nsColor: .textBackgroundColor))
         }
         .navigationTitle(copy.settings)
         .navigationSplitViewStyle(.balanced)
+        .toolbarBackground(Color(nsColor: .textBackgroundColor), for: .windowToolbar)
+        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         .environment(\.locale, preferences.interfaceLocale)
         .onAppear {
             updateWindowTitle(copy.settings)

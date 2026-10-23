@@ -1,7 +1,12 @@
 import Foundation
 import Testing
 
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 struct SQLSnippetCompletionTests {
     @Test(arguments: [DatabaseType.mysql, .postgresql, .doris])

@@ -35,6 +35,17 @@ import QueryCraftMobileTransport
             let top = bar.convert(bar.bounds, to: host.view).minY
             XCTAssertLessThanOrEqual(top, host.view.safeAreaInsets.top + 12, "Sidebar toolbar must align to the system top safe area")
         }
+        if !split.isCollapsed, scene.traitCollection.verticalSizeClass == .regular {
+            for (style, name) in [(UIUserInterfaceStyle.dark, "dark"), (.light, "light")] {
+                window.overrideUserInterfaceStyle = style
+                try await Task.sleep(for: .milliseconds(120)); host.view.layoutIfNeeded()
+                let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in
+                    host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+                }
+                let attachment = XCTAttachment(image: image); attachment.name = "workspace-sidebar-" + name
+                attachment.lifetime = .keepAlways; add(attachment)
+            }
+        }
         for tab in [MobileApplicationModel.WorkspaceTab.query, .views, .tables] {
             app.selectTab(tab)
             host.view.setNeedsLayout(); host.view.layoutIfNeeded()
