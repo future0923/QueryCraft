@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import zlib
 
 enum WorkspaceDataExportError: LocalizedError {
@@ -553,10 +556,18 @@ private enum WorkspaceJSONExporter {
 
     private static func uniqueColumnNames(_ names: [String]) -> [String] {
         var counts: [String: Int] = [:]
+        let originalNames = Set(names)
+        var used = Set<String>()
         return names.map { name in
-            let count = (counts[name] ?? 0) + 1
+            var count = (counts[name] ?? 0) + 1
+            var candidate = count == 1 ? name : "\(name)_\(count)"
+            while used.contains(candidate) || (count > 1 && originalNames.contains(candidate)) {
+                count += 1
+                candidate = "\(name)_\(count)"
+            }
             counts[name] = count
-            return count == 1 ? name : "\(name)_\(count)"
+            used.insert(candidate)
+            return candidate
         }
     }
 

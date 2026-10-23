@@ -1,0 +1,204 @@
+name: QueryCraftMobile
+options:
+  developmentLanguage: zh-Hans
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    TARGETED_DEVICE_FAMILY: "1,2"
+    CODE_SIGNING_ALLOWED: NO
+    "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": YES
+    "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
+    GENERATE_INFOPLIST_FILE: YES
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+packages:
+  CodeEditLanguages:
+    path: ../ThirdParty/CodeEditLanguages
+  SwiftTreeSitter:
+    url: https://github.com/ChimeHQ/SwiftTreeSitter.git
+    exactVersion: 0.25.0
+  TreeSitter:
+    url: https://github.com/tree-sitter/tree-sitter
+    exactVersion: 0.25.10
+targets:
+  QueryCraftMobileCore:
+    type: library.static
+    platform: iOS
+    sources:
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/ApplicationLanguage.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/AppCopy.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseObjectKind.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DatabaseType.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseObjectSelection.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseObject.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseColumn.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataCellUpdate.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataCellUpdateCondition.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataCellUpdateAssignment.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRowUpdate.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRowInsert.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRowInsertError.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRowDelete.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRowDeleteError.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataChangeSet.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSQLPreviewToken.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/MySQLWorkspaceDataCellUpdateStatement.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/MySQLWorkspaceDataRowInsertStatement.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/MySQLWorkspaceDataRowDeleteStatement.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/MySQLWorkspaceDataChangeExecutor.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/ConnectionTLSMode.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLStatementKind.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryTransactionState.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSessionError.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataCellEditError.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataColumn.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchBoolClause.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataFilterLogic.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataFilterColumnKind.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataFilterOperator.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataFilterCondition.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataFilter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSQLDataFilterColumn.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceGridSampling.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataCell.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRow.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataBatch.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceNativeBulkTransfer.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceTransferBatchChannel.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.MobileProof.Core
+  QueryCraftMobileTransport:
+    type: library.static
+    platform: iOS
+    sources:
+      - ../QueryCraftDrivers/MariaDBTransport/Sources/QueryCraftMariaDBTransport
+    dependencies:
+      - target: QueryCraftMobileCore
+    settings:
+      base:
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/../.build/ios-native/$(PLATFORM_NAME)-$(CURRENT_ARCH)/lib
+        OTHER_LDFLAGS: $(inherited) -lmariadbclient -lssl -lcrypto -lz -liconv -lresolv
+  QueryCraftMobileProof:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryResultEditing.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSafetyLock.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceTableAction.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseIndex.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseIndexColumn.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseSchemaEditorState.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseSchemaExecutionPlan.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseTableMutation.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseTableOptions.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseSchemaChoices.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseSchemaEditingDescriptor.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseSchemaChoiceCatalog.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DatabaseSchemaEditingProvider.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMySQLDriver/MySQLSchemaEditingProvider.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMySQLDriver/MySQLWorkspaceSchemaStatements.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMySQLDriver/MySQLTableSchemaMetadata.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataCellEditRequest.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataCellEditTarget.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRowDeleteRequest.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRowInsertRequest.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLStructuralParser.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSourceRange.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionTarget.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionTargetRequest.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionTargetResolver.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionTargetError.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionBatchPlan.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionBatchPreflight.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionStatement.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSourceRevision.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSyntaxNodeSnapshot.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLParseSnapshot.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLQueryScopeSnapshot.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLRelationReferenceSnapshot.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSnapshotReuse.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSyntaxHighlight.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLHighlightContext.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLLexicalHighlightRecovery.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLIndexHighlightRecovery.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLCompletionEngine.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLCompletionItem.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLCompletionApplication.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLCompletionWorker.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLCompletionRanker.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLCompletionDialect.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLStaticCatalog.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSnippet.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSchemaCatalogSnapshot.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorColorSettings.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CompletionLabelMatcher.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceGridSearchWorker.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceGridSearchController.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceGridSearchOperator.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceGridSearchMatch.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceGridCopyTypes.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDataExporter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspacePagedDataExportRowSource.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDataExportRequest.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDataExportFormat.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDataExportPreferences.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSQLExportDialect.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMySQLDriver/MySQLSchemaCatalog.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMySQLDriver/MySQLDataFilterPredicate.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataFilterCopy.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceTimestampDisplayFormatter.swift
+    dependencies:
+      - target: QueryCraftMobileCore
+      - target: QueryCraftMobileTransport
+      - package: CodeEditLanguages
+      - package: SwiftTreeSitter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.MobileProof
+        INFOPLIST_KEY_CFBundleDisplayName: QueryCraft
+        INFOPLIST_KEY_LSRequiresIPhoneOS: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: 连接你指定的数据库服务器。
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/../.build/ios-native/$(PLATFORM_NAME)-$(CURRENT_ARCH)/lib
+        OTHER_LDFLAGS: $(inherited) -lmariadbclient -lssl -lcrypto -lz -liconv -lresolv
+  QueryCraftMobileProofTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLCompletionEngineTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLStructuralParserTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLExecutionTargetResolverTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/WorkspaceTableActionTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLExecutionBatchPreflightTests.swift
+      - path: ../QueryCraftPackage/Tests/QueryCraftFeatureTests/Fixtures
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: QueryCraftMobileProof
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.MobileProof.Tests
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB
+schemes:
+  QueryCraftMobileProof:
+    build:
+      targets:
+        QueryCraftMobileProof: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - QueryCraftMobileProofTests

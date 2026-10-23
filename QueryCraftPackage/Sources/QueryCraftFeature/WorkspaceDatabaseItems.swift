@@ -163,23 +163,7 @@ struct WorkspaceDatabaseItems: View {
         in objects: [WorkspaceDatabaseObject],
         matching searchText: String
     ) -> [WorkspaceDatabaseObject] {
-        guard !searchText.isEmpty else { return objects }
-        return objects.enumerated().compactMap { index, object in
-            CompletionLabelMatcher.match(
-                label: object.name,
-                query: searchText
-            ).map { match in
-                (object: object, match: match, index: index)
-            }
-        }.sorted { lhs, rhs in
-            if lhs.match.tier != rhs.match.tier {
-                return lhs.match.tier < rhs.match.tier
-            }
-            if lhs.match.score != rhs.match.score {
-                return lhs.match.score < rhs.match.score
-            }
-            return lhs.index < rhs.index
-        }.map(\.object)
+        CompletionLabelMatcher.matching(objects, query: searchText, label: \.name)
     }
 
     @ViewBuilder

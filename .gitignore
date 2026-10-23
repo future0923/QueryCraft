@@ -78,3 +78,7 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Generated iOS proof project and machine-local build defaults
+QueryCraftMobile/QueryCraftMobile.xcodeproj/
+.xcodebuildmcp/

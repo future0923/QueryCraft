@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 struct WorkspaceDatabaseDataCellEditRequest: Equatable, Identifiable, Sendable {
     let id = UUID()
@@ -8,18 +11,26 @@ struct WorkspaceDatabaseDataCellEditRequest: Equatable, Identifiable, Sendable {
     let initialValue: WorkspaceDatabaseDataCell
     let primaryKey: [WorkspaceDatabaseDataCellUpdateCondition]
 
+    #if !os(iOS)
     static func make(
         selection: WorkspaceDatabaseObjectSelection,
         target: WorkspaceDatabaseDataCellEditTarget,
         details: WorkspaceDatabaseObjectDetails
     ) throws -> Self {
+        try make(selection: selection, target: target, columns: details.columns)
+    }
+    #endif
+
+    static func make(selection: WorkspaceDatabaseObjectSelection,
+                     target: WorkspaceDatabaseDataCellEditTarget,
+                     columns: [WorkspaceDatabaseColumn]) throws -> Self {
         guard selection.kind == .table else {
             throw WorkspaceDatabaseDataCellEditError.tableRequired
         }
         guard
             let dataColumn = target.column,
-            let column = details.columns.first(where: {
-                $0.name == dataColumn.sourceColumnName
+            let column = columns.first(where: {
+                $0.name == (dataColumn.origin?.columnName ?? dataColumn.name)
             })
         else {
             throw WorkspaceDatabaseDataCellEditError.metadataUnavailable
@@ -31,7 +42,7 @@ struct WorkspaceDatabaseDataCellEditRequest: Equatable, Identifiable, Sendable {
             throw WorkspaceDatabaseDataCellEditError.binaryValueUnavailable
         }
 
-        let keyColumns = details.columns.filter {
+        let keyColumns = columns.filter {
             $0.key.uppercased() == "PRI"
         }
         guard !keyColumns.isEmpty else {
@@ -40,7 +51,7 @@ struct WorkspaceDatabaseDataCellEditRequest: Equatable, Identifiable, Sendable {
         let primaryKey = try keyColumns.map { keyColumn in
             guard
                 let dataColumnIndex = target.columns.firstIndex(where: {
-                    $0.sourceColumnName == keyColumn.name
+                    ($0.origin?.columnName ?? $0.name) == keyColumn.name
                 })
             else {
                 throw WorkspaceDatabaseDataCellEditError

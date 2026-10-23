@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 struct WorkspaceSchemaCatalogSnapshot: Equatable, Sendable {
     let revision: UInt64

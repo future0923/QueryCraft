@@ -1,6 +1,11 @@
 import Foundation
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 struct SQLCompletionEngineTests {
     @Test(arguments: ["DESC us", "describe us", "SELECT 1;\nDESC us"])

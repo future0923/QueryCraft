@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 struct SQLExecutionBatchPlan: Equatable, Sendable {
     let target: SQLExecutionTarget
     let statements: [SQLExecutionStatement]

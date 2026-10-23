@@ -122,9 +122,8 @@ final class WorkspaceSQLCompletionService: CodeSuggestionDelegate {
     ) {
         guard let entry = item as? WorkspaceSQLCompletionEntry,
               let cursorPosition,
-              cursorPosition.range.length == 0,
-              cursorPosition.range.location == entry.item.replacementRange.upperBound,
-              !textView.textView.hasMarkedText(),
+              SQLCompletionApplication.canApply(entry.item, text: textView.textView.string,
+                  selection: cursorPosition.range, hasMarkedText: textView.textView.hasMarkedText()),
               languageService.matchesCurrentSource(
                 revision: entry.item.sourceRevision,
                 text: textView.textView.string

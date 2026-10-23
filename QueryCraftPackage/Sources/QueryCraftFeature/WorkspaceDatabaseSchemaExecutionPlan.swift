@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 public struct WorkspaceDatabaseSchemaExecutionPlan: Equatable, Sendable {
     public enum Source: Equatable, Sendable {
         case changes(WorkspaceDatabaseSchemaChangeSet)

@@ -1,5 +1,9 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#else
 import QueryCraftFeature
+#endif
 
 struct MySQLWorkspaceSchemaStatement: Equatable, Sendable {
     let sql: String

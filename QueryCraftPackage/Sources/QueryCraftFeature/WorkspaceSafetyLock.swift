@@ -13,6 +13,7 @@ final class WorkspaceSafetyLock {
         isEnabled = false
     }
 
+    #if !os(iOS)
     func executionPolicy(
         for plan: SQLExecutionBatchPlan
     ) throws -> SQLExecutionPolicy {
@@ -24,4 +25,5 @@ final class WorkspaceSafetyLock {
         }
         return .writesAllowed
     }
+    #endif
 }

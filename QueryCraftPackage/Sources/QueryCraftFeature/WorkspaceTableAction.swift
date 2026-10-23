@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 enum WorkspaceTableAction: String, CaseIterable, Identifiable, Sendable {
     case rename, drop, truncate, clear, resetAutoIncrement, setAutoIncrement

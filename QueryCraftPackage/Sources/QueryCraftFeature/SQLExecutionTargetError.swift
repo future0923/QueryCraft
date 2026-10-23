@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 enum SQLExecutionTargetError: LocalizedError, Equatable {
     case editorUnavailable

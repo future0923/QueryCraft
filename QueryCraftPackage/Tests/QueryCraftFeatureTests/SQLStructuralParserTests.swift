@@ -1,7 +1,12 @@
 import Foundation
 import Testing
 import CodeEditLanguages
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 struct SQLStructuralParserTests {
     @Test(arguments: [
@@ -857,7 +862,12 @@ struct SQLStructuralParserTests {
     ]
 
     private func fixtureSource(named name: String) throws -> String {
-        let fixturesURL = try #require(Bundle.module.url(forResource: "Fixtures", withExtension: nil))
+        #if os(iOS)
+        let bundle = Bundle(for: MobileSQLGrammarResources.self)
+        #else
+        let bundle = Bundle.module
+        #endif
+        let fixturesURL = try #require(bundle.url(forResource: "Fixtures", withExtension: nil))
         let url = fixturesURL
             .appendingPathComponent("SQLGrammar")
             .appendingPathComponent("\(name).sql")
@@ -898,3 +908,7 @@ struct ManagedQueryFixture: Sendable, CustomTestStringConvertible {
 
     var testDescription: String { name }
 }
+
+#if os(iOS)
+private final class MobileSQLGrammarResources: NSObject {}
+#endif

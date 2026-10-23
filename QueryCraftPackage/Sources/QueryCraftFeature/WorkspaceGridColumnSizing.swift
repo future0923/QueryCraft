@@ -24,12 +24,12 @@ enum WorkspaceGridMetrics {
 
 @MainActor
 enum WorkspaceGridColumnSizing {
-    static let minimumColumnWidth: CGFloat = 60
-    static let maximumAutomaticColumnWidth: CGFloat = 480
-    static let sampleRowCount = 30
-    static let wideGridSampleRowCount = 10
-    static let wideGridColumnThreshold = 50
-    static let maximumMeasuredCharacters = 50
+    static let minimumColumnWidth: CGFloat = WorkspaceGridSampling.minimumColumnWidth
+    static let maximumAutomaticColumnWidth: CGFloat = WorkspaceGridSampling.maximumAutomaticColumnWidth
+    static let sampleRowCount = WorkspaceGridSampling.sampleRowCount
+    static let wideGridSampleRowCount = WorkspaceGridSampling.wideGridSampleRowCount
+    static let wideGridColumnThreshold = WorkspaceGridSampling.wideGridColumnThreshold
+    static let maximumMeasuredCharacters = WorkspaceGridSampling.maximumMeasuredCharacters
 
     private static let headerHorizontalPadding: CGFloat = 8
 
@@ -118,28 +118,7 @@ enum WorkspaceGridColumnSizing {
         rowCount: Int,
         columnCount: Int
     ) -> [Int] {
-        guard rowCount > 0 else { return [] }
-        let maximumSamples = columnCount > wideGridColumnThreshold
-            ? wideGridSampleRowCount
-            : sampleRowCount
-        guard rowCount > maximumSamples else {
-            return Array(0..<rowCount)
-        }
-        let leadingSampleCount = maximumSamples / 2
-        let distributedSampleCount = maximumSamples - leadingSampleCount
-        var indexes = Array(0..<leadingSampleCount)
-        guard distributedSampleCount > 1 else {
-            indexes.append(rowCount - 1)
-            return indexes
-        }
-
-        indexes.append(contentsOf: (0..<distributedSampleCount).map {
-            sampleIndex in
-            leadingSampleCount
-                + sampleIndex * (rowCount - 1 - leadingSampleCount)
-                    / (distributedSampleCount - 1)
-        })
-        return indexes
+        WorkspaceGridSampling.sampleIndexes(rowCount: rowCount, columnCount: columnCount)
     }
 
     private static func measuredWidth(

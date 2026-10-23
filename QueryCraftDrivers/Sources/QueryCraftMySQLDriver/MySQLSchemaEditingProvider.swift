@@ -1,4 +1,8 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#else
 import QueryCraftFeature
+#endif
 
 struct MySQLSchemaEditingProvider: DatabaseSchemaEditingProvider {
     static let dialectIdentifier = "mysql"

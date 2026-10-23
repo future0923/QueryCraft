@@ -1,19 +1,28 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 struct WorkspaceDatabaseDataRowInsertRequest: Equatable, Identifiable, Sendable {
     let id = UUID()
     let selection: WorkspaceDatabaseObjectSelection
     let columns: [WorkspaceDatabaseDataRowInsertColumn]
 
+    #if !os(iOS)
     static func make(
         selection: WorkspaceDatabaseObjectSelection,
         details: WorkspaceDatabaseObjectDetails
     ) throws -> Self {
+        try make(selection: selection, columns: details.columns)
+    }
+    #endif
+
+    static func make(selection: WorkspaceDatabaseObjectSelection, columns metadata: [WorkspaceDatabaseColumn]) throws -> Self {
         guard selection.kind == .table else {
             throw WorkspaceDatabaseDataRowInsertError.tableRequired
         }
         let columns: [WorkspaceDatabaseDataRowInsertColumn] =
-            details.columns.compactMap { column in
+            metadata.compactMap { column in
             guard !column.isGenerated else { return nil }
             return WorkspaceDatabaseDataRowInsertColumn(column: column)
         }

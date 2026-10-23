@@ -1,4 +1,8 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 struct WorkspaceDatabaseDataRowDeleteRequest: Equatable, Sendable {
+    #if !os(iOS)
     static func make(
         selection: WorkspaceDatabaseObjectSelection,
         rowIndex: Int,
@@ -28,10 +32,16 @@ struct WorkspaceDatabaseDataRowDeleteRequest: Equatable, Sendable {
         columns: [WorkspaceDatabaseDataColumn],
         details: WorkspaceDatabaseObjectDetails
     ) throws -> WorkspaceDatabaseDataRowDelete {
+        try make(selection: selection, row: row, columns: columns, metadata: details.columns)
+    }
+    #endif
+
+    static func make(selection: WorkspaceDatabaseObjectSelection, row: WorkspaceDatabaseDataRow,
+                     columns: [WorkspaceDatabaseDataColumn], metadata: [WorkspaceDatabaseColumn]) throws -> WorkspaceDatabaseDataRowDelete {
         guard selection.kind == .table else {
             throw WorkspaceDatabaseDataRowDeleteError.tableRequired
         }
-        let primaryKeyColumns = details.columns.filter {
+        let primaryKeyColumns = metadata.filter {
             $0.key.uppercased() == "PRI"
         }
         guard !primaryKeyColumns.isEmpty else {
@@ -61,6 +71,7 @@ struct WorkspaceDatabaseDataRowDeleteRequest: Equatable, Sendable {
         )
     }
 
+    #if !os(iOS)
     static func make(
         selection: WorkspaceDatabaseObjectSelection,
         rowIndex: Int,
@@ -80,4 +91,5 @@ struct WorkspaceDatabaseDataRowDeleteRequest: Equatable, Sendable {
             details: details
         )
     }
+    #endif
 }

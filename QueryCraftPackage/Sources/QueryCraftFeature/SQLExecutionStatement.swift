@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 struct SQLExecutionStatement: Equatable, Sendable, Identifiable {
     let index: Int

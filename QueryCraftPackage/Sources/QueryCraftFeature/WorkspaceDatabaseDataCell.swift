@@ -21,7 +21,7 @@ public enum WorkspaceDatabaseDataCell: Codable, Equatable, Sendable {
         }
     }
 
-    func gridPreviewText(
+    public func gridPreviewText(
         nullDisplayText: String,
         emptyStringDisplayText: String = "",
         maximumCharacterCount: Int
@@ -40,7 +40,7 @@ public enum WorkspaceDatabaseDataCell: Codable, Equatable, Sendable {
         }
     }
 
-    static func boundedPreview(
+    public static func boundedPreview(
         _ value: String,
         maximumCharacterCount: Int,
         truncationIndicator: String = "..."

@@ -139,20 +139,6 @@ struct WorkspaceDatabaseDataFilterConditionRow: View {
         guard let selectedColumn else { return }
         let kind = selectedMappingField?.dataFilterKind
             ?? selectedColumn.dataFilterKind
-        condition.columnKind = kind
-        let operators = WorkspaceDatabaseDataFilterOperator.available(
-            for: kind
-        )
-        if !operators.contains(condition.operation) {
-            condition.operation = operators[0]
-        }
-        if let firstValue = selectedColumn.dataFilterMenuValues(
-            for: kind
-        ).first {
-            condition.value = firstValue
-        } else {
-            condition.value = ""
-        }
-        condition.secondValue = ""
+        WorkspaceSQLDataFilterColumn.selectColumn(&condition, name: selectedColumn.name, type: selectedColumn.type, kind: kind)
     }
 }

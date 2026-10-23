@@ -1,6 +1,11 @@
 import Foundation
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 struct WorkspaceTableActionTests {
     private let selection = WorkspaceDatabaseObjectSelection(databaseName: "app`db", objectName: "order`items", kind: .table)
@@ -78,6 +83,7 @@ struct WorkspaceTableActionTests {
         try .make(action: action, selection: selection, databaseType: .mysql, input: input)
     }
 
+    #if !os(iOS)
     @MainActor @Test func safetyLockAndStaleWorkspaceBlockExecution() async throws {
         let profile = ConnectionProfile(id: UUID(), name: "Test", groupID: nil, host: "127.0.0.1", port: 3306,
             username: "root", defaultDatabase: "app`db", tlsMode: .disabled, storesCredential: false, createdAt: .now)
@@ -122,4 +128,5 @@ struct WorkspaceTableActionTests {
         }
         #expect(model.tableActionRevision == 0)
     }
+    #endif
 }

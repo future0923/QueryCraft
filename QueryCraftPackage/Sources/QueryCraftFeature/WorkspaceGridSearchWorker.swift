@@ -1,59 +1,14 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
-enum WorkspaceGridSearchSource: Sendable {
-    case queryResult(WorkspaceQueryResultPage)
-    case tablePage(WorkspaceDatabaseDataPage)
-    case redisCollection(WorkspaceGridSearchCollectionSource)
-
-    var revision: UUID {
-        switch self {
-        case let .queryResult(page):
-            page.revision
-        case let .tablePage(page):
-            page.revision
-        case let .redisCollection(source):
-            source.revision
-        }
-    }
-
-    var columns: [WorkspaceDatabaseDataColumn] {
-        switch self {
-        case let .queryResult(page):
-            page.columns
-        case let .tablePage(page):
-            page.columns
-        case let .redisCollection(source):
-            source.columns
-        }
-    }
-
-    var rowCount: Int {
-        switch self {
-        case let .queryResult(page):
-            page.rowCount
-        case let .tablePage(page):
-            page.rowCount
-        case let .redisCollection(source):
-            source.rows.count
-        }
-    }
-
-    func row(at index: Int) -> WorkspaceDatabaseDataRow? {
-        return switch self {
-        case let .queryResult(page):
-            page.row(at: index)
-        case let .tablePage(page):
-            page.row(at: index)
-        case let .redisCollection(source):
-            source.rows.indices.contains(index) ? source.rows[index] : nil
-        }
-    }
-}
-
-struct WorkspaceGridSearchCollectionSource: Sendable {
-    let revision: UUID
-    let columns: [WorkspaceDatabaseDataColumn]
-    let rows: [WorkspaceDatabaseDataRow]
+/// Immutable typed snapshots let all platforms use the same matching/state path.
+protocol WorkspaceGridSearchDataSource: Sendable {
+    var revision: UUID { get }
+    var columns: [WorkspaceDatabaseDataColumn] { get }
+    var rowCount: Int { get }
+    func row(at index: Int) -> WorkspaceDatabaseDataRow?
 }
 
 struct WorkspaceGridSearchRequest: Sendable {
@@ -73,7 +28,7 @@ actor WorkspaceGridSearchWorker {
     private static let cancellationCheckInterval = 128
 
     func search(
-        source: WorkspaceGridSearchSource,
+        source: any WorkspaceGridSearchDataSource,
         request: WorkspaceGridSearchRequest
     ) async throws -> WorkspaceGridSearchResult {
         guard !request.query.isEmpty else {

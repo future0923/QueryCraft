@@ -1,11 +1,5 @@
 import Foundation
 
-/// Transfer-only unbuffered source reads. Normal SQL/table result paths are unchanged.
-public protocol WorkspaceNativeRowSourceSession: WorkspaceSession {
-    func streamTransferRows(sql: String, batchSize: Int,
-                            onBatch: @escaping @Sendable (WorkspaceDatabaseDataBatch) async throws -> Void) async throws -> Int
-}
-
 /// One prefetched batch at most. A blocking C-library producer and asynchronous
 /// consumer exchange values; only the dedicated transport queue blocks. Mutable
 /// state and continuation ownership are exclusively protected by `condition`.

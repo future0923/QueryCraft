@@ -1,3 +1,7 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
+
 enum WorkspaceGridSearchOperator: String, CaseIterable, Identifiable, Sendable {
     case contains
     case equals

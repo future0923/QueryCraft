@@ -574,11 +574,11 @@ struct WorkspaceQueryResultView: View {
                 guard let row = page.row(at: rowIndex) else {
                     throw WorkspaceDatabaseDataRowDeleteError.rowUnavailable
                 }
-                let rowDelete = try WorkspaceDatabaseDataRowDeleteRequest.make(
+                let rowDelete = try WorkspaceQueryResultEditing.deleteRequest(
                     selection: selection,
                     row: row,
                     columns: page.columns,
-                    details: details
+                    metadata: details.columns
                 )
                 let replacedUpdates = pendingCellUpdates.filter {
                     $0.resultID == page.store.id
@@ -684,7 +684,7 @@ struct WorkspaceQueryResultView: View {
         do {
             return try WorkspaceLoadedDataCellEditing.inlineContext(
                 selection: selection,
-                target: target,
+                target: WorkspaceQueryResultEditing.editTarget(selection: selection, target: target, metadata: details.columns),
                 details: details,
                 pendingUpdates: pendingCellUpdates.filter {
                     $0.resultID == page.store.id
@@ -710,7 +710,7 @@ struct WorkspaceQueryResultView: View {
         guard let details = detailsBySelection[selection] else { return nil }
         return try? WorkspaceDatabaseDataCellEditRequest.make(
             selection: selection,
-            target: target,
+            target: WorkspaceQueryResultEditing.editTarget(selection: selection, target: target, metadata: details.columns),
             details: details
         )
     }
@@ -735,7 +735,7 @@ struct WorkspaceQueryResultView: View {
         do {
             let request = try WorkspaceDatabaseDataCellEditRequest.make(
                 selection: selection,
-                target: target,
+                target: WorkspaceQueryResultEditing.editTarget(selection: selection, target: target, metadata: details.columns),
                 details: details
             )
             let update = try WorkspaceLoadedDataCellEditing.update(

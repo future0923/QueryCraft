@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#elseif canImport(QueryCraftMobileCore)
+import QueryCraftMobileCore
+#endif
 
 public struct CDatabaseQueryResult: Sendable, Equatable {
     public struct ColumnOrigin: Sendable, Equatable {

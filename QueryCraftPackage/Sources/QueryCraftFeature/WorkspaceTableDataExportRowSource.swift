@@ -1,19 +1,9 @@
 import Foundation
 
-actor WorkspaceTableDataExportRowSource: WorkspaceDataExportRowSource {
-    private static let pageSize = 5_000
-
-    private let sessionFactory: any WorkspaceSessionFactory
-    private let configuration: DatabaseConnectionConfiguration
-    private let selection: WorkspaceDatabaseObjectSelection
-    private let sort: WorkspaceDatabaseDataSort
-    private let filter: WorkspaceDatabaseDataFilter
-    private let requiresCompleteValues: Bool
-    private var session: (any WorkspaceSession)?
-    private var preparedRows: [WorkspaceDatabaseDataRow]?
-    private var columns: [WorkspaceDatabaseDataColumn] = []
-    private var offset = 0
-    private var hasMoreRows = true
+/// Desktop session ownership stays here; batch progression is shared with mobile.
+struct WorkspaceTableDataExportRowSource: WorkspaceDataExportRowSource {
+    private let session: WorkspaceTableDataExportSession
+    private let source: WorkspacePagedDataExportRowSource
 
     init(
         sessionFactory: any WorkspaceSessionFactory,
@@ -23,61 +13,22 @@ actor WorkspaceTableDataExportRowSource: WorkspaceDataExportRowSource {
         filter: WorkspaceDatabaseDataFilter = .empty,
         requiresCompleteValues: Bool = false
     ) {
-        self.sessionFactory = sessionFactory
-        self.configuration = configuration
-        self.selection = selection
-        self.sort = sort
-        self.filter = filter
-        self.requiresCompleteValues = requiresCompleteValues
+        let session = WorkspaceTableDataExportSession(sessionFactory: sessionFactory,
+            configuration: configuration, selection: selection, sort: sort, filter: filter)
+        self.session = session
+        source = WorkspacePagedDataExportRowSource(pageSize: 5_000,
+            loadPage: { offset, limit in try await session.page(offset: offset, limit: limit) },
+            validateRows: { rows, columns in
+                if requiresCompleteValues {
+                    try Self.validateCompleteValues(rows, columns: columns, databaseType: configuration.databaseType)
+                }
+            }, onFinish: { await session.close() })
     }
 
-    func prepareColumns() async throws -> [WorkspaceDatabaseDataColumn] {
-        preparedRows = try await nextBatch()
-        return columns
-    }
-
-    func sqlColumns() async throws -> [WorkspaceDatabaseColumn] {
-        let session = try await connectedSession()
-        return try await session.fetchDetails(for: selection.object, in: selection.databaseName).columns
-    }
-
-    func nextBatch() async throws -> [WorkspaceDatabaseDataRow]? {
-        try Task.checkCancellation()
-        if let preparedRows {
-            self.preparedRows = nil
-            return preparedRows
-        }
-        guard hasMoreRows else { return nil }
-
-        let session = try await connectedSession()
-        let collector = WorkspaceDataExportBatchCollector()
-        let result = try await session.fetchDataPage(
-            for: selection.object,
-            in: selection.databaseName,
-            offset: offset,
-            limit: Self.pageSize,
-            sort: sort,
-            filter: filter
-        ) { batch in
-            await collector.append(batch.rows)
-        }
-        try Task.checkCancellation()
-        if !columns.isEmpty && columns != result.columns {
-            throw WorkspaceDataExportError.changedColumns
-        }
-        columns = result.columns
-        let rows = await collector.rows
-        if requiresCompleteValues {
-            try Self.validateCompleteValues(rows, columns: columns, databaseType: configuration.databaseType)
-        }
-        hasMoreRows = result.hasNextPage
-        offset += rows.count
-        if rows.isEmpty {
-            hasMoreRows = false
-            return nil
-        }
-        return rows
-    }
+    func prepareColumns() async throws -> [WorkspaceDatabaseDataColumn] { try await source.prepareColumns() }
+    func nextBatch() async throws -> [WorkspaceDatabaseDataRow]? { try await source.nextBatch() }
+    func finish() async { await source.finish() }
+    func sqlColumns() async throws -> [WorkspaceDatabaseColumn] { try await session.sqlColumns() }
 
     static func validateCompleteValues(
         _ rows: [WorkspaceDatabaseDataRow],
@@ -101,9 +52,39 @@ actor WorkspaceTableDataExportRowSource: WorkspaceDataExportRowSource {
         }
     }
 
-    func finish() async {
-        hasMoreRows = false
-        preparedRows = nil
+}
+
+private actor WorkspaceTableDataExportSession {
+    private let sessionFactory: any WorkspaceSessionFactory
+    private let configuration: DatabaseConnectionConfiguration
+    private let selection: WorkspaceDatabaseObjectSelection
+    private let sort: WorkspaceDatabaseDataSort
+    private let filter: WorkspaceDatabaseDataFilter
+    private var session: (any WorkspaceSession)?
+
+    init(sessionFactory: any WorkspaceSessionFactory, configuration: DatabaseConnectionConfiguration,
+         selection: WorkspaceDatabaseObjectSelection, sort: WorkspaceDatabaseDataSort,
+         filter: WorkspaceDatabaseDataFilter) {
+        self.sessionFactory = sessionFactory; self.configuration = configuration
+        self.selection = selection; self.sort = sort; self.filter = filter
+    }
+
+    func page(offset: Int, limit: Int) async throws -> WorkspacePagedDataExportRowSource.Page {
+        let session = try await connectedSession()
+        let collector = WorkspaceDataExportBatchCollector()
+        let result = try await session.fetchDataPage(for: selection.object, in: selection.databaseName,
+            offset: offset, limit: limit, sort: sort, filter: filter) { batch in
+                await collector.append(batch.rows)
+            }
+        return await .init(columns: result.columns, rows: collector.rows, hasNextPage: result.hasNextPage)
+    }
+
+    func sqlColumns() async throws -> [WorkspaceDatabaseColumn] {
+        let session = try await connectedSession()
+        return try await session.fetchDetails(for: selection.object, in: selection.databaseName).columns
+    }
+
+    func close() async {
         guard let session else { return }
         self.session = nil
         await session.close()
@@ -133,8 +114,5 @@ actor WorkspaceTableDataExportRowSource: WorkspaceDataExportRowSource {
 
 private actor WorkspaceDataExportBatchCollector {
     private(set) var rows: [WorkspaceDatabaseDataRow] = []
-
-    func append(_ newRows: [WorkspaceDatabaseDataRow]) {
-        rows.append(contentsOf: newRows)
-    }
+    func append(_ newRows: [WorkspaceDatabaseDataRow]) { rows.append(contentsOf: newRows) }
 }

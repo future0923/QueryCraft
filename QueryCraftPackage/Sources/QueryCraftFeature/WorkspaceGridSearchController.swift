@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Observation
 
 @MainActor
@@ -39,7 +42,7 @@ final class WorkspaceGridSearchController {
     private(set) var focusRequest = 0
 
     @ObservationIgnored private let worker = WorkspaceGridSearchWorker()
-    @ObservationIgnored private var source: WorkspaceGridSearchSource?
+    @ObservationIgnored private var source: (any WorkspaceGridSearchDataSource)?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var searchGeneration = 0
     @ObservationIgnored private var selectionHandler:
@@ -65,7 +68,7 @@ final class WorkspaceGridSearchController {
         return "\(currentMatchIndex + 1) / \(matches.count)\(suffix)"
     }
 
-    func update(source: WorkspaceGridSearchSource) {
+    func update(source: any WorkspaceGridSearchDataSource) {
         let sourceChanged = self.source?.revision != source.revision
         self.source = source
         columns = source.columns

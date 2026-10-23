@@ -1,3 +1,7 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
+
 extension WorkspaceDatabaseDataFilterLogic {
     var title: String {
         switch self {

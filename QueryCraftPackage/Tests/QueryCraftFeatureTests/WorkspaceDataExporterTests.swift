@@ -234,6 +234,24 @@ struct WorkspaceDataExporterTests {
         }
     }
 
+    @Test("JSON duplicate aliases cannot collide with existing suffixed names")
+    func exportsCollidingJSONObjectAliases() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let columns = ["n", "n", "n_2"].enumerated().map { WorkspaceGridCopyColumn(name: $0.element, dataIndex: $0.offset) }
+        let sourceRows = [WorkspaceDatabaseDataRow(id: 0, values: [.text("first"), .text("second"), .text("original")])]
+        for layout in [WorkspaceJSONLayout.objects, .lines] {
+            var options = WorkspaceDataExportPreferences().options(for: .json)
+            options.jsonLayout = layout
+            let destination = directory.appending(path: "aliases." + options.fileExtension)
+            let request = makeRequest(rows: .range(0...0), columns: columns, options: options, sourceRows: sourceRows)
+            _ = try await WorkspaceDataExporter().export(request, to: destination)
+            let value = try JSONSerialization.jsonObject(with: Data(contentsOf: destination))
+            let object = try #require(layout == .objects ? (value as? [[String: String]])?.first : value as? [String: String])
+            #expect(object == ["n": "first", "n_3": "second", "n_2": "original"])
+        }
+    }
+
     @Test("JSON preserves column order, duplicate names, and NULL")
     func exportsJSON() async throws {
         let directory = try makeTemporaryDirectory()

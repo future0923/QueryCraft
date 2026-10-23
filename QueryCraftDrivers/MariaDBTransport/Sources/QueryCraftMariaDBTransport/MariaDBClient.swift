@@ -1,6 +1,11 @@
 import CMariaDB
+import Darwin
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#elseif canImport(QueryCraftMobileCore)
+import QueryCraftMobileCore
+#endif
 
 // Keep the source-facing name. The V3 module can coexist with V2 when an older
 // Doris/MySQL bundle loads first; V2 does not export queryWithTransactionState.
@@ -52,6 +57,36 @@ public final class MariaDBConnection: @unchecked Sendable {
 
     public func query(_ sql: String) async throws -> CDatabaseQueryResult {
         try await cancellableQuery(sql, bindings: nil)
+    }
+
+    /// Retains bounded rows/bytes. Truncating discards the connection rather than
+    /// draining an arbitrarily large unbuffered response. Call connect to reuse.
+    public func queryPreview(_ sql: String, maximumRows: Int = 500,
+                             maximumBytes: Int = 4_194_304) async throws -> CDatabaseQueryPreview {
+        let cancellation = MariaDBLoadCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            do {
+                let preview = try await runOnQueue {
+                    guard let handle = self.handle else { throw WorkspaceSessionError.notConnected }
+                    try cancellation.install(Int(mysql_thread_id(handle)))
+                    defer { cancellation.finish() }
+                    return try self.readQuery(sql, handle: handle,
+                        limits: (max(1, min(maximumRows, 10_000)), max(1, min(maximumBytes, 16_777_216))))
+                }
+                try Task.checkCancellation()
+                return preview
+            } catch {
+                if Task.isCancelled { throw CancellationError() }
+                throw error
+            }
+        } onCancel: {
+            cancellation.cancel { id in
+                guard let killer = try? self.openConnection(database: nil) else { return }
+                defer { mysql_close(killer) }
+                _ = try? self.query("KILL QUERY \(id)", handle: killer)
+            }
+        }
     }
 
     /// Capture status on the transport queue together with the completed result.
@@ -363,6 +398,11 @@ public final class MariaDBConnection: @unchecked Sendable {
         _ sql: String,
         handle: UnsafeMutablePointer<MYSQL>
     ) throws -> CDatabaseQueryResult {
+        try readQuery(sql, handle: handle, limits: nil).result
+    }
+
+    private func readQuery(_ sql: String, handle: UnsafeMutablePointer<MYSQL>,
+                           limits: (rows: Int, bytes: Int)?) throws -> CDatabaseQueryPreview {
         let status = sql.withCString { sqlPointer in
             mysql_real_query(handle, sqlPointer, UInt(sql.utf8.count))
         }
@@ -375,12 +415,25 @@ public final class MariaDBConnection: @unchecked Sendable {
             guard fieldCount == 0 else {
                 throw error(from: handle)
             }
-            return CDatabaseQueryResult(
+            return CDatabaseQueryPreview(result: CDatabaseQueryResult(
                 affectedRows: mysql_affected_rows(handle),
                 insertID: mysql_insert_id(handle)
-            )
+            ))
         }
-        defer { mysql_free_result(result) }
+        var truncated = false
+        defer {
+            if truncated {
+                // Use the public socket API; never edit opaque MYSQL/RESULT fields.
+                // Shut down IO first so free_result cannot drain millions of rows.
+                _ = Darwin.shutdown(mysql_get_socket(handle), SHUT_RDWR)
+            }
+            mysql_free_result(result)
+            if truncated {
+                mysql_close(handle)
+                self.handle = nil
+                cachedServerVersion = nil
+            }
+        }
 
         let columnCount = Int(mysql_num_fields(result))
         let fields = mysql_fetch_fields(result)
@@ -417,15 +470,32 @@ public final class MariaDBConnection: @unchecked Sendable {
         }
 
         var rows: [[String?]] = []
+        var cells: [[WorkspaceDatabaseDataCell]] = []
+        var retainedBytes = 0
         rows.reserveCapacity(256)
 
         while let rowPointer = mysql_fetch_row(result) {
             let lengths = mysql_fetch_lengths(result)
+            if let limits {
+                var rowBytes = 0
+                for index in 0..<columnCount {
+                    let length = Int(clamping: lengths?[index] ?? 0)
+                    guard length <= limits.bytes - rowBytes else { truncated = true; break }
+                    rowBytes += length
+                }
+                if truncated || rows.count >= limits.rows || rowBytes > limits.bytes - retainedBytes {
+                    truncated = true
+                    break
+                }
+                retainedBytes += rowBytes
+            }
             var row: [String?] = []
+            var typedRow: [WorkspaceDatabaseDataCell] = []
             row.reserveCapacity(columnCount)
             for index in 0..<columnCount {
                 guard let valuePointer = rowPointer[index] else {
                     row.append(nil)
+                    if limits != nil { typedRow.append(.null) }
                     continue
                 }
                 let length = Int(clamping: lengths?[index] ?? 0)
@@ -433,26 +503,33 @@ public final class MariaDBConnection: @unchecked Sendable {
                     start: valuePointer,
                     count: length
                 )
-                row.append(
-                    String(bytes: buffer, encoding: .utf8)
+                let value = String(bytes: buffer, encoding: .utf8)
                         ?? String(bytes: buffer, encoding: .isoLatin1)
                         ?? ""
-                )
+                row.append(value)
+                if limits != nil {
+                    let isBinary = fields.map { $0[index].charsetnr == 63
+                        && [MYSQL_TYPE_TINY_BLOB, MYSQL_TYPE_MEDIUM_BLOB, MYSQL_TYPE_LONG_BLOB,
+                            MYSQL_TYPE_BLOB, MYSQL_TYPE_STRING, MYSQL_TYPE_VAR_STRING, MYSQL_TYPE_VARCHAR,
+                            MYSQL_TYPE_GEOMETRY, MYSQL_TYPE_BIT].contains($0[index].type) } ?? false
+                    typedRow.append(isBinary ? .binary(byteCount: length, preview: Array(buffer.prefix(128))) : .text(value))
+                }
             }
             rows.append(row)
+            if limits != nil { cells.append(typedRow) }
         }
 
         let fetchError = mysql_errno(handle)
-        guard fetchError == 0 else {
+        guard truncated || fetchError == 0 else {
             throw error(from: handle)
         }
 
-        return CDatabaseQueryResult(
+        return CDatabaseQueryPreview(result: CDatabaseQueryResult(
             columns: columns,
             columnTypes: columnTypes,
             columnOrigins: columnOrigins,
             rows: rows
-        )
+        ), cells: cells, isTruncated: truncated)
     }
 
     private func resolvePlaceholders(

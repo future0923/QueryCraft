@@ -1,5 +1,8 @@
 import CodeEditLanguages
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import SwiftTreeSitter
 
 enum SQLStructuralParserError: Error, Equatable {

@@ -1,4 +1,9 @@
+import Foundation
+#if os(iOS)
+import UIKit
+#else
 import AppKit
+#endif
 
 /// Persist device-independent sRGB, never archived NSColor or appearance-dependent colors.
 enum EditorHexColor {
@@ -11,6 +16,14 @@ enum EditorHexColor {
         return "#" + digits.uppercased()
     }
 
+    #if os(iOS)
+    static func color(_ hex: String) -> UIColor {
+        let value = UInt32(normalized(hex)?.dropFirst() ?? "000000", radix: 16) ?? 0
+        return UIColor(red: CGFloat((value >> 16) & 255) / 255,
+                       green: CGFloat((value >> 8) & 255) / 255,
+                       blue: CGFloat(value & 255) / 255, alpha: 1)
+    }
+    #else
     static func color(_ hex: String) -> NSColor {
         let value = UInt32(normalized(hex)?.dropFirst() ?? "000000", radix: 16) ?? 0
         return NSColor(srgbRed: CGFloat((value >> 16) & 255) / 255,
@@ -24,12 +37,15 @@ enum EditorHexColor {
         return String(format: "#%02X%02X%02X", channel(rgb.redComponent),
                       channel(rgb.greenComponent), channel(rgb.blueComponent))
     }
+    #endif
 }
 
 enum EditorColorMode: String, CaseIterable, Identifiable, Sendable {
     case light, dark
     var id: Self { self }
+    #if !os(iOS)
     var appearanceName: NSAppearance.Name { self == .dark ? .darkAqua : .aqua }
+    #endif
 }
 
 enum EditorColorRole: String, CaseIterable, Identifiable, Sendable {

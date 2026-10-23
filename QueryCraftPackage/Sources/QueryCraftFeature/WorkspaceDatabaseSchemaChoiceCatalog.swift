@@ -1,5 +1,13 @@
 public enum WorkspaceDatabaseSchemaChoiceCatalog {
+    #if os(iOS)
+    struct Option: Equatable, Identifiable, Sendable {
+        let value: String
+        let title: String
+        var id: String { value }
+    }
+    #else
     typealias Option = WorkspaceDatabaseSchemaOptionPicker.Option
+    #endif
 
     public static let columnTypeValues = columnTypes.map(\.value)
 

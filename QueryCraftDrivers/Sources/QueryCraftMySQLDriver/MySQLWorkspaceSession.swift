@@ -3,11 +3,6 @@ import QueryCraftFeature
 import QueryCraftMariaDBTransportV3
 
 actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding, WorkspaceNativeBulkTransferSession, WorkspaceNativeRowSourceSession {
-    private struct FilterPredicate: Sendable {
-        let sql: String
-        let bindings: [WorkspaceDatabaseDataCell]
-    }
-
     private let configuration: MySQLConnectionConfiguration
     private var client: MariaDBClient?
     private var cachedSchemaChoices: WorkspaceDatabaseSchemaChoices?
@@ -62,114 +57,19 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
     }
 
     func fetchSchemaObjectCatalog() async throws -> [WorkspaceSchemaDatabase] {
-        let databaseNames = try await fetchDatabases()
+        let names = try await fetchDatabases()
         try Task.checkCancellation()
-        let result = try await requireClient().query(
-            """
-            SELECT
-                TABLE_SCHEMA AS database_name,
-                TABLE_NAME AS object_name,
-                TABLE_TYPE AS object_type,
-                TABLE_COMMENT AS object_comment
-            FROM information_schema.TABLES
-            ORDER BY TABLE_SCHEMA, TABLE_NAME
-            """
-        )
+        let result = try await requireClient().query(MySQLSchemaCatalog.objectsQuery)
         try Task.checkCancellation()
-
-        var objectsByDatabase: [String: [WorkspaceSchemaObject]] = [:]
-        for row in result.dictionaryRows {
-            guard
-                let databaseName = row["database_name"] ?? nil,
-                let objectName = row["object_name"] ?? nil,
-                let rawObjectType = row["object_type"] ?? nil
-            else { continue }
-
-            let kind: WorkspaceDatabaseObjectKind
-            switch rawObjectType {
-            case "BASE TABLE": kind = .table
-            case "VIEW": kind = .view
-            default: continue
-            }
-            let comment = kind == .view && row["object_comment"] == "VIEW"
-                ? ""
-                : (row["object_comment"] ?? nil) ?? ""
-            objectsByDatabase[databaseName, default: []].append(
-                WorkspaceSchemaObject(
-                    name: objectName,
-                    kind: kind,
-                    columns: [],
-                    comment: comment
-                )
-            )
-        }
-
-        return databaseNames.map { databaseName in
-            WorkspaceSchemaDatabase(
-                name: databaseName,
-                objects: objectsByDatabase[databaseName, default: []]
-            )
-        }
+        return MySQLSchemaCatalog.databases(names, rows: result.dictionaryRows)
     }
 
-    func fetchSchemaColumns(
-        for objects: [WorkspaceSchemaObjectReference]
-    ) async throws -> [WorkspaceSchemaObjectColumns] {
+    func fetchSchemaColumns(for objects: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] {
         let objects = Array(Set(objects))
         guard !objects.isEmpty else { return [] }
-        let objectPredicates = objects.map { reference in
-            "(c.TABLE_SCHEMA = \(hexStringLiteral(reference.databaseName)) "
-                + "AND c.TABLE_NAME = \(hexStringLiteral(reference.objectName)))"
-        }.joined(separator: " OR ")
-        let result = try await requireClient().query(
-            """
-            SELECT
-                c.TABLE_SCHEMA AS database_name,
-                c.TABLE_NAME AS object_name,
-                c.COLUMN_NAME AS column_name,
-                c.COLUMN_TYPE AS column_type,
-                c.ORDINAL_POSITION AS ordinal_position,
-                c.COLUMN_COMMENT AS column_comment
-            FROM information_schema.COLUMNS AS c
-            WHERE \(objectPredicates)
-            ORDER BY
-                c.TABLE_SCHEMA,
-                c.TABLE_NAME,
-                c.ORDINAL_POSITION
-            """
-        )
+        let result = try await requireClient().query(MySQLSchemaCatalog.columnsQuery(objects))
         try Task.checkCancellation()
-
-        var columnsByObject: [WorkspaceSchemaObjectReference: [WorkspaceSchemaColumn]] = [:]
-        for row in result.dictionaryRows {
-            guard
-                let databaseName = row["database_name"] ?? nil,
-                let objectName = row["object_name"] ?? nil,
-                let columnName = row["column_name"] ?? nil,
-                let columnType = row["column_type"] ?? nil,
-                let ordinalValue = row["ordinal_position"] ?? nil,
-                let ordinalPosition = Int(ordinalValue)
-            else { continue }
-            let key = WorkspaceSchemaObjectReference(
-                databaseName: databaseName,
-                objectName: objectName
-            )
-            columnsByObject[key, default: []].append(
-                WorkspaceSchemaColumn(
-                    name: columnName,
-                    type: columnType,
-                    ordinalPosition: ordinalPosition,
-                    comment: (row["column_comment"] ?? nil) ?? ""
-                )
-            )
-        }
-
-        return objects.map { reference in
-            WorkspaceSchemaObjectColumns(
-                reference: reference,
-                columns: columnsByObject[reference, default: []]
-            )
-        }
+        return MySQLSchemaCatalog.columns(objects, rows: result.dictionaryRows)
     }
 
     func fetchObjects(
@@ -231,42 +131,10 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
     ) async throws -> WorkspaceDatabaseObjectDetails {
         let qualifiedName = "\(quoteIdentifier(database)).\(quoteIdentifier(object.name))"
         let columnResult = try await requireClient().query(
-            """
-            SELECT
-                COLUMN_NAME AS column_name,
-                COLUMN_TYPE AS column_type,
-                COLLATION_NAME AS collation_name,
-                IS_NULLABLE AS is_nullable,
-                COLUMN_KEY AS column_key,
-                COLUMN_DEFAULT AS column_default,
-                EXTRA AS extra,
-                COLUMN_COMMENT AS column_comment
-            FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = \(hexStringLiteral(database))
-                AND TABLE_NAME = \(hexStringLiteral(object.name))
-            ORDER BY ORDINAL_POSITION
-            """
+            MySQLTableSchemaMetadata.columnsQuery(database: database, name: object.name)
         )
         try Task.checkCancellation()
-
-        let columns = columnResult.dictionaryRows.compactMap {
-            row -> WorkspaceDatabaseColumn? in
-            guard
-                let name = row["column_name"] ?? nil,
-                let type = row["column_type"] ?? nil
-            else { return nil }
-            return WorkspaceDatabaseColumn(
-                name: name,
-                type: type,
-                collation: row["collation_name"] ?? nil,
-                isNullable: (row["is_nullable"] ?? nil) == "YES",
-                key: (row["column_key"] ?? nil) ?? "",
-                defaultValue: row["column_default"] ?? nil,
-                extra: (row["extra"] ?? nil) ?? "",
-                comment: (row["column_comment"] ?? nil) ?? "",
-                generationExpression: ""
-            )
-        }
+        let columns = MySQLTableSchemaMetadata.columns(columnResult.dictionaryRows)
 
         let createLabel: String
         let createStatement: String
@@ -362,78 +230,7 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
         )
         try Task.checkCancellation()
 
-        var names: [String] = []
-        var columnsByName: [String: [WorkspaceDatabaseIndexColumn]] = [:]
-        var propertiesByName: [
-            String: (
-                isUnique: Bool,
-                type: String,
-                cardinality: Int64?,
-                cardinalityPosition: Int64,
-                isVisible: Bool,
-                comment: String
-            )
-        ] = [:]
-
-        for row in result.dictionaryRows {
-            guard
-                let name = row["Key_name"] ?? nil,
-                let positionText = row["Seq_in_index"] ?? nil,
-                let position = Int64(positionText)
-            else { continue }
-
-            let storedColumnName = row["Column_name"] ?? nil
-            let expression = row["Expression"] ?? nil
-            let columnName = storedColumnName ?? expression ?? ""
-            guard !columnName.isEmpty else { continue }
-
-            if propertiesByName[name] == nil {
-                names.append(name)
-                propertiesByName[name] = (
-                    isUnique: (row["Non_unique"] ?? nil).flatMap(Int64.init) == 0,
-                    type: (row["Index_type"] ?? nil) ?? "",
-                    cardinality: (row["Cardinality"] ?? nil).flatMap(Int64.init),
-                    cardinalityPosition: position,
-                    isVisible: (row["Visible"] ?? nil) != "NO",
-                    comment: (row["Index_comment"] ?? nil) ?? ""
-                )
-            } else if
-                let properties = propertiesByName[name],
-                position >= properties.cardinalityPosition
-            {
-                propertiesByName[name] = (
-                    properties.isUnique,
-                    properties.type,
-                    (row["Cardinality"] ?? nil).flatMap(Int64.init),
-                    position,
-                    properties.isVisible,
-                    properties.comment
-                )
-            }
-            columnsByName[name, default: []].append(
-                WorkspaceDatabaseIndexColumn(
-                    sequence: position,
-                    name: columnName,
-                    prefixLength: (row["Sub_part"] ?? nil).flatMap(Int64.init),
-                    direction: row["Collation"] ?? nil,
-                    isExpression: storedColumnName == nil && expression != nil
-                )
-            )
-        }
-
-        return names.compactMap { name in
-            guard let properties = propertiesByName[name] else { return nil }
-            return WorkspaceDatabaseIndex(
-                name: name,
-                columns: columnsByName[name, default: []]
-                    .sorted { $0.sequence < $1.sequence },
-                isUnique: properties.isUnique,
-                type: properties.type,
-                cardinality: properties.cardinality,
-                isVisible: properties.isVisible,
-                comment: properties.comment
-            )
-        }
+        return MySQLTableSchemaMetadata.indexes(result.dictionaryRows)
     }
 
     func fetchDataPage(
@@ -611,42 +408,9 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
     ) async throws {
         guard !changes.isEmpty else { return }
         let client = try requireClient()
-        _ = try await client.query("START TRANSACTION")
-        do {
-            for delete in changes.deletes {
-                try Task.checkCancellation()
-                let affectedRows = try await deleteDataRow(delete)
-                guard affectedRows == 1 else {
-                    if affectedRows == 0 {
-                        throw WorkspaceDatabaseDataRowDeleteError.rowChanged
-                    }
-                    throw WorkspaceDatabaseDataRowDeleteError
-                        .unexpectedAffectedRows(affectedRows)
-                }
-            }
-            for update in changes.rowUpdates {
-                try Task.checkCancellation()
-                let affectedRows = try await updateDataRow(update)
-                guard affectedRows == 1 else {
-                    if affectedRows == 0 {
-                        throw WorkspaceDatabaseDataCellEditError.rowChanged
-                    }
-                    throw WorkspaceDatabaseDataCellEditError
-                        .unexpectedAffectedRows(affectedRows)
-                }
-            }
-            for insert in changes.inserts {
-                try Task.checkCancellation()
-                let affectedRows = try await insertDataRow(insert)
-                guard affectedRows == 1 else {
-                    throw WorkspaceDatabaseDataRowInsertError
-                        .unexpectedAffectedRows(affectedRows)
-                }
-            }
-            _ = try await client.query("COMMIT")
-        } catch {
-            _ = try? await client.query("ROLLBACK")
-            throw error
+        try await MySQLWorkspaceDataChangeExecutor.apply(changes) { sql, bindings in
+            if bindings.isEmpty { return try await client.query(sql).affectedRows }
+            return try await client.query(sql, bindings: bindings).affectedRows
         }
     }
 
@@ -885,73 +649,8 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
         }
     }
 
-    private func makeFilterPredicate(
-        _ filter: WorkspaceDatabaseDataFilter
-    ) throws -> FilterPredicate {
-        let conditions = filter.enabledConditions
-        guard !conditions.isEmpty else {
-            return FilterPredicate(sql: "", bindings: [])
-        }
-        guard filter.isValid else {
-            throw WorkspaceSessionError.invalidDataFilter
-        }
-
-        var predicates: [String] = []
-        var bindings: [WorkspaceDatabaseDataCell] = []
-        predicates.reserveCapacity(conditions.count)
-
-        for condition in conditions {
-            let column = quoteIdentifier(condition.columnName)
-            let predicate: String
-            switch condition.operation {
-            case .equal:
-                predicate = "\(column) = ?"
-                bindings.append(.text(condition.value))
-            case .notEqual:
-                predicate = "\(column) <> ?"
-                bindings.append(.text(condition.value))
-            case .contains:
-                predicate = "\(column) LIKE ? ESCAPE 0x5c"
-                bindings.append(.text("%\(escapedLike(condition.value))%"))
-            case .startsWith:
-                predicate = "\(column) LIKE ? ESCAPE 0x5c"
-                bindings.append(.text("\(escapedLike(condition.value))%"))
-            case .endsWith:
-                predicate = "\(column) LIKE ? ESCAPE 0x5c"
-                bindings.append(.text("%\(escapedLike(condition.value))"))
-            case .lessThan:
-                predicate = "\(column) < ?"
-                bindings.append(.text(condition.value))
-            case .lessThanOrEqual:
-                predicate = "\(column) <= ?"
-                bindings.append(.text(condition.value))
-            case .greaterThan:
-                predicate = "\(column) > ?"
-                bindings.append(.text(condition.value))
-            case .greaterThanOrEqual:
-                predicate = "\(column) >= ?"
-                bindings.append(.text(condition.value))
-            case .between:
-                predicate = "\(column) BETWEEN ? AND ?"
-                bindings.append(.text(condition.value))
-                bindings.append(.text(condition.secondValue))
-            case .isNull:
-                predicate = "\(column) IS NULL"
-            case .isNotNull:
-                predicate = "\(column) IS NOT NULL"
-            case .term, .terms, .match, .matchPhrase, .wildcard,
-                 .rangeLessThan, .rangeLessThanOrEqual,
-                 .rangeGreaterThan, .rangeGreaterThanOrEqual, .exists:
-                throw WorkspaceSessionError.invalidDataFilter
-            }
-            predicates.append("(\(predicate))")
-        }
-
-        let separator = filter.logic == .matchAll ? " AND " : " OR "
-        return FilterPredicate(
-            sql: " WHERE " + predicates.joined(separator: separator),
-            bindings: bindings
-        )
+    private func makeFilterPredicate(_ filter: WorkspaceDatabaseDataFilter) throws -> MySQLDataFilterPredicate {
+        try MySQLDataFilterPredicate.make(filter)
     }
 
     private func requireClient() throws -> MariaDBClient {
@@ -968,12 +667,7 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
         return "CONVERT(0x\(hex) USING utf8mb4)"
     }
 
-    private func escapedLike(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_")
-    }
+
 }
 
 private extension WorkspaceQueryExecutionResult {

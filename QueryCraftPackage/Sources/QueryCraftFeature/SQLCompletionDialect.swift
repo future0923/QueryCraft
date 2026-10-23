@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 struct SQLCompletionDialect: Sendable {
     let keywords: [String]

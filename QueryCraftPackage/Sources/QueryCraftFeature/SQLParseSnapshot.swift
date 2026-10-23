@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 struct SQLStatement: Equatable, Sendable {
     let kind: SQLStatementKind

@@ -65,3 +65,141 @@ Data transfer progress checkpoint:
 2. Complete: 227 integrated Release regressions and 15 release-scope checks passed; all 12 online API5 driver packages verified against size/hash/bundle metadata.
 3. Complete: final Release build, relocated Release MCP/stdio/HTTP/six-driver/mixed-upgrade checks and Debug isolated lifecycle passed. Added and locally exercised the dual-architecture runtime gate for Actions.
 4. In progress: commit and push all main changes and v0.1.11, monitor architecture/runtime/publish jobs; verify live catalogs/assets/appcast and unchanged components.
+
+
+## iOS / iPad proof — 2026-10-22
+
+Objective: in isolated worktree, compile and exercise an iPad SQL prototype using existing core sources and native MySQL transport. No release, commit, tag, installed Mac app changes, or user database mutations.
+
+1. Complete: inventoried portable source closure, iOS runtime/SDK and isolated MySQL fixture.
+2. Complete: all three native slices built and checksummed; shared-source core/transport targets compile for iOS; desktop nominal types remain in Feature.
+3. Complete: connection/query/results prototype with retained refresh content, fixed footer, explicit error/empty states and stale request isolation.
+4. Complete: iPad/iPhone each pass 14 tests; actual iPad results and iPhone connection rendering inspected; unsigned device and Mac builds pass; six-driver old/new compatibility and fresh MySQL/Doris packaging verified. Scope/limits documented in QueryCraftMobile/VALIDATION.md.
+
+
+## MySQL mobile first usable version — 2026-10-22
+
+User scope: finish MySQL first, in the existing worktree. Other drivers are deferred; Kafka excluded. Preserve the installed Mac app, published Driver API and unrelated main-checkout changes. No commit/tag/release requested.
+
+1. Complete: design bounded query transport, connection/credential persistence, browser state and pagination using existing MySQL metadata/protocol behavior.
+2. Complete: implement native connection management, database/table browser, schema/details and paged data with stale-response protection.
+3. Complete: integrate SQL workspace, bounded results, cell inspection, query history and stable shared refresh/navigation.
+4. Complete: final 32 tests per iPad/iPhone, isolated real MySQL, native viewport/selection/width checks, unsigned device build, Mac build, six old-driver compatibility and fresh MySQL/Doris packaging/mixed loading/TLS query.
+5. Complete for the first read-only MySQL scope: README, validation and Mac parity matrix updated; final native UI screenshots inspected; all owned fixture containers/volumes removed. Full desktop editing/disk-cached streaming/editor features and real-device interaction remain explicitly unported/unverified.
+
+MySQL Mac parity requirement (user steering): preserve desktop data-loading/UI optimizations; reuse grid sampling and bounded cell preview source, native visible-cell reuse, stable refresh/error containers, request generations, column widths/scroll/selection. Full desktop disk-spooled SQL results/editor/export remain explicitly tracked as unported, never claimed complete.
+
+UI feedback accepted: reference TablePro mobile information architecture, then revise rough prototype with native grouped structure, readable grid metrics and OS26 glass controls. Final screenshots must be inspected before delivery.
+
+## Mobile connection home cleanup — 2026-10-22
+
+User feedback: iOS home mixes too many unrelated controls.
+1. Complete: separate the saved connection home from the database workspace; one add action, simple endpoint rows and native first-connection empty state.
+2. Complete: place database selection, native object search, SQL and object navigation inside the connection. Keep the public refresh/cancel dispatch and cached data/draft when returning home.
+3. Complete: 35 tests each on iPad/iPhone; clean home, empty home and catalog/detail rendering inspected; device build passed.
+4. Complete: native TabView for Tables / Query / Views replaces combined catalog/SQL rows. Final iPhone/iPad each passed 37 tests (0 failed/skipped), actual system Glass tab/catalog/query/table screenshots inspected, unsigned ARM64 device compile passed; docs updated and owned MySQL fixtures removed. Desktop and external drivers are unchanged in this follow-up.
+
+## Mobile data presentation and table search follow-up — 2026-10-22
+
+1. Complete: default native grid, top options menu, title-menu Data/Structure switch, compact status/pagination footer, no extra floating Glass bar. Compact table detail hides main tabs; regular iPad keeps small top tabs and split navigation. Phone portrait and landscape declarations added and actual right-landscape rendering inspected.
+2. Complete: desktop and mobile call one shared CompletionLabelMatcher.matching implementation for matching and stable ranking. Full bounded catalog is cached for local fuzzy search; no SQL collation mismatch or 200-item window. Primary checkout and worktree AGENTS.md record the user's desktop-parity requirement.
+3. Complete: final iPhone/iPad each passed 43 tests; isolated MySQL includes 78 columns/120 rows. Native compact portrait/landscape/schema and iPad split rendering inspected. Final signed device build/install/launch succeeded without clearing saved connections. Mac full build, actual compiled object-list search regression and all six existing driver bundle/session factories passed.
+4. Complete: README/parity/validation and work logs updated, all owned fixture containers/volumes removed. Desktop search sorting is a semantics-preserving shared extraction; external drivers/API unchanged. Mac Xcode scheme lacks test action, so its failed attempt is recorded accurately and the compiled-framework regression is the actual pass. No commit/tag/release.
+
+## Mobile fullscreen grid and strict axis scrolling — 2026-10-22
+
+1. Complete: native full-screen presentation for table and SQL results reuses the same grid renderer/data, hides surrounding UI, auto-hides its exit control, supports Escape/accessibility escape, and restores viewport/widths/selection with ownership fencing.
+2. Complete: enforce one dominant axis through pan and deceleration, preserve it across same-object refresh, reset for cancel/new gesture/context/explicit restoration. Header-only resizing no longer intercepts data-cell swipes. Mac wheel behavior and driver protocols unchanged.
+3. Complete: final iPhone/iPad each 49 passed/0 failed/0 skipped; full table/query and phone landscape screenshots inspected, iPad settled screenshot confirms auto-hidden exit. Signed device build log succeeded and strict signature verification passed; combined build-and-run reported failure because launch was blocked by device lock. Separate device install succeeded. Auto-launch remains unverified until unlock. Documentation updated; owned fixtures/volumes removed. No commit/tag/release.
+
+## Fullscreen safe area and residual keyboard fix — 2026-10-22
+
+1. Complete: respect hardware safe areas in fullscreen; keep background edge-to-edge and table/header outside notch in portrait and landscape.
+2. Complete: clear catalog/results/editor input focus at navigation/fullscreen entry, suppress residual keyboard in this fullscreen window through rotation, retain working dismiss controls outside fullscreen.
+3. Complete: final iPhone/iPad each 51/0/0; native hosting/responder regressions and phone portrait/landscape/iPad table/query renders inspected. Signed build/install/launch succeeded (PID 1112); actual physical third-party IME/rotation acceptance remains manual. Docs updated, fixtures/volumes removed, whitespace/script syntax passed. No commit/tag/release.
+
+## Shared grid find parity — 2026-10-22
+
+1. Complete: adapt the real Mac grid-search source boundary so iOS/iPadOS reuse its worker, controller, operators and match model unchanged in behavior; evaluate all desktop driver callers.
+2. Complete: replace mobile row-hiding contains search with cell navigation, column/match/case controls and next/previous actions; preserve row identity, viewport/fullscreen, stable loading and raw typed cells.
+3. Complete: final phone/iPad each 60 passed, 0 failed/skipped; shared matching/state, UIKit selection/resize, query editor restore and MySQL regressions passed. Table/query find and fullscreen renders inspected. Mac full build, actual compiled adapters and disk row 50,002 lookup, six driver loading and isolated MySQL TLS passed. Signed device build/install/launch succeeded (PID 1194); simulator experience uses the retained live fixture. Limits recorded; no commit/tag/release.
+
+## Shared timestamp display parity — 2026-10-22
+
+1. Complete: trace Mac timestamp formatting, metadata and raw-value boundaries; compile the same formatter for mobile, with per-column native format controls and fullscreen state.
+2. Complete: cover automatic/explicit formats, metadata aliases/expressions, precision, refresh/object isolation, native menu/accessibility and real MySQL table/query paths. Compact landscape SQL now preserves result space.
+3. Complete: final iPhone/iPad each 67/0/0; table/query/fullscreen renders inspected, Mac full build and actual native formatter/raw copy/export/lifecycle checks passed, all six driver factories loaded and owned MySQL TLS passed. Signed device build/install/launch succeeded (PID 1227); both simulators restored to epoch_values on the retained experience fixture. Applicability/limits recorded; no commit/tag/release.
+
+## iPad sidebar and compact navigation — 2026-10-22
+
+1. Complete: regular-width root NavigationSplitView aligns sidebar to the native top safe area. Per user follow-up, removed the entire regular-width TabView and moved Tables/Query/Views into the existing sidebar title menu; one native detail navigation container retains all toolbars.
+2. Complete: native hierarchy/top-alignment/tab-switch identity/draft regression; final phone/iPad suites each 68/0/0, rendered sidebar/table/query/views and compact phone navigation inspected. Only mobile presentation changed; no Mac/driver rebuild required.
+3. Complete: device signed build/install/launch succeeded (PID 1257), both simulator experience scenes restored on the retained fixture. Docs updated; no commit/tag/release.
+
+## Shared MySQL server filtering - 2026-10-22
+
+1. Complete: shared actual MySQL predicate/default-column helpers and filter models; desktop bound SQL behavior retained, mobile uses safe literal rendering through the same construction.
+2. Complete: native filter sheet with fixed left labels/right values, committed/requested state, WHERE before sort/paging, failure/retry/cancel isolation and Mac page-context viewport behavior.
+3. Complete: final iPhone/iPad each 80/0/0 with real MySQL; filter/editor renders inspected. Mac full build, independent MySQL build/package/signature, actual Dev registry six-driver loading and new MySQL live checks passed. Latest device launch succeeded; simulators restored to retained live fixture. No commit/tag/release.
+
+## Shared loaded-data export - 2026-10-22
+
+1. Complete: traced Mac defaults/request/writer and isolated unchanged Foundation copy types; shared XLSX/CSV/JSON/SQL writer and options, with JSON alias collision correction and six-driver applicability review.
+2. Complete: immutable loaded-page/query snapshots, compact native export Form/Files save, cancellation/generation fencing, independent temporary directories, raw values and honest binary/loaded-data scope.
+3. Complete: each phone/iPad 89/0/0 including real MySQL and native save-picker lifetime; forms inspected. Mac full build, actual four-format writer/dialects, independent XLSX ZIP/XML and six-driver loading passed. Final simulator/device builds/signature passed; physical installation blocked by disconnected device, documented. Simulators restored to retained live fixture. Whole-table/selection/task center/persistent export preferences deferred; no commit/tag/release.
+
+## Shared SQL editor - 2026-10-22
+
+1. Complete: same Mac structural parser, grammar/query resources, context/ranker, source ranges, default palette and portable insertion guards. Actual MySQL catalog/column query conversion shared; six-driver applicability evaluated.
+2. Complete: native highlighted/IME-safe/undo-safe input, contextual recyclable keyboard candidates, Return/Tab/Ctrl-Space/arrows/Escape and Cmd-Return, lazy real metadata with cache eviction/coalescing and stale fences. Long drafts color visible composed-character ranges; query loading/results and single read-only execution remain intact.
+3. Complete: final phone/iPad each 206/0/0, native plain/candidate renders inspected. Mac full build, actual three-dialect/highlight/resource/guard and six-driver factories passed; MySQL independently rebuilt/packaged/signed and actual Dev registry/session metadata/TLS regression passed in isolation. ARM64 signature passed; physical phone disconnected, new build not installed. Both simulators restored to retained live SQL experience. Custom preferences/snippets/multicursor/formatting/full desktop execution remain documented limits; no commit/tag/release.
+
+## Shared whole-table export - 2026-10-22
+
+1. Complete: traced Mac provider/session/writer, shared bounded paged source with desktop session/defaults retained; mobile captures committed object/filter/sort/configuration.
+2. Complete: native scope picker and URL Files saving, empty tables/views, progress/cancel/retry/raw values; real multi-page/filter/sort/navigation/empty/oversized/failure/schema and native Files lifetime checks.
+3. Complete: final phone/iPad each 213/0/0 and native renders; Mac full build and actual compiled three-dialect source/direct target/four formats/six-driver/MySQL TLS regression passed. Signed ARM64 verified; physical phone disconnected, not installed. Docs updated, both simulator live table experiences restored; owned transient fixtures removed. No commit/tag/release.
+
+## Shared MySQL data editing - 2026-10-22
+
+1. Complete: traced actual Mac edit/delete/insert requests, preview, safety lock and transaction SQL; shared column preparation and MySQL transaction runner, desktop overloads preserved and six drivers evaluated.
+2. Complete: native cell/insert forms, pending preview/edit/undo/submit, raw PK overlay across pages/navigation, default lock and rollback/uncertain-result/context guards. Native Done keyboard issue fixed and tested; SQL execution remains read-only.
+3. Complete: final iPhone/iPad each 224/0/0; real owned writes/rollback/cancel/lifecycle and native Return/grid checks passed. Mac main and independent MySQL build/package/signature/actual six-driver registry/new-MySQL mutation regression passed. Signed ARM64 verified, phone disconnected so not installed. Docs complete; both simulators use retained owned writable example with safety lock on, transient test fixtures removed. No commit/tag/release.
+
+## SQL query result editing — 2026-10-22
+
+1. Complete: same physical-origin resolver and query preparation compile on Mac/mobile; Mac query inline/inspector/delete guards reject expression-as-PK and conflicting keys, ordinary table requests preserved.
+2. Complete: captured result/configuration, fenced async base metadata, common staging/native preview/lock/commit/local patches and pending navigation guards. Defaults/unknown COMMIT require explicit requery; reliable single-relation mobile scope documented.
+3. Complete: full iPhone/iPad each 239/0/0, final focused native/state checks, Mac full build/actual query harness/six registry factories, ARM64 signing. Physical phone disconnected, not installed. Docs updated and owned simulator experience retained; no commit/tag/release.
+
+## Fullscreen and record editing — 2026-10-22
+
+1. Complete: actual Mac coordinator/inspector traced; shared UI source/immutable captures/generation fencing across ordinary/fullscreen/record surfaces, existing common requests/transaction model retained.
+2. Complete: fullscreen tap edit/readonly fallback, live pending and transient preview, actual responder/controller-aware keyboard guard, keyboard-stable viewport and restore; record all-field edit/delete/preview, retained scroll anchors/grid state, default large native detail.
+3. Complete: full phone/iPad each 248/0/0 plus focused source/native/large-detail/true scroll-view recreation checks; actual table/query fullscreen/record/edit/preview renders inspected, ARM64 signing verified. Phone disconnected, not installed. Docs and retained owned simulator experiences updated; transient fixtures cleaned, no desktop input/commit/release.
+
+## Mobile connection and foreground reliability — 2026-10-22
+
+1. Complete: trace actual Mac refresh/session reconnection and mobile per-request connections; add explicit read retry feedback, background cancellation, retained in-memory data/drafts, and no automatic request replay.
+2. Complete: ensure rollback bypasses foreground authorization, give cancellation cleanup a bounded OS background lease, and fence ambiguous COMMIT acknowledgement against repeat writes. Cover controlled late responses and owned real MySQL interruption/faults.
+3. Complete: final phone/iPad each 262/0/0 with owned real-transaction faults and native geometry/Files regressions; signed ARM64 and strict deep signature passed. Physical phone disconnected, not installed. Simulators restored, docs updated, transient fixtures cleaned. No persistent workspace recovery, SQL tabs, commits or releases.
+
+## SQL selection/current-statement execution — 2026-10-22
+
+1. Complete: trace Mac command/language service/target resolver/preflight; compile those exact sources and regression tests on mobile, leaving desktop behavior intact.
+2. Complete: retain actual UIKit selection/IME across navigation, resolve captured revisions before execution, keep result/history/editing metadata bound to actual SQL, and refresh the displayed result independently of draft/caret changes. Single read query per run remains explicit; selected batches must never silently run a subset.
+3. Complete: phone/iPad each 302/0/0, original shared/native/real MySQL current/selection/refresh/source checks; Mac full build, actual target/preflight and six-driver loading, signed ARM64 passed. Both simulator examples inspected, docs complete. Physical phone disconnected, not installed; no commit/tag/release.
+
+## Six MySQL table operations — 2026-10-23
+
+1. Complete: trace actual Mac actions/sheet/guard/driver execution; share six-action statement/copy/capabilities and portable tests without changing desktop behavior.
+2. Complete: native catalog/context and existing result-menu entry, SQL preview, exact-name confirmation, safety lock, actual auto-increment inspection, pending/context guards, acknowledged vs uncertain outcomes, refreshed navigation/data/query metadata and background cancellation.
+3. Complete: owned six-action semantics and denial/FK/no-auto/unknown/lifecycle/App-route checks; final phone/iPad each 324/0/0, native forms and simulator restoration, Mac full build/actual six-driver checks and ARM64 signature passed. Physical phone disconnected, not installed; docs complete, no commit/tag/release.
+
+
+## Mobile schema editing and two presentations — 2026-10-23
+
+1. In progress: trace Mac schema metadata/editor/provider/plan/apply lifecycle and six-driver applicability; share exact portable state/validation/SQL.
+2. Pending: mobile full metadata, common per-object schema draft, field/index native editing and preview/lock/commit, context/pending/background/partial-outcome guards.
+3. Pending: table/list schema presentations sharing selection/drafts, native compact controls and stable loading; field/index support follows actual MySQL descriptor.
+4. Pending: owned real schema operations/failures/state/native tests, phone/iPad regressions/renders, Mac/driver checks, signed builds/physical updates and docs.

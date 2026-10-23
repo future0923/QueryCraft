@@ -8,6 +8,20 @@ struct CompletionLabelMatch: Equatable, Sendable {
 enum CompletionLabelMatcher {
     private static let fuzzySeparators: Set<Character> = ["_", ".", "-", " "]
 
+    /// Shared catalog filtering and ranking, including stable order for equal matches.
+    static func matching<Item>(_ items: [Item], query: String, label: KeyPath<Item, String>) -> [Item] {
+        guard !query.isEmpty else { return items }
+        return items.enumerated().compactMap { index, item in
+            match(label: item[keyPath: label], query: query).map {
+                (item: item, match: $0, index: index)
+            }
+        }.sorted {
+            if $0.match.tier != $1.match.tier { return $0.match.tier < $1.match.tier }
+            if $0.match.score != $1.match.score { return $0.match.score < $1.match.score }
+            return $0.index < $1.index
+        }.map(\.item)
+    }
+
     static func match(
         label: String,
         query: String,

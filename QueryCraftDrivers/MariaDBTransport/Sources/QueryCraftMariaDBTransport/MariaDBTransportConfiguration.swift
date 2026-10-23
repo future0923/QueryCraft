@@ -1,4 +1,8 @@
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#elseif canImport(QueryCraftMobileCore)
+import QueryCraftMobileCore
+#endif
 
 public struct MariaDBTransportConfiguration: Equatable, Sendable {
     public let host: String

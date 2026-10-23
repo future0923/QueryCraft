@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
 public struct WorkspaceDatabaseSchemaEditorState: Equatable, Sendable {
@@ -756,6 +759,11 @@ public struct WorkspaceDatabaseSchemaEditorState: Equatable, Sendable {
         return items.prefix(splitIndex).reversed().first(where: {
             !$0[keyPath: isDeleted]
         })?.id
+    }
+
+    mutating func restoreDeletion(id: UUID) {
+        if let index = columns.firstIndex(where: { $0.id == id }) { columns[index].isDeleted = false }
+        if let index = indexes.firstIndex(where: { $0.id == id }) { indexes[index].isDeleted = false }
     }
 
     mutating func discardChanges() {

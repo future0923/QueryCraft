@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 struct WorkspaceDatabaseDataCellEditTarget: Equatable, Sendable {
     let rowIndex: Int
     let dataColumnIndex: Int

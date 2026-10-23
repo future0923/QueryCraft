@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 enum WorkspaceTimestampDisplayMode: Int, CaseIterable {
     case automatic, raw, seconds, milliseconds
@@ -106,7 +109,7 @@ final class WorkspaceTimestampDisplayFormatter {
                 type.hasPrefix($0)
             }
         guard numericOrDate else { return false }
-        return [column.name, column.sourceColumnName].contains { name in
+        return [column.name, column.origin?.columnName ?? column.name].contains { name in
             let lower = name.lowercased()
             return ["timestamp", "@timestamp", "time", "created", "updated", "modified"].contains(lower)
                 || ["_at", "_time", "_timestamp", ".timestamp", ".time"].contains { lower.hasSuffix($0) }

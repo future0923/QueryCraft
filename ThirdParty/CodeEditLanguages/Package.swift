@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "CodeEditLanguages",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v13), .iOS("18.0")],
     products: [
         .library(
             name: "CodeEditLanguages",
@@ -42,7 +42,8 @@ let package = Package(
                 "TreeSitterJSON",
             ],
             resources: [
-                .copy("Resources")
+                .copy("Resources/tree-sitter-sql"),
+                .copy("Resources/tree-sitter-json")
             ]
         ),
     ]
