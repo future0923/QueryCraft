@@ -4,7 +4,7 @@ import QueryCraftMobileTransport
 @testable import QueryCraftMobileProof
 
 @MainActor final class MobileBrowserTests: XCTestCase {
-    private let config = MariaDBTransportConfiguration(host: "unused", port: 3306, username: "unused", password: nil, database: "db", tlsMode: .disabled)
+    private let config = MobileSQLConfiguration(host: "unused", port: 3306, username: "unused", password: nil, database: "db", tlsMode: .disabled)
     private let first = MobileDatabaseObject(database: "db", name: "first", kind: .table, comment: "")
     private let second = MobileDatabaseObject(database: "db", name: "second", kind: .table, comment: "")
 
@@ -88,18 +88,18 @@ import QueryCraftMobileTransport
     }
 }
 
-private actor ControlledBrowser: MobileMySQLServicing {
+private actor ControlledBrowser: MobileSQLServicing {
     struct Request { let object: MobileDatabaseObject; let offset: Int; let size: Int; let continuation: CheckedContinuation<MobileTableSnapshot, any Error> }
     var requests: [Request] = []
     var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
-    func databases(configuration: MariaDBTransportConfiguration) async throws -> [String] { ["db", "other"] }
-    func objects(configuration: MariaDBTransportConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
+    func databases(configuration: MobileSQLConfiguration) async throws -> [String] { ["db", "other"] }
+    func objects(configuration: MobileSQLConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
         .init(objects: ["first", "second"].map { .init(database: database, name: $0, kind: .table, comment: "") }, hasMore: false)
     }
-    func columns(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
+    func columns(configuration: MobileSQLConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
         [.init(name: "id", type: "int", isNullable: false, key: "PRI", defaultValue: nil, extra: "", comment: "编号")]
     }
-    func page(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot {
+    func page(configuration: MobileSQLConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot {
         try await withCheckedThrowingContinuation {
             requests.append(.init(object: object, offset: offset, size: size, continuation: $0))
             let ready = waiters.filter { $0.0 <= requests.count }; waiters.removeAll { $0.0 <= requests.count }

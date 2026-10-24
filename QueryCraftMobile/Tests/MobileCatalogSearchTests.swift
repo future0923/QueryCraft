@@ -29,7 +29,7 @@ final class MobileCatalogSearchTests: XCTestCase {
     func testCatalogBeyondTwoHundredIsAvailableBeforeFuzzyFiltering() async throws {
         let names = (0..<220).map { "catalog_\($0)" } + ["admin_user"]
         let service = MobileMySQLService(executor: CatalogExecutor(names: names))
-        let config = MariaDBTransportConfiguration(host: "unused", port: 3306, username: "unused", password: nil, database: "db", tlsMode: .disabled)
+        let config = MobileSQLConfiguration(host: "unused", port: 3306, username: "unused", password: nil, database: "db", tlsMode: .disabled)
         let full = try await service.objects(configuration: config, database: "db", search: "", kind: .table)
         XCTAssertEqual(full.objects.count, 221)
         XCTAssertFalse(full.hasMore)
@@ -40,7 +40,7 @@ final class MobileCatalogSearchTests: XCTestCase {
 
 private struct CatalogExecutor: MobileQueryExecuting {
     let names: [String]
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         .init(columns: ["TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT"], rows: names.map { [$0, "BASE TABLE", ""] })
     }
 }

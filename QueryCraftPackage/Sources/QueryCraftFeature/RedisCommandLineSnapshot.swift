@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 struct RedisCommandLineSnapshot {
     let source: String
     let tokenization: RedisCommandTokenization

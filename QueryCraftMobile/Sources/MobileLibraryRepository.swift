@@ -6,6 +6,7 @@ struct MobileQueryHistoryItem: Codable, Equatable, Identifiable {
     let database: String
     let sql: String
     let date: Date
+    var schemaName: String? = nil
 }
 
 struct MobileLibraryState: Codable {

@@ -7,6 +7,7 @@ final class MobileApplicationModel {
     private(set) var workspaceTab: WorkspaceTab = .tables
     private(set) var library = MobileLibraryState()
     private(set) var workspace: MobileDatabaseWorkspace?
+    private(set) var resourceWorkspace: MobileResourceModel?
     private(set) var isWorkspacePresented = false
     private(set) var libraryLoaded = false
     private(set) var isBackgrounded = false
@@ -31,12 +32,12 @@ final class MobileApplicationModel {
     @ObservationIgnored private var reconcilingTableAction = false
     @ObservationIgnored private let repository: any MobileLibraryPersisting
     @ObservationIgnored private let passwords: any MobilePasswordStoring
-    @ObservationIgnored private let service: any MobileMySQLServicing
+    @ObservationIgnored private let service: any MobileSQLServicing
     @ObservationIgnored private var sessionPasswords: [UUID: String] = [:]
 
     init(repository: any MobileLibraryPersisting = MobileLibraryRepository(),
          passwords: any MobilePasswordStoring = MobileKeychainStore(),
-         service: any MobileMySQLServicing = MobileMySQLService()) {
+         service: any MobileSQLServicing = MobileMySQLService()) {
         self.repository = repository
         self.passwords = passwords
         self.service = service
@@ -65,8 +66,12 @@ final class MobileApplicationModel {
            active.profile != profile || active.query.password != draft.password {
             throw MobileDataMutationError.pendingChanges
         }
+        if let active = resourceWorkspace, active.hasPendingChanges,
+           active.profile.id == profile.id {
+            throw MobileDataMutationError.pendingChanges
+        }
         let oldPassword = try passwords.password(for: profile.id)
-        try passwords.setPassword(profile.remembersPassword ? draft.password : nil, for: profile.id)
+        try passwords.setPassword(profile.remembersPassword && profile.authentication != .none ? draft.password : nil, for: profile.id)
         var state = library
         if let index = state.profiles.firstIndex(where: { $0.id == profile.id }) { state.profiles[index] = profile }
         else { state.profiles.append(profile) }
@@ -89,10 +94,31 @@ final class MobileApplicationModel {
                active.profile != profile || active.query.password != (password ?? "") {
                 throw MobileDataMutationError.pendingChanges
             }
+            if let active = resourceWorkspace, active.hasPendingChanges,
+               active.profile != profile || active.password != password {
+                throw MobileDataMutationError.pendingChanges
+            }
             if profile.requiresPassword, password == nil {
                 passwordPrompt = profile
                 return
             }
+            if !profile.driver.isSQL {
+                if let active = resourceWorkspace, active.profile == profile, active.password == password {
+                    isWorkspacePresented = true; passwordPrompt = nil; message = nil
+                    if active.scopes == nil { active.load() }
+                    else if active.catalog == nil || active.catalogError != nil { active.loadCatalog() }
+                    return
+                }
+                workspace?.cancelAll(); workspace = nil; destination = nil
+                resourceWorkspace?.cancel()
+                let model = MobileResourceModel(profile: profile, password: password)
+                model.setBackgrounded(isBackgrounded)
+                resourceWorkspace = model; isWorkspacePresented = true
+                if let password { sessionPasswords[profile.id] = password }
+                passwordPrompt = nil; message = nil; model.load()
+                return
+            }
+            resourceWorkspace?.cancel(); resourceWorkspace = nil
             if let active = workspace, active.profile == profile, active.query.password == (password ?? "") {
                 workspaceTab = .tables
                 active.browser.selectKind(.table)
@@ -117,8 +143,8 @@ final class MobileApplicationModel {
                 guard let self, self.isWorkspacePresented, self.workspace?.profile.id == profile.id else { return }
                 self.workspaceTab = .tables; self.destination = .table(object)
             }
-            workspace?.query.didExecute = { [weak self] sql, database in
-                self?.recordQuery(sql: sql, database: database, profileID: profile.id)
+            workspace?.query.didExecute = { [weak self] sql, database, schema in
+                self?.recordQuery(sql: sql, database: database, profileID: profile.id, schemaName: schema)
             }
             workspace?.tableDidChange = { [weak self] object, statement in
                 guard let self, self.isWorkspacePresented, let workspace = self.workspace,
@@ -147,7 +173,7 @@ final class MobileApplicationModel {
     }
 
     func showLibrary() {
-        workspace?.cancelAll()
+        workspace?.cancelAll(); resourceWorkspace?.cancel()
         destination = nil
         isWorkspacePresented = false
     }
@@ -155,10 +181,13 @@ final class MobileApplicationModel {
     func setBackgrounded(_ backgrounded: Bool) {
         guard isBackgrounded != backgrounded else { return }
         isBackgrounded = backgrounded
-        workspace?.setBackgrounded(backgrounded)
+        workspace?.setBackgrounded(backgrounded); resourceWorkspace?.setBackgrounded(backgrounded)
     }
 
     func delete(_ profile: MobileConnectionProfile) throws {
+        if resourceWorkspace?.profile.id == profile.id, resourceWorkspace?.hasPendingChanges == true {
+            throw MobileDataMutationError.pendingChanges
+        }
         if workspace?.profile.id == profile.id, workspace?.hasPendingChanges == true {
             throw MobileDataMutationError.pendingChanges
         }
@@ -173,14 +202,15 @@ final class MobileApplicationModel {
         if workspace?.profile.id == profile.id {
             workspace?.cancelAll(); workspace = nil; destination = nil; isWorkspacePresented = false
         }
+        if resourceWorkspace?.profile.id == profile.id { resourceWorkspace?.cancel(); resourceWorkspace = nil; isWorkspacePresented = false }
         pendingDeletion = nil
     }
 
-    func recordQuery(sql: String, database: String, profileID: UUID) {
+    func recordQuery(sql: String, database: String, profileID: UUID, schemaName: String? = nil) {
         guard libraryLoaded, sql.utf8.count <= 16_384 else { return }
         var state = library
-        state.history.removeAll { $0.profileID == profileID && $0.database == database && $0.sql == sql }
-        state.history.insert(.init(id: UUID(), profileID: profileID, database: database, sql: sql, date: Date()), at: 0)
+        state.history.removeAll { $0.profileID == profileID && $0.database == database && $0.schemaName == schemaName && $0.sql == sql }
+        state.history.insert(.init(id: UUID(), profileID: profileID, database: database, sql: sql, date: Date(), schemaName: schemaName), at: 0)
         state.history = Array(state.history.prefix(50))
         do { try repository.write(state); library = state }
         catch { message = "查询成功，但历史记录保存失败：\(error.localizedDescription)" }
@@ -189,6 +219,11 @@ final class MobileApplicationModel {
     func restore(_ history: MobileQueryHistoryItem) {
         guard let workspace, workspace.profile.id == history.profileID else { return }
         workspace.query.cancel()
+        if workspace.profile.driver == .postgresql {
+            workspace.browser.selectDatabase(history.database)
+            workspace.browser.selectSchema(history.schemaName)
+            workspace.query.schemaName = history.schemaName
+        }
         workspace.query.database = history.database
         workspace.query.sql = history.sql
         isWorkspacePresented = true
@@ -196,6 +231,7 @@ final class MobileApplicationModel {
     }
 
     func refresh() {
+        if isWorkspacePresented, let resourceWorkspace { resourceWorkspace.refresh(); return }
         guard isWorkspacePresented, let workspace else { reloadLibrary(); return }
         guard !workspace.tableActions.isSubmitting, !workspace.schema.isSubmitting else { return }
         if workspace.tableActions.unverified != nil { workspace.browser.loadObjects() }
@@ -209,6 +245,7 @@ final class MobileApplicationModel {
     }
 
     var isLoading: Bool {
+        if isWorkspacePresented, let resourceWorkspace { return resourceWorkspace.isLoading }
         guard isWorkspacePresented, let workspace else { return false }
         switch destination {
         case .query: return workspace.query.isLoading

@@ -65,7 +65,7 @@ import QueryCraftMobileTransport
 }
 private actor NativeTargetExecutor: MobileQueryExecuting {
     private(set) var statements: [String] = []
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         statements.append(sql); return .init(columns: ["n"], rows: [["1"]])
     }
 }

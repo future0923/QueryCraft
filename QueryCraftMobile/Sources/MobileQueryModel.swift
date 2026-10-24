@@ -5,6 +5,8 @@ import QueryCraftMobileTransport
 
 @MainActor @Observable
 final class MobileQueryModel {
+    var driver: MobileDriver = .mysql
+    var schemaName: String? { didSet { if !restoringConfiguration, oldValue != schemaName { if protectPendingChanges() { restoreConfiguration { schemaName = oldValue } } else { configurationChanged() } } } }
     var host = "127.0.0.1" { didSet { if !restoringConfiguration, oldValue != host { if protectPendingChanges() { restoreConfiguration { host = oldValue } } else { configurationChanged() } } } }
     var port = "3306" { didSet { if !restoringConfiguration, oldValue != port { if protectPendingChanges() { restoreConfiguration { port = oldValue } } else { configurationChanged() } } } }
     var username = "root" { didSet { if !restoringConfiguration, oldValue != username { if protectPendingChanges() { restoreConfiguration { username = oldValue } } else { configurationChanged() } } } }
@@ -50,6 +52,7 @@ final class MobileQueryModel {
             snapshot.isQueryCache = true
             snapshot.hasBinaryColumns = displayed.hasBinaryValues
         }
+        snapshot.sqlDialect = exportDialect
         return snapshot
     }
     @discardableResult func pageCache(_ direction: Int) -> Task<Void, Never>? {
@@ -109,7 +112,7 @@ final class MobileQueryModel {
         }
     }
     private(set) var statementResults: [MobileQueryResultState] = []
-    @ObservationIgnored var didExecute: ((String, String) -> Void)?
+    @ObservationIgnored var didExecute: ((String, String, String?) -> Void)?
     @ObservationIgnored var didExecuteWrite: (() -> Void)?
     @ObservationIgnored private var activeBatch: [MobileQueryResultState] = []
     @ObservationIgnored private var activeStatementIndex: Int?
@@ -128,7 +131,7 @@ final class MobileQueryModel {
         get { displayed.result }
         set { displayed.result = newValue }
     }
-    private(set) var preview: CDatabaseQueryPreview? {
+    private(set) var preview: MobileSQLPreview? {
         get { displayed.preview }
         set { displayed.preview = newValue }
     }
@@ -179,7 +182,7 @@ final class MobileQueryModel {
         set { displayed.editingMessage = newValue }
     }
     private(set) var isLoadingEditing = false
-    private(set) var lastExecutedConfiguration: MariaDBTransportConfiguration? {
+    private(set) var lastExecutedConfiguration: MobileSQLConfiguration? {
         get { displayed.lastExecutedConfiguration }
         set { displayed.lastExecutedConfiguration = newValue }
     }
@@ -196,16 +199,21 @@ final class MobileQueryModel {
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private let executionPlanner: any MobileSQLExecutionPlanning
     @ObservationIgnored private let executor: any MobileQueryExecuting
-    @ObservationIgnored private let metadataService: any MobileMySQLServicing
+    @ObservationIgnored private let metadataService: any MobileSQLServicing
     @ObservationIgnored private let mutationService: any MobileDataMutating
 
-    init(executor: any MobileQueryExecuting = MobileMariaDBExecutor(), metadataService: any MobileMySQLServicing = MobileMySQLService(),
+    init(executor: any MobileQueryExecuting = MobileMariaDBExecutor(), metadataService: any MobileSQLServicing = MobileMySQLService(),
          executionPlanner: any MobileSQLExecutionPlanning = MobileSQLExecutionPlanner(),
-         mutationService: any MobileDataMutating = MobileDataMutationService(), safetyLock: WorkspaceSafetyLock = WorkspaceSafetyLock()) {
+         mutationService: any MobileDataMutating = MobileDataMutationService(), safetyLock: WorkspaceSafetyLock = WorkspaceSafetyLock(),
+         session: MobileSQLSession? = nil) {
         self.executor = executor; self.executionPlanner = executionPlanner
-        self.sqlSession = executor is MobileMariaDBExecutor ? MobileSQLSession() : nil
+        self.sqlSession = session ?? (executor is MobileMariaDBExecutor || executor is MobilePostgreSQLExecutor ? MobileSQLSession() : nil)
         self.metadataService = metadataService; self.mutationService = mutationService; self.safetyLock = safetyLock
     }
+
+    var exportDialect: WorkspaceSQLExportDialect = .mysql
+    var supportsTransactions: Bool { sqlSession != nil }
+    var metadataProvider: any MobileSQLMetadataProviding { (metadataService as? any MobileSQLMetadataProviding) ?? MobileMySQLService() }
 
     private var hasPendingRowChanges: Bool { allResults.contains { $0.editing.map { $0.hasChanges || $0.isSubmitting } ?? false } }
     var hasPendingChanges: Bool { hasPendingRowChanges || sqlWriteInFlight || transactionState == .inTransaction || writeOutcomeUncertain }
@@ -215,7 +223,8 @@ final class MobileQueryModel {
     }
     var columnDetails: [String] {
         guard let preview else { return [] }
-        return preview.result.workspaceColumns.map { column in
+        if let details = preview.columnDetails { return details }
+        return preview.workspaceColumns.map { column in
             let metadata = editingPage?.columns.first { $0.name == column.origin?.columnName }
             return [metadata?.type ?? column.type ?? "", metadata?.comment ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
         }
@@ -239,10 +248,10 @@ final class MobileQueryModel {
             && !sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var editorConfiguration: MariaDBTransportConfiguration? {
+    var editorConfiguration: MobileSQLConfiguration? {
         guard let port = Int(port), (1...65535).contains(port), !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return .init(host: host.trimmingCharacters(in: .whitespacesAndNewlines), port: port, username: username,
-                     password: password, database: database.isEmpty ? nil : database, tlsMode: tlsMode)
+                     password: password, database: database.isEmpty ? nil : database, tlsMode: tlsMode, driver: driver, schemaName: schemaName)
     }
 
     @discardableResult func execute() -> Task<Void, Never>? { startExecution(capturedSQL: nil) }
@@ -386,14 +395,14 @@ final class MobileQueryModel {
         return request
     }
 
-    private func authorizeSQL(_ kind: SQLStatementKind, id: UUID, configuration: MariaDBTransportConfiguration) throws {
+    private func authorizeSQL(_ kind: SQLStatementKind, id: UUID, configuration: MobileSQLConfiguration) throws {
         guard requestID == id, editorConfiguration == configuration, !isBackgrounded, !Task.isCancelled,
               allowsSQLExecution(), !hasPendingRowChanges else { throw CancellationError() }
         if kind.requiresWriteAccess && safetyLock.isEnabled { throw MobileSQLSessionError.locked }
     }
 
     private func acceptStream(_ event: MobileSQLSessionEvent, records: [MobileQueryResultState], id: UUID,
-                              configuration: MariaDBTransportConfiguration, database: String,
+                              configuration: MobileSQLConfiguration, database: String,
                               start: ContinuousClock.Instant, refresh: Bool) async throws {
         guard requestID == id else { throw CancellationError() }
         switch event {
@@ -427,9 +436,9 @@ final class MobileQueryModel {
             record.elapsed = start.duration(to: .now); record.resultRevision = UUID(); record.resultID = UUID()
             record.phase = .completed; record.errorMessage = nil; record.requiresResultReload = false
             record.editing = nil; record.editingPage = nil
-            record.status = summary.columns.isEmpty ? "完成 · 影响 \(summary.affectedRows) 行 · 插入 ID \(summary.insertID)" : "完成 · \(summary.rowCount) 行 · \(summary.columns.count) 列（磁盘缓存）"
+            record.status = summary.columns.isEmpty ? "完成 · 影响 \(summary.affectedRows) 行" + (configuration.driver == .mysql ? " · 插入 ID \(summary.insertID)" : "") : "完成 · \(summary.rowCount) 行 · \(summary.columns.count) 列（磁盘缓存）"
             transactionState = state; status = record.status
-            if let sql = record.lastExecutedSQL { didExecute?(sql, database) }
+            if let sql = record.lastExecutedSQL { didExecute?(sql, database, configuration.schemaName) }
             if record.statement?.kind == .read, summary.rowCount <= 500, state != .inTransaction, !Task.isCancelled {
                 await prepareEditing(preview: page, configuration: configuration, sql: record.lastExecutedSQL ?? "", requestID: id, record: record)
             } else { record.editingMessage = "缓存结果保持只读；请在表数据页修改。事务内请通过 SQL 提交或回滚。" }
@@ -446,7 +455,7 @@ final class MobileQueryModel {
     }
 
     private func acceptBatch(_ event: MobileQueryBatchEvent, records: [MobileQueryResultState], requestID: UUID,
-                             configuration: MariaDBTransportConfiguration, database: String, start: ContinuousClock.Instant,
+                             configuration: MobileSQLConfiguration, database: String, start: ContinuousClock.Instant,
                              refresh: Bool) async throws {
         try Task.checkCancellation()
         guard self.requestID == requestID else { throw CancellationError() }
@@ -475,7 +484,7 @@ final class MobileQueryModel {
             let duration = start.duration(to: .now).components
             record.status += String(format: " · %.2f s", Double(duration.seconds) + Double(duration.attoseconds) / 1e18)
             if preview.isTruncated { record.status += " · 已截断（500 行 / 4 MiB 上限）" }
-            if let sql = record.lastExecutedSQL { didExecute?(sql, database) }
+            if let sql = record.lastExecutedSQL { didExecute?(sql, database, configuration.schemaName) }
             // Preserve the single-result lifecycle: rows finish loading before
             // optional editing metadata, which has its own loading state.
             if records.count == 1 { isLoading = false }
@@ -566,9 +575,10 @@ final class MobileQueryModel {
         status = "连接已变更 · 执行 SQL 以加载"
     }
 
-    private func prepareEditing(preview: CDatabaseQueryPreview, configuration: MariaDBTransportConfiguration,
+    private func prepareEditing(preview: MobileSQLPreview, configuration: MobileSQLConfiguration,
                                 sql: String, requestID: UUID, record: MobileQueryResultState) async {
-        guard let selection = WorkspaceQueryResultEditing.selection(for: preview.result.workspaceColumns, currentDatabase: configuration.database) else {
+        guard allowsDataMutation() else { record.editingMessage = "当前驱动仅支持只读浏览。"; return }
+        guard let selection = WorkspaceQueryResultEditing.selection(for: preview.workspaceColumns, currentDatabase: configuration.database) else {
             record.editingMessage = "只读结果：无法确定唯一基础表。"; return
         }
         isLoadingEditing = true

@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 indirect enum RedisRawReplyValue: Sendable {
     case status(String)

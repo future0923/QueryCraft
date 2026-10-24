@@ -58,7 +58,7 @@ final class RedisKeyEditorState {
         guard let details else { return false }
         return switch details.reference.type {
         case .string:
-            isStringFullyLoaded && stringTotalByteCount <= 100 * 1_024 * 1_024
+            isStringFullyLoaded && stringTotalByteCount <= RedisStringEditingLimit.maximumBytes
         case .hash, .set, .sortedSet:
             true
         case .list:

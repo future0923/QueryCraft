@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 struct ElasticsearchConnectionConfiguration: Equatable, Sendable {
     let host: String
@@ -7,6 +11,10 @@ struct ElasticsearchConnectionConfiguration: Equatable, Sendable {
     let authentication: DatabaseConnectionAuthentication
     let tlsMode: ConnectionTLSMode
 
+    init(host: String, port: Int, authentication: DatabaseConnectionAuthentication, tlsMode: ConnectionTLSMode) {
+        self.host = host; self.port = port; self.authentication = authentication; self.tlsMode = tlsMode
+    }
+#if canImport(QueryCraftFeature)
     init(_ configuration: DatabaseConnectionConfiguration) throws {
         guard configuration.databaseType == .elasticsearch,
               configuration.databaseProduct == .elasticsearch
@@ -21,6 +29,8 @@ struct ElasticsearchConnectionConfiguration: Equatable, Sendable {
         authentication = configuration.authentication
         tlsMode = configuration.tlsMode
     }
+
+#endif
 
     var baseURL: URL? {
         var components = URLComponents()

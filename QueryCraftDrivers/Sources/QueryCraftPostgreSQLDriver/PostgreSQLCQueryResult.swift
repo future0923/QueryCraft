@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 struct PostgreSQLCQueryResult: Sendable, Equatable {
     struct ColumnOrigin: Sendable, Equatable {
@@ -71,4 +75,21 @@ extension PostgreSQLCQueryResult {
             )
         }
     }
+}
+
+/// A bounded read uses libpq single-row mode, keeping the desktop result ABI intact.
+struct PostgreSQLQueryPreview: Sendable {
+    let result: PostgreSQLCQueryResult
+    let isTruncated: Bool
+}
+
+struct PostgreSQLQueryStreamResult: Sendable {
+    let columns: [WorkspaceDatabaseDataColumn]
+    let rowCount: Int
+    let affectedRows: Int
+    let transactionState: WorkspaceQueryTransactionState
+}
+enum PostgreSQLQueryStreamError: LocalizedError {
+    case rowTooLarge
+    var errorDescription: String? { "单行结果超过 8 MiB，读取已停止；请减少大字段或缩小查询范围。" }
 }

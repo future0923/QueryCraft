@@ -36,7 +36,7 @@ import QueryCraftMobileTransport
     private(set) var unverified: MobileTableActionDraft?
     var blocksWrites: Bool { isSubmitting || unverified != nil }
     let safetyLock: WorkspaceSafetyLock
-    private let configuration: MariaDBTransportConfiguration
+    private let configuration: MobileSQLConfiguration
     private let service: any MobileTableActionServicing
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var inspection: Task<Void, Never>?
@@ -46,7 +46,7 @@ import QueryCraftMobileTransport
     @ObservationIgnored var didComplete: (MobileDatabaseObject, WorkspaceTableActionStatement) async -> String? = { _, _ in nil }
     @ObservationIgnored var didBecomeUncertain: (MobileDatabaseObject) -> Void = { _ in }
 
-    init(configuration: MariaDBTransportConfiguration, safetyLock: WorkspaceSafetyLock,
+    init(configuration: MobileSQLConfiguration, safetyLock: WorkspaceSafetyLock,
          service: any MobileTableActionServicing = MobileTableActionService()) {
         self.configuration = configuration; self.safetyLock = safetyLock; self.service = service
     }

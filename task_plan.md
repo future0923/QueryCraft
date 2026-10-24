@@ -282,3 +282,18 @@ Validation: iPad full 467/0/0 + final SQL/cache/native 14/0/0 + final schema sta
 ## Save completed mobile SQL work on branch — 2026-10-23
 
 User explicitly requested a branch commit. Re-read root AGENTS.md and docs/RELEASE_PROCESS.md; checked v0.1.12 baseline, app 0.1.12 (22), Driver API 5 and all six driver impacts. Reattached detached worktree to existing codex/ios-ipad-editor at identical HEAD, preserving changes. Reused verified full/focused simulator, Mac and packaged-driver results; bilingual pending release note records future MySQL/Doris dual-architecture gates and unchanged other drivers. Commit all accumulated authorized formatting, batch, table/options, disk cache and transaction sources/tests/docs; no tag/release or remote push requested.
+
+## Redis iPhone / iPad complete acceptance — 2026-10-23 (COMPLETE)
+
+User direction: finish Redis on both iOS and iPadOS before delivering; stop ending work after individual feature increments. Continue only in codex/ios-ipad-editor worktree; preserve unrelated plans/changes. No commit/release or user database mutations.
+
+1. Complete: inventory actual Mac Redis entry points and state/protocol capabilities; establish final acceptance matrix.
+2. Complete: whole-key member search using shared Mac state/reader, rapid change/error/cancel/draft verification.
+3. Complete: command console and write classification/confirmation, history/output, connection/background and unknown-write protection.
+4. Complete: shared key tree/search, real metadata + Stream pages, 100MiB whole String with segmented touch presentation/JSON/raw export, selected/whole key command export, standalone TTL/delete for all readable types. Mac module/binary-member edit limits retained; no claimed cluster routing/TLS.
+5. Complete: phone/tablet usability and stable loading/error/empty behavior across entry points; unified refresh, selection restoration and layout.
+6. Complete: complete isolated Redis 7.2/7.4 + existing five-driver mobile regression; Mac shared changes, individual driver package/load, arm64; final capability and protocol-limit documentation. Deliver only after remaining actionable gaps above are resolved.
+
+Implementation inventory complete: five common types create/rename/value/member CRUD; String ≤100MiB complete value editing with bounded touch segments/HEX/JSON/raw export; Hash field TTL; collection reader shared by primary grid/editor/search; selected/whole-key command exports; Stream shared read pages; standalone whole-key TTL/delete; same-session command console/history/completions/transactions; CAS/unknown-write/background safeguards. True desktop/protocol limitations documented. No remaining planned feature expansion; resolve regression findings before delivery.
+
+Final evidence: five-fixture full iPad567/0/0 and phone568/0/0 (Redis7.2); final current-source Redis7.4 each50/0/0; Mac shared29/0/0, driver11/0/0; latest arm64 build; independent signed Redis package + all-six real installer/registry/session factories and live Redis Stream/paging/CAS checks. No actionable implementation gap in current Mac Redis baseline remains; existing Mac/protocol and physical-device validation limits explicitly documented.

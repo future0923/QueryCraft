@@ -1,4 +1,8 @@
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 extension RedisReplyValue {
     var stringValue: String? {

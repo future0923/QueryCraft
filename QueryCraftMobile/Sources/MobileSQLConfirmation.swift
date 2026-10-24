@@ -4,7 +4,7 @@ import QueryCraftMobileTransport
 struct MobileSQLConfirmation: Identifiable {
     let id = UUID()
     let statements: [SQLExecutionStatement]
-    let configuration: MariaDBTransportConfiguration
+    let configuration: MobileSQLConfiguration
     let sourceText: String
     let revision: UInt64
     var requiresUnlock: Bool

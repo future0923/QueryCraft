@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 enum RedisKeyExpirationMode: String, CaseIterable, Identifiable {
     case persistent
     case expires

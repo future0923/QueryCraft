@@ -31,6 +31,31 @@ targets:
     type: library.static
     platform: iOS
     sources:
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DatabaseConnectionAuthentication.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyDetails.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyValueSnapshot.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandInvocation.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandResult.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisReplyValue.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisReplyMapEntry.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyType.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyReference.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCollectionQuery.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCollectionEntry.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCollectionPage.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCollectionContinuation.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCollectionSearch.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCollectionSortOrder.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisStringChunk.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyScanPage.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisBinaryValue.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisBinaryCommandInvocation.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisOptimisticMutation.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisWorkspaceError.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceRequest.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceRequestExecutionPolicy.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceReadOnlyRequestValidator.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDocumentMappingField.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/ApplicationLanguage.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/AppCopy.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseObjectKind.swift
@@ -83,14 +108,77 @@ targets:
       - target: QueryCraftMobileCore
     settings:
       base:
-        SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB $(BUILT_PRODUCTS_DIR)/include
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/../.build/ios-native/$(PLATFORM_NAME)-$(CURRENT_ARCH)/lib
         OTHER_LDFLAGS: $(inherited) -lmariadbclient -lssl -lcrypto -lz -liconv -lresolv
+  CHiredis:
+    type: library.static
+    platform: iOS
+    sources:
+      - path: ../QueryCraftDrivers/Sources/CHiredis
+        headerVisibility: public
+    settings:
+      base:
+        PRODUCT_MODULE_NAME: CHiredis
+        DEFINES_MODULE: YES
+        GCC_C_LANGUAGE_STANDARD: gnu11
+        HEADER_SEARCH_PATHS: $(BUILT_PRODUCTS_DIR)/include
   QueryCraftMobileProof:
     type: application
     platform: iOS
     sources:
       - Sources
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyCreationPlan.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyRenamePlan.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCollectionRemoteSearchState.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisStringEditingLimit.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyTreeNode.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeySearchRequest.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyCommandExporter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyMetadataMutationPlan.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyMutationPlan.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandCatalog.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandArgument.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandArgumentKind.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandTokenization.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandLineSnapshot.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandArgumentSuggestion.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandSuggestionRequest.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandTranscriptEntry.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceRedisCommandDocumentModel.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisReplyValue+FormattedText.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeySearchMatchMode.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisValueFormatter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyEditableRow.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyExpirationMode.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyEditError.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisBinaryCommandPreviewFormatter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisListInsertionEdge.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandPreviewFormatter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisHexCodec.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/LibPQClient.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLCQueryResult.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLConnectionConfiguration.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLCatalog.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLDataMutation.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftDorisDriver/DorisSchemaMetadata.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisHashFieldExpirationReader.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisCollectionReader.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisStreamReader.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisClient.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisClientError.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisConnectionConfiguration.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisRawReplyValue.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisReplyValue+Driver.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisKeyspaceInfoParser.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisScanCodec.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchHTTPClient.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchConnectionConfiguration.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchURLSessionDelegate.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchError.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchReadOnlyRequestPolicy.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchMappingCatalog.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchServerIdentity.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryResultStore.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryResultDataExportRowSource.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceReadOnlyQueryValidator.swift
@@ -176,6 +264,7 @@ targets:
     dependencies:
       - target: QueryCraftMobileCore
       - target: QueryCraftMobileTransport
+      - target: CHiredis
       - package: CodeEditLanguages
       - package: GRDB
       - package: SwiftTreeSitter
@@ -190,9 +279,9 @@ targets:
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: 连接你指定的数据库服务器。
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
-        SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB $(BUILT_PRODUCTS_DIR)/include $(SRCROOT)/../QueryCraftDrivers/Sources/CLibPQ
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/../.build/ios-native/$(PLATFORM_NAME)-$(CURRENT_ARCH)/lib
-        OTHER_LDFLAGS: $(inherited) -lmariadbclient -lssl -lcrypto -lz -liconv -lresolv
+        OTHER_LDFLAGS: $(inherited) -lpq -lpgcommon -lpgport -lmariadbclient -lssl -lcrypto -lz -liconv -lresolv
   QueryCraftMobileProofTests:
     type: bundle.unit-test
     platform: iOS
@@ -216,7 +305,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.MobileProof.Tests
-        SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB $(BUILT_PRODUCTS_DIR)/include $(SRCROOT)/../QueryCraftDrivers/Sources/CLibPQ
 schemes:
   QueryCraftMobileProof:
     build:

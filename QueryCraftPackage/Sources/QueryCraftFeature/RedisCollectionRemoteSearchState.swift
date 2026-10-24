@@ -1,4 +1,7 @@
 import Observation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 @MainActor
 @Observable

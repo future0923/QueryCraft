@@ -5,7 +5,7 @@ import QueryCraftMobileTransport
 @testable import QueryCraftMobileProof
 
 @MainActor struct MobileQueryEditingStateTests {
-    private func model(metadata: any MobileMySQLServicing, writer: any MobileDataMutating = QueryEditingUnknownWriter()) -> MobileQueryModel {
+    private func model(metadata: any MobileSQLServicing, writer: any MobileDataMutating = QueryEditingUnknownWriter()) -> MobileQueryModel {
         let model = MobileQueryModel(executor: QueryEditingExecutor(), metadataService: metadata, mutationService: writer)
         model.database = "db"; model.sql = "SELECT id,name FROM t"
         return model
@@ -60,12 +60,12 @@ import QueryCraftMobileTransport
 }
 
 struct QueryEditingExecutor: MobileQueryExecuting {
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         .init(columns: ["id","name"], columnTypes: ["int","varchar(80)"],
             columnOrigins: ["id","name"].map { .init(databaseName: "db", tableName: "t", columnName: $0) }, rows: [["1","before"]])
     }
 }
-actor QueryEditingMetadata: MobileMySQLServicing {
+actor QueryEditingMetadata: MobileSQLServicing {
     private let delaysFirst: Bool, failsFirst: Bool
     private var count = 0
     private var releaseContinuation: CheckedContinuation<Void, Never>?
@@ -73,22 +73,22 @@ actor QueryEditingMetadata: MobileMySQLServicing {
     init(delaysFirst: Bool = false, failsFirst: Bool = false) { self.delaysFirst = delaysFirst; self.failsFirst = failsFirst }
     func waitUntilWaiting() async { while !waiting { await Task.yield() } }
     func release() { releaseContinuation?.resume(); releaseContinuation = nil }
-    func databases(configuration: MariaDBTransportConfiguration) async throws -> [String] { ["db"] }
-    func objects(configuration: MariaDBTransportConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
+    func databases(configuration: MobileSQLConfiguration) async throws -> [String] { ["db"] }
+    func objects(configuration: MobileSQLConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
         count += 1
         if count == 1, delaysFirst { waiting = true; await withCheckedContinuation { releaseContinuation = $0 } }
         if count == 1, failsFirst { throw MobileQueryError.invalidServerMetadata }
         return .init(objects: [.init(database: "db", name: "t", kind: .table, comment: "")], hasMore: false)
     }
-    func columns(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
+    func columns(configuration: MobileSQLConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
         [.init(name: "id", type: "int", isNullable: false, key: "PRI", defaultValue: nil, extra: "", comment: ""),
          .init(name: "name", type: "varchar(80)", isNullable: true, key: "", defaultValue: nil, extra: "", comment: "")]
     }
-    func page(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int,
+    func page(configuration: MobileSQLConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int,
               sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot { throw MobileQueryError.invalidServerMetadata }
 }
 private struct QueryEditingUnknownWriter: MobileDataMutating {
-    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MariaDBTransportConfiguration,
+    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MobileSQLConfiguration,
                authorize: @escaping @Sendable () async throws -> Void) async throws {
         try await authorize(); throw MobileDataMutationError.uncertainCommit
     }

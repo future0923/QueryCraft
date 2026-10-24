@@ -21,6 +21,7 @@ actor MobileCachedQueryResult {
     nonisolated let store: WorkspaceQueryResultStore
     private(set) var columns: [WorkspaceDatabaseDataColumn] = []
     private(set) var hasBinaryValues = false
+    private var columnDetails: [String]?
     private let budget: MobileSQLCacheBudget
     init(budget: MobileSQLCacheBudget = .init()) throws {
         self.budget = budget
@@ -37,16 +38,21 @@ actor MobileCachedQueryResult {
         hasBinaryValues = hasBinaryValues || batch.rows.contains { $0.values.contains { if case .binary = $0 { true } else { false } } }
         try await store.append(batch.rows)
     }
-    func page(offset: Int, summary: CDatabaseQueryStreamResult? = nil) async throws -> CDatabaseQueryPreview {
+    func finish(_ summary: MobileSQLStreamResult) {
+        columns = summary.columns; columnDetails = summary.columnDetails
+    }
+    func page(offset: Int, summary: MobileSQLStreamResult? = nil) async throws -> MobileSQLPreview {
         let end = min(offset + 500, store.rowCount)
         let rows = try await store.loadRows(in: offset..<max(offset, end), maximumBytes: 4_194_304)
         let metadata = summary?.columns ?? columns
-        return .init(result: .init(columns: metadata.map(\.name), columnTypes: metadata.map(\.type),
+        var preview = MobileSQLPreview(result: .init(columns: metadata.map(\.name), columnTypes: metadata.map(\.type),
             columnOrigins: metadata.map { column in column.origin.flatMap { origin in
                 origin.databaseName.map { .init(databaseName: $0, tableName: origin.tableName, columnName: origin.columnName) }
             } }, rows: rows.map { $0.values.map { cell in
                 switch cell { case .null: nil; case let .text(text): text; case let .binary(count, _): "BINARY (\(count) bytes)" }
-            } }, affectedRows: summary?.affectedRows ?? 0, insertID: summary?.insertID ?? 0), cells: rows.map(\.values))
+            } }, affectedRows: summary?.affectedRows ?? 0, insertID: summary?.insertID ?? 0), cells: rows.map(\.values), metadata: metadata)
+        preview.columnDetails = summary?.columnDetails ?? columnDetails
+        return preview
     }
 }
 
@@ -61,13 +67,21 @@ actor MobileSQLCacheBudget {
 
 enum MobileSQLSessionEvent: Sendable {
     case started(Int)
-    case progress(Int, MobileCachedQueryResult, CDatabaseQueryPreview, Int)
-    case completed(Int, MobileCachedQueryResult, CDatabaseQueryPreview, CDatabaseQueryStreamResult, WorkspaceQueryTransactionState, Bool)
+    case progress(Int, MobileCachedQueryResult, MobileSQLPreview, Int)
+    case completed(Int, MobileCachedQueryResult, MobileSQLPreview, MobileSQLStreamResult, WorkspaceQueryTransactionState, Bool)
 }
 
 actor MobileSQLSession {
-    private var client: MariaDBClient?
-    private var configuration: MariaDBTransportConfiguration?
+    private var client: (any MobileSQLSessionConnection)?
+    private let makeConnection: @Sendable (MobileSQLConfiguration) throws -> any MobileSQLSessionConnection
+    init(makeConnection: @escaping @Sendable (MobileSQLConfiguration) throws -> any MobileSQLSessionConnection = { configuration in
+        switch configuration.driver {
+        case .mysql: return MobileMySQLSessionConnection(configuration: configuration)
+        case .postgresql: return MobilePostgreSQLSessionConnection(configuration: configuration)
+        default: throw MobileQueryError.readOnlySQLRequired
+        }
+    }) { self.makeConnection = makeConnection }
+    private var configuration: MobileSQLConfiguration?
     private var busy = false
     private var closingCount = 0
     private var closing: Bool { closingCount > 0 }
@@ -85,21 +99,20 @@ actor MobileSQLSession {
         await client?.close()
     }
 
-    func run(configuration: MariaDBTransportConfiguration, statements: [SQLExecutionStatement],
+    func run(configuration: MobileSQLConfiguration, statements: [SQLExecutionStatement],
              authorize: @escaping @Sendable (SQLStatementKind) async throws -> Void,
              receive: @escaping @Sendable (MobileSQLSessionEvent) async throws -> Void) async throws {
         guard !busy, !closing else { throw MobileSQLSessionError.busy }
         busy = true
         defer { busy = false }
         guard !statements.isEmpty, statements.count <= MobileQueryBatchLimits.maximumStatements else { throw MobileQueryBatchError.tooManyStatements }
-        guard configuration.tlsMode == .required || configuration.tlsMode == .disabled else { throw MobileQueryError.verifiedTLSUnavailable }
         var sentKind: SQLStatementKind?
         let budget = MobileSQLCacheBudget()
         do {
             if self.configuration != configuration || client == nil {
                 await disconnect()
                 try Task.checkCancellation()
-                let connection = MariaDBClient(configuration: configuration)
+                let connection = try makeConnection(configuration)
                 client = connection; self.configuration = configuration
                 try await connection.connect(); state = .autoCommit
             }
@@ -107,6 +120,7 @@ actor MobileSQLSession {
             guard let client else { throw WorkspaceSessionError.notConnected }
             // Validate the entire immutable batch before sending any statement.
             for statement in statements {
+                guard !statement.sql.utf8.contains(0) else { throw MobileSQLSessionError.staleConfirmation }
                 _ = try WorkspaceReadOnlyQueryValidator.validate(statement.sql, policy: statement.kind.requiresWriteAccess ? .writesAllowed : .readOnly)
                 try await authorize(statement.kind)
             }
@@ -116,12 +130,12 @@ actor MobileSQLSession {
                 try await receive(.started(statement.index))
                 let cache = try MobileCachedQueryResult(budget: budget)
                 let guardedRead = statement.kind == .read && state == .autoCommit
-                if guardedRead { _ = try await client.query("START TRANSACTION READ ONLY") }
+                if guardedRead { try await client.query("START TRANSACTION READ ONLY") }
                 try await authorize(statement.kind)
                 try Task.checkCancellation()
                 guard !closing, self.generation == generation else { throw CancellationError() }
                 sentKind = statement.kind
-                let summary = try await client.queryStream(statement.sql, maximumRowBytes: 8_388_608) { batch in
+                let summary = try await client.queryStream(statement.sql) { batch in
                     try await cache.append(batch)
                     let count = cache.store.rowCount
                     // Publish a bounded first page, then counts at batch boundaries.
@@ -131,17 +145,16 @@ actor MobileSQLSession {
                 sentKind = nil
                 state = summary.transactionState
                 if guardedRead {
-                    _ = try await client.query("ROLLBACK")
+                    try await client.query("ROLLBACK")
                     state = .autoCommit
                 }
+                await cache.finish(summary)
                 let page = try await cache.page(offset: 0, summary: summary)
                 let binary = await cache.hasBinaryValues
                 try await receive(.completed(statement.index, cache, page, summary, state, binary))
             }
         } catch {
-            let knownRejection = (error as? CDatabaseClientError).map {
-                [1044, 1045, 1054, 1064, 1142, 1143, 1146, 1227].contains(Int($0.code))
-            } ?? false
+            let knownRejection = client?.isDefiniteRejection(error) ?? false
             let uncertain = !knownRejection && sentKind.map { $0.requiresWriteAccess || $0 == .transaction(.commit) } == true
             await disconnect()
             if uncertain { throw MobileSQLSessionError.uncertain }

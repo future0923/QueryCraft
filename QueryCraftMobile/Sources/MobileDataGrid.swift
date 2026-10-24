@@ -14,12 +14,12 @@ struct MobileGridData: Sendable {
     let cells: [[WorkspaceDatabaseDataCell]]
     let metadata: [WorkspaceDatabaseDataColumn]
 
-    init(preview: CDatabaseQueryPreview?, details: [String]? = nil) {
+    init(preview: MobileSQLPreview?, details: [String]? = nil) {
         columns = preview?.result.columns ?? []
-        self.details = details ?? preview?.result.columnTypes.map { $0 ?? "" } ?? []
+        self.details = details ?? preview?.columnDetails ?? preview?.result.columnTypes.map { $0 ?? "" } ?? []
         rows = preview?.result.rows ?? []
         cells = preview?.cells ?? []
-        metadata = preview?.result.workspaceColumns ?? []
+        metadata = preview?.workspaceColumns ?? []
     }
 
     init(columns: [String], rows: [[String?]]) {

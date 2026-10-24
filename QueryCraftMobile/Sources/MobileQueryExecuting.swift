@@ -3,15 +3,15 @@ import QueryCraftMobileCore
 import QueryCraftMobileTransport
 
 protocol MobileQueryExecuting: Sendable {
-    func batch(configuration: MariaDBTransportConfiguration, statements: [SQLExecutionStatement],
+    func batch(configuration: MobileSQLConfiguration, statements: [SQLExecutionStatement],
                receive: @escaping @Sendable (MobileQueryBatchEvent) async throws -> Void) async throws
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult
-    func preview(configuration: MariaDBTransportConfiguration, sql: String,
-                 maximumRows: Int, maximumBytes: Int) async throws -> CDatabaseQueryPreview
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult
+    func preview(configuration: MobileSQLConfiguration, sql: String,
+                 maximumRows: Int, maximumBytes: Int) async throws -> MobileSQLPreview
 }
 
 extension MobileQueryExecuting {
-    func batch(configuration: MariaDBTransportConfiguration, statements: [SQLExecutionStatement],
+    func batch(configuration: MobileSQLConfiguration, statements: [SQLExecutionStatement],
                receive: @escaping @Sendable (MobileQueryBatchEvent) async throws -> Void) async throws {
         try MobileQueryBatchLimits.validate(statements)
         for statement in statements { try MobileSQLReadPolicy.validate(statement.sql) }
@@ -28,15 +28,15 @@ extension MobileQueryExecuting {
         }
     }
 
-    func preview(configuration: MariaDBTransportConfiguration, sql: String,
-                 maximumRows: Int, maximumBytes: Int) async throws -> CDatabaseQueryPreview {
+    func preview(configuration: MobileSQLConfiguration, sql: String,
+                 maximumRows: Int, maximumBytes: Int) async throws -> MobileSQLPreview {
         let result = try await execute(configuration: configuration, sql: sql)
-        return CDatabaseQueryPreview(result: result)
+        return MobileSQLPreview(result: result)
     }
 }
 
 struct MobileMariaDBExecutor: MobileQueryExecuting {
-    func batch(configuration: MariaDBTransportConfiguration, statements: [SQLExecutionStatement],
+    func batch(configuration: MobileSQLConfiguration, statements: [SQLExecutionStatement],
                receive: @escaping @Sendable (MobileQueryBatchEvent) async throws -> Void) async throws {
         try MobileQueryBatchLimits.validate(statements)
         guard configuration.tlsMode == .disabled || configuration.tlsMode == .required else { throw MobileQueryError.verifiedTLSUnavailable }
@@ -56,7 +56,7 @@ struct MobileMariaDBExecutor: MobileQueryExecuting {
                 guard remaining > 0 else { throw MobileQueryBatchError.resultBudget }
                 try await receive(.started(statement.index))
                 try Task.checkCancellation()
-                let preview = try await client.queryPreview(statement.sql, maximumRows: 500, maximumBytes: min(4_194_304, remaining))
+                let preview = try await client.mobilePreview(statement.sql, maximumRows: 500, maximumBytes: min(4_194_304, remaining))
                 try Task.checkCancellation()
                 remaining -= MobileQueryBatchLimits.retainedBytes(preview)
                 try await receive(.completed(statement.index, preview))
@@ -68,14 +68,14 @@ struct MobileMariaDBExecutor: MobileQueryExecuting {
         } catch { await client.close(); throw error }
     }
 
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         let preview = try await preview(configuration: configuration, sql: sql, maximumRows: 10_000, maximumBytes: 8_388_608)
         guard !preview.isTruncated else { throw MobileQueryError.resultTooLarge }
         return preview.result
     }
 
-    func preview(configuration: MariaDBTransportConfiguration, sql: String,
-                 maximumRows: Int, maximumBytes: Int) async throws -> CDatabaseQueryPreview {
+    func preview(configuration: MobileSQLConfiguration, sql: String,
+                 maximumRows: Int, maximumBytes: Int) async throws -> MobileSQLPreview {
         // Connector/C 3.4 treats loopback certificates specially. Do not expose a
         // verified mode until CA provisioning and strict verification are implemented.
         guard configuration.tlsMode == .disabled || configuration.tlsMode == .required else {
@@ -95,7 +95,7 @@ struct MobileMariaDBExecutor: MobileQueryExecuting {
                 backslashEscapes: !sqlMode.uppercased().split(separator: ",").contains("NO_BACKSLASH_ESCAPES"))
             _ = try await client.query("SET SESSION TRANSACTION READ ONLY")
             _ = try await client.query("START TRANSACTION READ ONLY")
-            let result = try await client.queryPreview(sql, maximumRows: maximumRows, maximumBytes: maximumBytes)
+            let result = try await client.mobilePreview(sql, maximumRows: maximumRows, maximumBytes: maximumBytes)
             await client.close()
             return result
         } catch {

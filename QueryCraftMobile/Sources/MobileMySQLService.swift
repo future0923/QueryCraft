@@ -2,41 +2,50 @@ import QueryCraftMobileCore
 import Foundation
 import QueryCraftMobileTransport
 
-protocol MobileMySQLServicing: Sendable {
-    func databases(configuration: MariaDBTransportConfiguration) async throws -> [String]
-    func objects(configuration: MariaDBTransportConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog
-    func columns(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn]
-    func page(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject,
+protocol MobileSQLServicing: Sendable {
+    func schemas(configuration: MobileSQLConfiguration, database: String) async throws -> [String]
+    func databases(configuration: MobileSQLConfiguration) async throws -> [String]
+    func objects(configuration: MobileSQLConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog
+    func columns(configuration: MobileSQLConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn]
+    func page(configuration: MobileSQLConfiguration, object: MobileDatabaseObject,
               columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot
 }
 
-struct MobileMySQLService: MobileMySQLServicing {
+extension MobileSQLServicing {
+    func schemas(configuration: MobileSQLConfiguration, database: String) async throws -> [String] { [] }
+}
+
+struct MobileMySQLService: MobileSQLServicing {
     let executor: any MobileQueryExecuting
-    init(executor: any MobileQueryExecuting = MobileMariaDBExecutor()) { self.executor = executor }
+    let isDoris: Bool
+    init(executor: any MobileQueryExecuting = MobileMariaDBExecutor(), isDoris: Bool = false) { self.executor = executor; self.isDoris = isDoris }
+    private func literal(_ value: String) -> String {
+        isDoris ? "UNHEX('" + value.utf8.map { String(format: "%02x", $0) }.joined() + "')" : Self.literal(value)
+    }
 
     static func identifier(_ value: String) -> String { "`" + value.replacingOccurrences(of: "`", with: "``") + "`" }
     static func literal(_ value: String) -> String {
         value.isEmpty ? "''" : "CONVERT(0x" + value.utf8.map { String(format: "%02x", $0) }.joined() + " USING utf8mb4)"
     }
 
-    private func catalogConfiguration(_ configuration: MariaDBTransportConfiguration) -> MariaDBTransportConfiguration {
+    func catalogConfiguration(_ configuration: MobileSQLConfiguration) -> MobileSQLConfiguration {
         .init(host: configuration.host, port: configuration.port, username: configuration.username,
               password: configuration.password, database: nil, tlsMode: configuration.tlsMode)
     }
 
-    func databases(configuration: MariaDBTransportConfiguration) async throws -> [String] {
+    func databases(configuration: MobileSQLConfiguration) async throws -> [String] {
         // Do not bind the initial catalog connection to a database that may have disappeared.
         let config = catalogConfiguration(configuration)
         let result = try await executor.execute(configuration: config, sql: "SHOW DATABASES")
         return result.rows.compactMap { $0.first ?? nil }
     }
 
-    func objects(configuration: MariaDBTransportConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind? = nil) async throws -> MobileObjectCatalog {
-        let typeFilter = kind.map { "TABLE_TYPE = " + Self.literal($0 == .view ? "VIEW" : "BASE TABLE") }
+    func objects(configuration: MobileSQLConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind? = nil) async throws -> MobileObjectCatalog {
+        let typeFilter = kind.map { "TABLE_TYPE = " + literal($0 == .view ? "VIEW" : "BASE TABLE") }
             ?? "TABLE_TYPE IN ('BASE TABLE', 'VIEW')"
         let query = """
         SELECT TABLE_NAME, TABLE_TYPE, TABLE_COMMENT FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = \(Self.literal(database))
+        WHERE TABLE_SCHEMA = \(literal(database))
         AND \(typeFilter)
         ORDER BY TABLE_NAME
         """
@@ -51,11 +60,11 @@ struct MobileMySQLService: MobileMySQLServicing {
         return .init(objects: MobileCatalogSearch.objects(objects, matching: search), hasMore: false)
     }
 
-    func columns(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
+    func columns(configuration: MobileSQLConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
         let query = """
         SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT
-        FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = \(Self.literal(object.database))
-        AND TABLE_NAME = \(Self.literal(object.name)) ORDER BY ORDINAL_POSITION
+        FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = \(literal(object.database))
+        AND TABLE_NAME = \(literal(object.name)) ORDER BY ORDINAL_POSITION
         """
         let result = try await executor.execute(configuration: catalogConfiguration(configuration), sql: query)
         guard !result.rows.isEmpty else { throw MobileQueryError.invalidServerMetadata }
@@ -68,11 +77,11 @@ struct MobileMySQLService: MobileMySQLServicing {
         }
     }
 
-    func page(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject,
+    func page(configuration: MobileSQLConfiguration, object: MobileDatabaseObject,
               columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter = .empty) async throws -> MobileTableSnapshot {
         let size = max(1, min(size, 200)), offset = max(0, offset)
         try MobileTableFilterDraft.validate(filter, columns: columns)
-        let predicate = try MySQLDataFilterPredicate.make(filter, values: .literals)
+        let predicate = try MySQLDataFilterPredicate.make(filter, values: isDoris ? .dorisLiterals : .literals)
         let primary = columns.filter { $0.key == "PRI" }.map(\.name)
         var order = primary.map { Self.identifier($0) + " ASC" }
         if let sortColumn {

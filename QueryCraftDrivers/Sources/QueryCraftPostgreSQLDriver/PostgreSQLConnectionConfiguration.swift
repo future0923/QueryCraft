@@ -1,4 +1,8 @@
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 struct PostgreSQLConnectionConfiguration: Equatable, Sendable {
     let host: String
@@ -7,6 +11,7 @@ struct PostgreSQLConnectionConfiguration: Equatable, Sendable {
     let password: String?
     let database: String
     let tlsMode: ConnectionTLSMode
+    let connectTimeout: Int?
 
     init(
         host: String,
@@ -14,7 +19,8 @@ struct PostgreSQLConnectionConfiguration: Equatable, Sendable {
         username: String,
         password: String?,
         database: String,
-        tlsMode: ConnectionTLSMode
+        tlsMode: ConnectionTLSMode,
+        connectTimeout: Int? = nil
     ) {
         self.host = host
         self.port = port
@@ -22,8 +28,10 @@ struct PostgreSQLConnectionConfiguration: Equatable, Sendable {
         self.password = password
         self.database = database
         self.tlsMode = tlsMode
+        self.connectTimeout = connectTimeout
     }
 
+#if canImport(QueryCraftFeature)
     init(_ configuration: DatabaseConnectionConfiguration) throws {
         guard configuration.databaseType == .postgresql,
               configuration.databaseProduct.databaseType == .postgresql
@@ -45,5 +53,7 @@ struct PostgreSQLConnectionConfiguration: Equatable, Sendable {
         password = configuration.password
         database = configuration.database ?? "postgres"
         tlsMode = configuration.tlsMode
+        connectTimeout = nil
     }
+#endif
 }

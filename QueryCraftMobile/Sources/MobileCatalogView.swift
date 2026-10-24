@@ -24,6 +24,12 @@ struct MobileCatalogView: View {
                     Text("选择数据库").tag("")
                     ForEach(browser.databases ?? [], id: \.self) { Text($0).tag($0) }
                 }.disabled(browser.databases == nil)
+                if browser.supportsSchemas {
+                    Picker("Schema", selection: Binding(get: { browser.selectedSchema ?? "" }, set: { browser.selectSchema($0.isEmpty ? nil : $0) })) {
+                        Text("全部 Schema").tag("")
+                        ForEach(browser.schemas ?? [], id: \.self) { Text($0).tag($0) }
+                    }.disabled(browser.schemas == nil)
+                }
             }
             Section(noun) {
                 ForEach(browser.visibleObjects) { object in
@@ -31,7 +37,7 @@ struct MobileCatalogView: View {
                         HStack(spacing: 10) {
                             Image(systemName: object.kind == .view ? "eye" : "tablecells").foregroundStyle(.secondary).frame(width: 24)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(object.name).font(.subheadline)
+                                Text(object.displayName).font(.subheadline)
                                 if !object.comment.isEmpty { Text(String(object.comment.prefix(100))).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                             }
                             if browser.changesByObject[object.id]?.hasChanges == true || browser.schema?.drafts[object.id]?.hasChanges == true {
@@ -41,7 +47,7 @@ struct MobileCatalogView: View {
                         }.padding(.vertical, 2)
                     }
                     .contextMenu {
-                        if object.kind == .table, let controller = app.workspace?.tableActions {
+                        if browser.supportsSchemaEditing, object.kind == .table, let controller = app.workspace?.tableActions {
                             MobileTableActionMenu(controller: controller, object: object)
                         }
                     }
@@ -65,7 +71,7 @@ struct MobileCatalogView: View {
                 Text(app.message ?? browser.catalogError ?? catalogStatus)
                     .font(.caption).foregroundStyle(app.message != nil || browser.catalogError != nil ? Color.red : .secondary).lineLimit(2)
                 Spacer(minLength: 0)
-                if kind == .table, let database = browser.selectedDatabase, let controller = app.workspace?.newTable {
+                if browser.supportsSchemaEditing, kind == .table, let database = browser.selectedDatabase, let controller = app.workspace?.newTable {
                     Button(controller.draft == nil ? "新建表" : "新表草稿", systemImage: "plus") { controller.present(database: database) }
                         .font(.caption).disabled(controller.isSubmitting || browser.isBackgrounded)
                         .accessibilityIdentifier("newTableButton")
@@ -75,8 +81,8 @@ struct MobileCatalogView: View {
     }
     private var catalogStatus: String {
         if browser.isLoadingCatalog { return "正在加载…" }
-        guard let catalog = browser.catalog else { return "等待加载" }
-        if browser.search.isEmpty { return "\(catalog.objects.count) 个\(noun)" }
-        return "\(browser.visibleObjects.count) / \(catalog.objects.count) 个\(noun)"
+        guard browser.catalog != nil else { return "等待加载" }
+        if browser.search.isEmpty { return "\(browser.objectsInSelectedSchema.count) 个\(noun)" }
+        return "\(browser.visibleObjects.count) / \(browser.objectsInSelectedSchema.count) 个\(noun)"
     }
 }

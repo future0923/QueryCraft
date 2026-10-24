@@ -1,7 +1,11 @@
 import CHiredis
 import Darwin
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 final class RedisClient: @unchecked Sendable {
     private let queue = DispatchQueue(
@@ -173,10 +177,10 @@ final class RedisClient: @unchecked Sendable {
                 self.selectedDatabaseIndex = databaseIndex
             }
             let key = Data(request.reference.name.utf8)
-            _ = try self.rawCommand(
+            try self.requireRawSuccess(self.rawCommand(
                 [Data("WATCH".utf8), key],
                 context: context
-            )
+            ))
             do {
                 try self.validate(
                     request.assertions,
@@ -331,7 +335,7 @@ final class RedisClient: @unchecked Sendable {
             let isValid: Bool
             switch assertion {
             case let .keyType(expected):
-                let reply = try rawCommand(
+                let reply = try validationCommand(
                     [Data("TYPE".utf8), key],
                     context: context
                 )
@@ -346,19 +350,19 @@ final class RedisClient: @unchecked Sendable {
                 case .stream: "XLEN"
                 case .module, .unknown, .none: "EXISTS"
                 }
-                let reply = try rawCommand(
+                let reply = try validationCommand(
                     [Data(command.utf8), key],
                     context: context
                 )
                 isValid = reply.integerValue == Int64(expected)
             case let .stringValue(expected):
-                let reply = try rawCommand(
+                let reply = try validationCommand(
                     [Data("GET".utf8), key],
                     context: context
                 )
                 isValid = reply.dataValue == expected.data
             case let .listElement(index, expected):
-                let reply = try rawCommand(
+                let reply = try validationCommand(
                     [
                         Data("LINDEX".utf8), key,
                         Data(String(index).utf8),
@@ -367,29 +371,44 @@ final class RedisClient: @unchecked Sendable {
                 )
                 isValid = reply.dataValue == expected.data
             case let .hashValue(field, expected):
-                let reply = try rawCommand(
+                let reply = try validationCommand(
                     [Data("HGET".utf8), key, field.data],
                     context: context
                 )
                 isValid = optionalData(reply) == expected?.data
             case let .setMembership(member, expected):
-                let reply = try rawCommand(
+                let reply = try validationCommand(
                     [Data("SISMEMBER".utf8), key, member.data],
                     context: context
                 )
                 isValid = (reply.integerValue == 1) == expected
             case let .sortedSetScore(member, expected):
-                let reply = try rawCommand(
+                let reply = try validationCommand(
                     [Data("ZSCORE".utf8), key, member.data],
                     context: context
                 )
-                isValid = reply.stringValue == expected
-                    || (expected == nil && optionalData(reply) == nil)
+                // RESP3 ZSCORE is a double (e.g. "2.0"), while ZSCAN
+                // returns the same score as a bulk string (e.g. "2").
+                if let expected, let actual = reply.stringValue {
+                    isValid = actual == expected
+                        || (Double(actual) != nil && Double(actual) == Double(expected))
+                } else {
+                    isValid = expected == nil && optionalData(reply) == nil
+                }
             }
             guard isValid else {
                 throw RedisWorkspaceError.mutationConflict(reference.name)
             }
         }
+    }
+
+    // A rejected assertion read must never be interpreted as an absent value.
+    private func validationCommand(
+        _ arguments: [Data], context: UnsafeMutablePointer<redisContext>
+    ) throws -> RedisRawReplyValue {
+        let reply = try rawCommand(arguments, context: context)
+        try requireRawSuccess(reply)
+        return reply
     }
 
     private func optionalData(_ reply: RedisRawReplyValue) -> Data? {

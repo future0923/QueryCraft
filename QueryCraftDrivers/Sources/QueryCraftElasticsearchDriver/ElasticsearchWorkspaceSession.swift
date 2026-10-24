@@ -63,23 +63,7 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
         try await LicenseAccessGate.shared.requireDatabaseAccess()
         guard !connected else { return }
         let response = try await client.perform(method: .get, path: "/")
-        guard let root = try JSONSerialization.jsonObject(
-            with: response.body
-        ) as? [String: Any],
-        let version = (root["version"] as? [String: Any])?["number"] as? String
-        else {
-            throw ElasticsearchError.unsupportedProduct
-        }
-        let header = response.headers["x-elastic-product"]
-        let tagline = root["tagline"] as? String
-        guard header == "Elasticsearch"
-                || tagline == "You Know, for Search"
-        else {
-            throw ElasticsearchError.unsupportedProduct
-        }
-        guard Self.isSupported(version: version) else {
-            throw ElasticsearchError.unsupportedVersion(version)
-        }
+        let version = try ElasticsearchServerIdentity.version(body: response.body, headers: response.headers)
         supportsPITShardDocSort = Self.supportsShardDocSort(version: version)
         logger.info(
             "Connected to Elasticsearch \(version, privacy: .public); PIT shard-doc sort: \(self.supportsPITShardDocSort, privacy: .public)"
@@ -874,10 +858,7 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
     }
 
     static func isSupported(version: String) -> Bool {
-        let parts = version.split(separator: ".").compactMap { Int($0) }
-        guard let major = parts.first else { return false }
-        if major > 7 { return true }
-        return major == 7 && parts.dropFirst().first.map { $0 >= 10 } == true
+        ElasticsearchServerIdentity.isSupported(version: version)
     }
 
     static func supportsShardDocSort(version: String) -> Bool {

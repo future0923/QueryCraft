@@ -12,6 +12,10 @@ final class MobileBrowserModel {
     @ObservationIgnored var allowsDatabaseChange: () -> Bool = { true }
     private(set) var databases: [String]?
     private(set) var selectedDatabase: String?
+    private(set) var schemas: [String]?
+    private(set) var selectedSchema: String?
+    @ObservationIgnored private var schemaWasExplicitlySelected = false
+    var supportsSchemas: Bool { configuration.driver == .postgresql }
     private(set) var catalog: MobileObjectCatalog?
     private(set) var catalogKind: MobileDatabaseObject.Kind = .table
     private(set) var selectedObject: MobileDatabaseObject?
@@ -21,6 +25,8 @@ final class MobileBrowserModel {
     private(set) var isLoadingTable = false
     private(set) var catalogError: String?
     private(set) var tableError: String?
+    let supportsEditing: Bool
+    var supportsSchemaEditing: Bool { supportsEditing && configuration.driver == .mysql }
     let safetyLock = WorkspaceSafetyLock()
     private(set) var changesByObject: [String: MobileTableChanges] = [:]
     var schema: MobileSchemaController?
@@ -28,24 +34,29 @@ final class MobileBrowserModel {
     var currentChanges: MobileTableChanges? { selectedObject.flatMap { changesByObject[$0.id] } }
     private let mutationService: any MobileDataMutating
     var search = ""
+    var objectsInSelectedSchema: [MobileDatabaseObject] {
+        (catalog?.objects ?? []).filter { selectedSchema == nil || $0.schemaName == selectedSchema }
+    }
     var visibleObjects: [MobileDatabaseObject] {
-        MobileCatalogSearch.objects(catalog?.objects ?? [], matching: search)
+        MobileCatalogSearch.objects(objectsInSelectedSchema, matching: search)
     }
     var tab: Tab = .data
     var pageSize = 100
     private(set) var sortColumn: String?
     private(set) var ascending = true
     private(set) var dataFilter = WorkspaceDatabaseDataFilter.empty
-    @ObservationIgnored private let configuration: MariaDBTransportConfiguration
-    @ObservationIgnored private let service: any MobileMySQLServicing
+    @ObservationIgnored private let configuration: MobileSQLConfiguration
+    @ObservationIgnored private let service: any MobileSQLServicing
     @ObservationIgnored private var catalogID = UUID()
     @ObservationIgnored private var tableID = UUID()
     @ObservationIgnored private var catalogTask: Task<Void, Never>?
     @ObservationIgnored private var tableTask: Task<Void, Never>?
     private(set) var isBackgrounded = false
 
-    init(configuration: MariaDBTransportConfiguration, service: any MobileMySQLServicing = MobileMySQLService(), mutationService: any MobileDataMutating = MobileDataMutationService()) {
+    init(configuration: MobileSQLConfiguration, service: any MobileSQLServicing = MobileMySQLService(), mutationService: any MobileDataMutating = MobileDataMutationService(), supportsEditing: Bool = true) {
+        self.supportsEditing = supportsEditing
         self.configuration = configuration
+        self.selectedSchema = configuration.schemaName
         self.service = service
         self.mutationService = mutationService
     }
@@ -53,7 +64,9 @@ final class MobileBrowserModel {
     /// Capture committed state, never the requested filter/sort of an in-flight refresh.
     func dataExportSnapshot() -> MobileDataExportSnapshot? {
         guard !isLoadingTable, let snapshot, snapshot.object == selectedObject else { return nil }
-        return .table(snapshot, configuration: configuration, service: service)
+        var export = MobileDataExportSnapshot.table(snapshot, configuration: configuration, service: service)
+        export.sqlDialect = configuration.driver == .postgresql ? .postgresql : configuration.driver == .doris ? .doris : .mysql
+        return export
     }
 
     @discardableResult
@@ -70,7 +83,7 @@ final class MobileBrowserModel {
                 self.databases = databases
                 self.isLoadingCatalog = false
                 self.catalogTask = nil
-                let preferred = configuration.database.flatMap { databases.contains($0) ? $0 : nil }
+                let preferred = (configuration.database ?? (configuration.driver == .postgresql ? "postgres" : nil)).flatMap { databases.contains($0) ? $0 : nil }
                 if self.selectedDatabase == nil { self.selectDatabase(preferred ?? databases.first) }
                 else if let selected = self.selectedDatabase, !databases.contains(selected) { self.selectDatabase(nil) }
             } catch {
@@ -91,10 +104,20 @@ final class MobileBrowserModel {
         cancelAll()
         revision = UUID()
         contextID = UUID()
-        selectedDatabase = name; catalog = nil; search = ""; catalogError = nil
+        selectedDatabase = name; schemaWasExplicitlySelected = false; schemas = nil; selectedSchema = configuration.schemaName; catalog = nil; search = ""; catalogError = nil
         selectedObject = nil; snapshot = nil; columns = nil; tableError = nil
         sortColumn = nil; dataFilter = .empty
         if name != nil { loadObjects() }
+    }
+
+    func selectSchema(_ name: String?) {
+        guard allowsDatabaseChange() else { return }
+        schemaWasExplicitlySelected = true
+        guard name != selectedSchema else { return }
+        cancelAll(); selectedSchema = name; selectedObject = nil; snapshot = nil; columns = nil
+        sortColumn = nil; dataFilter = .empty; tableError = nil; search = ""
+        revision = UUID(); contextID = UUID()
+        if catalog == nil { loadObjects() }
     }
 
     func selectKind(_ kind: MobileDatabaseObject.Kind) {
@@ -119,9 +142,16 @@ final class MobileBrowserModel {
         let task = Task { [weak self, service, configuration] in
             do {
                 try Task.checkCancellation()
+                let schemas = configuration.driver == .postgresql ? try await service.schemas(configuration: configuration, database: database) : []
                 let catalog = try await service.objects(configuration: configuration, database: database, search: "", kind: kind)
                 try Task.checkCancellation()
                 guard let self, self.catalogID == id, self.selectedDatabase == database, self.catalogKind == kind else { return }
+                let firstSchemaLoad = self.schemas == nil
+                self.schemas = schemas
+                if self.supportsSchemas, (firstSchemaLoad && !self.schemaWasExplicitlySelected) || self.selectedSchema.map({ !schemas.contains($0) }) == true {
+                    self.selectedSchema = self.selectedSchema.flatMap { schemas.contains($0) ? $0 : nil }
+                        ?? (schemas.contains("public") ? "public" : schemas.first)
+                }
                 self.catalog = catalog
                 self.isLoadingCatalog = false; self.catalogTask = nil
                 // Search filters only presentation; refresh always checks the complete catalog.
@@ -191,7 +221,7 @@ final class MobileBrowserModel {
                 if var page {
                     page.filter = filter; page.sortColumn = sort; page.ascending = ascending; self.snapshot = page
                     if let changes = self.changesByObject[object.id] { changes.receive(metadata: columns) }
-                    else if object.kind == .table {
+                    else if object.kind == .table && self.supportsEditing {
                         let changes = MobileTableChanges(object: object, metadata: columns, configuration: configuration,
                             safetyLock: self.safetyLock, service: self.mutationService)
                         changes.isContextCurrent = { [weak self] in

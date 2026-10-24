@@ -4,7 +4,9 @@ struct MobileLibraryView: View {
     @Bindable var app: MobileApplicationModel
     var body: some View {
         Group {
-            if app.isWorkspacePresented, let workspace = app.workspace {
+            if app.isWorkspacePresented, let resource = app.resourceWorkspace {
+                MobileResourceWorkspaceView(app: app, model: resource).id(resource.profile.id)
+            } else if app.isWorkspacePresented, let workspace = app.workspace {
                 MobileConnectionWorkspaceView(app: app, workspace: workspace).id(workspace.id)
             } else {
                 NavigationStack { MobileConnectionList(app: app) }

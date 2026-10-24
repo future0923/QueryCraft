@@ -5,9 +5,7 @@ import SwiftUI
 @MainActor
 @Observable
 final class WorkspaceRedisNewKeyDraft: Identifiable {
-    static let creatableTypes: [RedisKeyType] = [
-        .string, .hash, .list, .set, .sortedSet,
-    ]
+    static let creatableTypes = RedisKeyCreationPlan.creatableTypes
 
     let id: UUID
     let databaseIndex: Int

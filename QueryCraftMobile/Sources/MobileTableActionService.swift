@@ -7,9 +7,9 @@ struct MobileTableActionInfo: Sendable {
     let hasAutoIncrement: Bool
 }
 protocol MobileTableActionServicing: Sendable {
-    func inspect(object: MobileDatabaseObject, configuration: MariaDBTransportConfiguration) async throws -> MobileTableActionInfo
+    func inspect(object: MobileDatabaseObject, configuration: MobileSQLConfiguration) async throws -> MobileTableActionInfo
     func perform(action: WorkspaceTableAction, object: MobileDatabaseObject, input: String,
-                 configuration: MariaDBTransportConfiguration,
+                 configuration: MobileSQLConfiguration,
                  authorize: @escaping @Sendable () async throws -> Void) async throws -> WorkspaceTableActionStatement
 }
 
@@ -24,10 +24,10 @@ enum MobileTableActionError: LocalizedError {
 }
 
 struct MobileTableActionService: MobileTableActionServicing {
-    var makeConnection: @Sendable (MariaDBTransportConfiguration) -> any MobileMutationConnection = {
+    var makeConnection: @Sendable (MobileSQLConfiguration) -> any MobileMutationConnection = {
         MobileMariaDBMutationConnection(client: MariaDBClient(configuration: $0))
     }
-    private func client(_ config: MariaDBTransportConfiguration, object: MobileDatabaseObject) throws -> any MobileMutationConnection {
+    private func client(_ config: MobileSQLConfiguration, object: MobileDatabaseObject) throws -> any MobileMutationConnection {
         guard object.kind == .table else { throw WorkspaceTableActionError.unsupported }
         guard config.tlsMode == .disabled || config.tlsMode == .required else { throw MobileQueryError.verifiedTLSUnavailable }
         return makeConnection(.init(host: config.host, port: config.port, username: config.username, password: config.password,
@@ -43,7 +43,7 @@ struct MobileTableActionService: MobileTableActionServicing {
             ($0.first ?? nil)?.lowercased().contains("auto_increment") == true
         })
     }
-    func inspect(object: MobileDatabaseObject, configuration: MariaDBTransportConfiguration) async throws -> MobileTableActionInfo {
+    func inspect(object: MobileDatabaseObject, configuration: MobileSQLConfiguration) async throws -> MobileTableActionInfo {
         let client = try client(configuration, object: object)
         do {
             try Task.checkCancellation(); try await client.connect()
@@ -52,7 +52,7 @@ struct MobileTableActionService: MobileTableActionServicing {
         } catch { await client.close(); throw error }
     }
     func perform(action: WorkspaceTableAction, object: MobileDatabaseObject, input: String,
-                 configuration: MariaDBTransportConfiguration,
+                 configuration: MobileSQLConfiguration,
                  authorize: @escaping @Sendable () async throws -> Void) async throws -> WorkspaceTableActionStatement {
         let statement = try WorkspaceTableActionStatement.make(action: action, selection: object.editingSelection, databaseType: .mysql, input: input)
         let client = try client(configuration, object: object)

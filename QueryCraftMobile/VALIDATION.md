@@ -1,4 +1,146 @@
-# iOS / iPadOS MySQL 验证记录
+# iOS / iPadOS 验证记录
+
+## Redis 整体验收（2026-10-23，当前范围）
+
+本轮按完整 Redis iPhone/iPad 功能链路验收，当前范围以 README / MAC_PARITY 最新节为准；下方逐轮记录保留当时的限制，不代表当前缺失。
+
+- 完整五库移动回归（自有隔离 MySQL 8.4、PostgreSQL 17、Doris 4.1.3、Elasticsearch 8.18、Redis 7.2.4）：iPad **567/0/0**（234.443 s），iPhone **568/0/0**（179.128 s）。报告 `redis-complete-ipad-full.json` / `redis-complete-iphone-full.json` 位于 `.build/ios-validation/`。iPhone 包含最终主网格共享读取器的新增回归；最后 ACL 核实修正在后续最终专项覆盖。两次 SQL 回滚夹具各产生一条 `there is no transaction in progress` 提示，无失败或编译错误。
+- 最终 Redis 7.4.2 专项：iPad **50/0/0**（81.139 s），iPhone **50/0/0**（60.427 s），均无警告/错误。报告 `redis-complete-ipad-74.json` / `redis-complete-iphone-74.json`；最终代码包含主网格排序/分页/二进制显示、快速前后台关闭门控和真实 ACL 拒绝核实保护，补齐完整回归后最后修正的路径。
+- Mac 真实共享模型/解析/计划/格式化/树/历史/导出回归 **29/0/0**（86.245 s）；Redis 驱动独立实库 **11/0/0**（187.209 s）。报告 `redis-complete-mac-feature.json` / `redis-mac-tests.json`。后者有既存 Keychain 废弃 API 提示，不影响通过；未运行涉及真实 AppKit 鼠标/键盘的桌面窗口测试。
+- 最终 iPhoneOS arm64 编译/链接 **通过**（13.098 s，unsigned），`redis-complete-device.json`，无诊断错误；不把编译当作实体设备运行。
+- Redis 外置包独立打包/ad-hoc 签名：`redis-driver-1.0.1-x86_64-ad4e7535116eb1cd.zip`。真实 installer/registry 确认六类包各自从隔离 bundle 加载并创建会话；新 Redis 包实连验证 RESP3 分数 CAS、条件创建、保 TTL 重命名、Hash 字段 TTL、List 第二页绝对索引200、共用 Stream 实际ID/有界截断及整键 TTL/删除。记录 `.build/ios-redis-field-desktop-load.txt`；用户 Dev 安装目录未覆盖，Driver API 5 不变，本地包不构成发版。
+
+覆盖场景：五类值增删改、新建/重命名/TTL/删除；超过1,000项集合分页与跨页全键搜索；大小写/变音符号/字面glob/Hash字段和值/ZSet分数与降序/List绝对索引；主数据页与编辑页共用读取器；Stream按真实ID翻页；大于1MiB文本及二进制完整保存/导出、Unicode分段边界、JSON大数字/转义不改原文、超100MiB拒绝、预览外尾字节CAS冲突；二进制只读成员导出和批量删除跳过；命令引号/历史/SELECT/MULTI/EXEC/后台DISCARD、未知回执不重放、立即回前台等待旧连接关闭；ACL拒绝核实保留保护；有界回复/历史保留。加载/取消/迟到回复/失败保留与重试沿门控状态测试核对。
+
+原生 UIHostingController 挂载两端真实入口，检查新建/重命名/编辑/Hash TTL/搜索/分页/控制台/大值与 Stream 整键TTL弹窗；深色目录/弹窗与浅色控制台截图已查看，`.build/ios-driver-previews/redis-*.png`。固定底栏、表格边界、绝对索引及有界 UITextView 均验证；没有移动真实桌面鼠标或模拟键盘。手机紧凑导航和 iPad 分栏实际渲染通过，不声称完成真实手指、键盘遮挡全场景或硬件旋转验证。
+
+边界：TLS、MOVED/ASK集群路由、模块内容与二进制集合编辑沿 Mac 限制；Stream图形页只读，控制台可写。SCAN不是稳定快照，TTL不是版本号，值改回原值无法检出。String编辑上限100MiB，共享Mac规则；触控仅展示约32KiB片段，保存完整值。集合页1,000项/1MiB、目录10,000名称/8MiB、控制台保留预算不是进程/协议内存硬上限。真实设备触控、真实网络断连、系统挂起/杀进程仍未实测；隔离故障注入不冒充弱网。未提交、tag、发布或操作用户数据库。
+
+可复现：`python3 scripts/test-ios-driver-support.py '<UUID>' --full`；`python3 scripts/test-ios-redis-field-ttl.py '<UUID>'`。脚本退出清理本次自有容器/临时数据，保留用户原有夹具。
+
+
+
+## Redis 大集合分页编辑（2026-10-23，第八轮）
+
+本轮直接抽取并共用 Mac 的完整 RedisCollectionReader（含游标、原始索引、ZSet 排序和搜索规则），移动端对超过 1,000 成员的 List/Hash/Set/ZSet 自动启用按页编辑。Mac session 缓存同连接的读取器并在连接变化时失效；Driver API 不变。
+
+- Redis 7.4.2：iPad **33/0/0**（38.439 s），iPhone 最终 **33/0/0**（22.098 s）。报告 `.build/ios-validation/redis-page-ipad-74.json` / `redis-page-iphone-74.json`。Redis 7.2.4 最终 iPad **33/0/0**（35.448 s），报告 `redis-page-ipad-72.json`；包含新增的键类型改变时旧游标不能发布不同类型页面的检查。保留以前的完整回归基线，不将其计为本轮完整测试。
+- 真实 1,200 项 List/Hash/Set/ZSet：后续页成员改写成功，整键 TTL 保留、DB 隔离；草稿阻止前后翻页，提交后读取当前页，部分页模型和 UI 均禁止整键 TTL/删除。List 第二页原始索引从 200 开始，外部 LPUSH 后原值/长度冲突阻止错误写入。
+- 慢请求用 continuation 门控：翻页时保留旧内容，后台取消后迟到响应不能发布新页；失败保持页号、原内容与历史，重试后正常前进。键从 List 改为 Hash 后，旧页刷新失败并保留原草稿，不沿用旧游标展示其他类型结果。
+- 两端原生挂载验证第二页实际显示位置/值 200、容器 bounds 保持，截图 `.build/ios-driver-previews/redis-paging-ipad.png` / `redis-paging-iphone.png` 已查看。首轮测试修正了夹具跨库操作后未切回和原生多行输入控件识别问题；失败结果没有计为通过。没有模拟桌面鼠标/键盘。
+- 最终 arm64 编译/链接通过（12.476 s），报告 `.build/ios-validation/redis-page-device.json`。桌面 Redis **11/0/0**（21.937 s）及单独编译通过，报告 `redis-page-mac.json`。
+- 新外置 Redis 包单独打包/ad-hoc 签名，归档 `redis-driver-1.0.1-x86_64-94f6d9bd5e47e06f.zip`。真实 installer/registry 验证六类包共同加载；加载后的 Redis 包实连检查 Hash 字段 TTL、1,200 项 List 第二页原始索引 200，以及既有条件创建/重命名/分数冲突。记录 `.build/ios-redis-page-desktop-load.txt`，用户 Dev 安装目录未覆盖，未提交/发布。
+
+范围：每页请求 200 项（SCAN COUNT 非硬限制），单页仍限 1,000 项/1 MiB；String 仍为 1 MiB 整值编辑。成员搜索 UI、String 分块编辑、二进制成员修改尚未移植。SCAN 外部变更可引起重复或遗漏，返回上一页会重新读取当前数据，ZSet 改分数可使成员离开本页；不承诺稳定历史快照。其他五类驱动不经过此读取器与编辑页，仅校验桌面加载兼容，未重做其全部实库测试。实体设备触控/弱网/系统挂起待验收。
+
+
+## Redis Hash 字段 TTL 验证（2026-10-23，第七轮）
+
+本轮增量只涉及 Redis Hash 字段 TTL，移动端与 Mac 共用能力探测/HPTTL 读取器及已有提交计划；在此前 545 项完整回归基线上定向验证 Redis，不把历史完整回归计为本轮新增测试。
+
+- Redis 7.4.2 隔离容器：iPad **29 passed / 0 failed / 0 skipped**（72.769 s）；iPhone **29/0/0**（22.216 s）。报告 `.build/ios-validation/redis-field-<simulator UUID>.json`。覆盖 TTL 设置/移除、无效值拒绝、字段重命名重新计时、仅 HSET 改值清除字段 TTL、保留整键 TTL、DB 隔离，以及原 Redis 值编辑/新建/重命名/安全锁/未知结果/后台状态。
+- Redis 7.2.4：iPad 初轮 **28/0/0**（65.682 s）；新增原生能力控件验证后 iPhone **29/0/0**（20.013 s）。不显示字段 TTL 输入，模型也拒绝 TTL 改动。旧版 ACL 专项函数没有发送 7.4 命令，此项不计为旧版实库字段过期支持。
+- 7.4 ACL：HPTTL 被拒绝时快照读取失败，不假造永久 TTL；COMMAND 探测被拒绝时标记未知，仍可读取普通字段值，TTL 编辑被阻止。字段已消失的 -2 回复视作快照冲突；错误不会替换已有快照。延续已有取消/迟到读取/后台与回执不明状态测试。
+- 原生 UIHostingController 验证 Hash TTL 输入是否随服务器能力出现，iPad/iPhone 7.4 与 iPhone 7.2 降级界面已查看；iPhone 最终原生 UI 单项补验 1/0/0（20.473 s），报告 `.build/ios-validation/redis-field-ui-ECA68ECD-218B-4708-A9DA-94381CBF653F.json`。截图按 `redis-field-ttl-74-*` / `redis-field-ttl-72-*` 区分。没有模拟真实桌面鼠标/键盘。
+- arm64 iPhoneOS 编译/链接通过（17.913 s）；报告 `.build/ios-validation/redis-field-device.json`。桌面 Redis 独立编译及 **11/0/0** 回归通过（18.894 s），报告 `.build/ios-validation/redis-field-mac.json`。
+- 新 Redis 外置驱动独立打包/ad-hoc 签名，包归档 `redis-driver-1.0.1-x86_64-906e5248fecc370a.zip`。真实 installer/registry 加载全部六类驱动，实连新 Redis 包的分页 Hash 读取，确认返回实际字段 TTL；既有分数冲突、条件创建和重命名也通过。记录 `.build/ios-redis-field-desktop-load.txt`。用户 Dev 安装未覆盖，Driver API 仍为 5，未提交/发布。
+
+可复现：`python3 scripts/test-ios-redis-field-ttl.py '<simulator UUID>'` 使用已有本地 redis:7.4.2 镜像，退出清理自己的容器。其他五类驱动不经过该读取器和字段 TTL 控件，本轮没有改变其数据协议/SQL/结果展示。
+
+限制：TTL 本身没有并发原值断言，字段重命名按已读取时长重新计时；字段修改值沿 Mac/HSET 清除字段 TTL 的语义，UI 已提示。大键仍限 1,000 成员/1 MiB 编辑，尚未提供分页编辑；二进制集合成员只读。实体设备触控、真正弱网和系统挂起仍待验收。
+
+
+## Redis 新建与重命名验证（2026-10-23，第六轮）
+
+本轮继续在 `codex/ios-ipad-editor` 独立工作区实现 Redis 五类新建与整键重命名。共用 Mac 创建/重命名计划，桌面新建同步改用 WATCH 缺失断言，阻止并发创建覆盖。前面的工作区改动继续保留；未提交、未发布。
+
+- iPad Pro 13-inch (M5) / iOS 26.3，隔离 MySQL 8.4、PostgreSQL 17、Doris 4.1.3、Elasticsearch 8.18.0、Redis：完整回归 **545 passed / 0 failed / 0 skipped**（264.537 s）。报告 `.build/ios-validation/redis-key-ipad-full.json`。覆盖共享结果页、原 SQL 表/查询链路及 Redis 创建/重命名；新增操作不进入其他驱动写入服务。
+- 最终 Redis 定向回归（包括超长键名提示与关闭文本自动纠错的最终代码）：iPad **26/0/0**（48.762 s），iPhone 17 Pro / iOS 26.3 **26/0/0**（19.553 s）；报告 `.build/ios-validation/redis-key-ipad.json` / `redis-key-iphone.json`。两端新建弹窗的命令预览与确认截图均已查看。
+- Redis 实库：string（含空值）、hash、list、set、zset 新建与 TTL；逻辑库隔离；两个独立客户端并发创建同名键只有一个成功，失败方不覆盖原值；RENAMENX 同名目标拒绝、原二进制值/TTL 保留、源键不存在明确失败、Stream 无需编辑快照即可重命名。
+- 状态测试覆盖安全锁、草稿变化使旧确认失效、空名/未变名称/无效 TTL/重复字段/超长键名、Mac List 空白过滤和顺序。故障注入覆盖回执丢失、核实读取失败/重试、后台等待写入结果、迟到读取不能清除待核实状态；读核实不重放，未知结果不自动认定成功。
+- 原生资源页程序化挂载：数据库行新建菜单、详情/属性共用编辑菜单及目录重命名入口；草稿期间禁止切库。成功创建选中新键，重命名更新选中项，目录按原 MATCH 重新扫描，不插入不匹配目标；已有值编辑与刷新 frame 验证继续通过。截图 `.build/ios-driver-previews/redis-create-ipad.png` / `redis-create-iphone.png`。没有模拟用户桌面鼠标/键盘。
+- Mac 主工程构建成功，11 项共享创建/重命名及草稿测试 **11/0/0**（29.442 s），报告 `.build/ios-validation/redis-key-mac-feature.json`。第一次使用 Feature scheme 不支持 test action，之后一次函数筛选缺少括号空跑；两者均不计为测试通过，最终使用主工程 scheme 的完整函数标识获得 11 项实际结果。
+- iPhoneOS arm64 最终编译/链接成功（21.135 s），报告 `.build/ios-validation/redis-key-device-build.json`；未签名或安装实体设备。原六类外置驱动包使用新版 Feature 通过真实 installer/registry 的签名、API、实际 bundle 路径和会话工厂校验；加载后的 Redis 包实连验证条件创建/重复创建拒绝/重命名值与 TTL 保留，以及既有 RESP3 分数冲突检查。记录 `.build/ios-redis-desktop-load.txt`。此次没有修改外置驱动源码，不需重新发布包；用户 Dev 安装目录不变，Driver API 仍为 5。
+
+范围：新建内容限 1,000 个成员/1 MiB，键名限 64 KiB；原非 UTF-8 键名禁用身份操作。超限值/Stream 可重命名，尚无 Stream 内容编辑。Hash 字段 TTL、大键分页编辑、二进制集合编辑、任意命令、集群路由和 TLS 仍未移植。TYPE/PTTL 结果是后续观察，不能证明未知回执的操作成功，也不保证外部写入下的原子历史快照。物理设备触控、真正网络断连、系统挂起/杀进程及多版本 Redis 仍需验收。
+
+## Redis 键值编辑（2026-10-23，第五轮）
+
+同一 `codex/ios-ipad-editor` 工作区新增 string 文本/HEX、TTL/PERSIST、整键删除，以及 list/hash/set/zset 成员增删改。直接共享 Mac planner、二进制预览和 WATCH/MULTI/EXEC 客户端；后面的 Redis 只读记录为历史基线。
+
+- iPad Pro 13-inch (M5) / iOS 26.3：隔离五类移动驱动的全量回归 **535 passed / 0 failed / 0 skipped**（176.267 s），报告 `.build/ios-validation/redis-ipad-full.json`，xcresult `test_sim_2026-10-23T11-06-43-159Z_pid25793_f1cd8253.xcresult`。保留 PG 测试的服务端 “there is no transaction in progress” notice，编译/测试无错误。
+- iPhone 17 Pro / iOS 26.3：新驱动与原生呈现回归 **63/0/0**（38.061 s），报告 `.build/ios-validation/driver-support-ECA68ECD-218B-4708-A9DA-94381CBF653F-tests.json`。
+- 最终调整成员级冲突语义、控制字节预览和编辑后分页历史后，Redis 专项重新验证：iPad **16/0/0**（38.524 s），iPhone **16/0/0**（17.225 s），无诊断。报告 `.build/ios-validation/redis-focused-DFE8BA44-CBD5-4403-BB51-949A1FD64AA6.json` 和 `redis-focused-ECA68ECD-218B-4708-A9DA-94381CBF653F.json`；xcresult 分别为 `test_sim_2026-10-23T11-10-26-437Z_pid28060_0761ba45.xcresult`、`test_sim_2026-10-23T11-11-22-040Z_pid29872_e8f594c0.xcresult`。
+- Redis 7.2.4 隔离实库覆盖：原始二进制字符串、KEEPTTL、DB 隔离、TTL/PERSIST、整键删除及原值冲突；Hash 改名/新增/删除、目标已存在拒绝、无关字段变化按 Mac 规则放行；List 重复值的精确位置删除、更新与头尾顺序；Set/ZSet 成员改名/新增/删除与非法分数拒绝；集合二进制成员只读保护、非 UTF-8 键名与替换字符键隔离、编辑超限及键消失。默认安全锁、过期确认、后台确认失效和对象/逻辑库草稿保护均覆盖。
+- EXEC 成功后注入回执丢失，确认服务器值已变但 UI 禁止重放；首次核实读取失败仍保持核实状态，再次读取成功才解除。真实 Redis EXEC 中的运行期类型错误验证前一条命令可能已生效；ACL 拒绝 WATCH/HGET 验证绝不继续写入。三个可控异步状态测试覆盖首次失败/成功为空、慢刷新保留内容/旧响应丢弃、后台中的提交完成后必须核实。
+- 实际资源页入口挂载原生编辑弹窗，核对 TextEditor 原值、安全锁、确认命令、成功写入和返回后网格 frame。已查看 `.build/ios-driver-previews/redis-edit-ipad.png`、`redis-edit-iphone.png`，命令和确认按钮可见；加载/错误固定在底栏。没有模拟真实桌面鼠标/键盘。
+- 最终 arm64 iPhoneOS 编译/链接通过（29.0 s），日志 `/tmp/querycraft-redis-final-device.log`；未签名或安装实体设备。桌面 Redis 驱动 **11/0/0**（26.501 s），包括两个新增的隔离实库 ACL/RESP3 分数回归；原有依赖其他环境的 pipeline 测试未作为此次实库证据。报告 `.build/ios-validation/redis-mac-tests.json`，独立构建通过（31.3 s）。
+- 新 Redis 外置驱动独立打包、ad-hoc 签名校验，SHA-256 `bfba3c6a5e4d5024ac92ddd9565539285efcc1fffed18ee0390dd801fe85fda9`。隔离真实 installer/registry 验证六类签名/API/实际 bundle 路径/会话工厂，新 Redis 包实际完成 RESP3 ZSet 更新和旧原值冲突拒绝，记录 `.build/ios-redis-desktop-load.txt`。Driver API 仍为 5；未替换用户正在使用的 Dev 安装目录，未提交或发布。所有本轮自建容器/Redis 进程已清理，原有 `querycraft-ios-schema-experience` 保留。
+
+限制：完整编辑快照限 1,000 个成员/1 MiB；新建/重命名键、Hash 字段 TTL、超限键分页编辑、二进制集合编辑、Stream/模块、任意命令、集群路由和 TLS 尚未移植。值编辑沿 Mac 的成员级断言，独立 TTL/DEL 检查完整已加载基线；没有持久版本号及 TTL 并发断言。故障注入不等同真实弱网；实体设备输入、系统挂起/杀进程及其他 Redis 版本仍待验收。MySQL/PG 原功能在完整回归覆盖，Doris/ES 保持只读，Kafka 无移动入口，仅验证桌面加载兼容。
+
+
+## PostgreSQL SQL 会话与磁盘缓存（2026-10-23，第四轮）
+
+SQL 控制台现支持 PG 写入/DDL、RETURNING、持续会话、事务与保存点，复用移动 SQL 的确认/安全锁/取消/缓存和 Mac 的分类规则。下方只读、表数据编辑记录是历史阶段，不代表当前能力上限。
+
+- iPad Pro 13-inch (M5) / iOS 26.3：五类可用移动驱动的隔离实库完整回归 **519 passed / 0 failed / 0 skipped**（174.924 s），包含原 MySQL 会话/写入/结构/缓存回归。报告 `.build/ios-validation/postgresql-session-ipad-full.json`；xcresult `test_sim_2026-10-23T10-29-42-968Z_pid72119_6ebd280f.xcresult`。
+- iPhone 17 Pro / iOS 26.3：最终新增驱动/PG 会话与原生呈现定向回归 **50 passed / 0 failed / 0 skipped**（30.472 s）。报告 `.build/ios-validation/postgresql-session-iphone.json`；xcresult `test_sim_2026-10-23T10-33-33-309Z_pid77007_15a4752d.xcresult`。
+- 实库覆盖锁定时先确认、确认内容过期拒绝、受影响行数、RETURNING 原始大整数/注释、刷新不重放、同连接 pg_backend_pid、事务内可见写入/保存点/提交/回滚、事务中禁止端点和 Schema 切换、事务临时表字段来源、SQL 错误停止后续语句并断开回滚、权限/CHECK 拒绝不误报未知结果、后台关闭未提交事务。模拟真实 COMMIT 成功后回执丢失，确认模型阻止重放，显式核实后只重新读取。
+- libpq 分批传输：12,000 行全部落盘、可见窗口 500 行、分页和全部缓存导出不重执行 SQL；Schema/注释/别名/表达式/空结果和事务临时表来源保留。extended query protocol 拒绝一次夹带多条语句；单行超限关闭未读完的连接。取消前通过 pg_stat_activity 确认 pg_sleep 正在执行，保留前条结果、跳过后续语句。用户关闭 standard_conforming_strings 后的含反斜线表名、注释和文本字面量另外实测。
+- 原生 MobileWorkspaceView 挂载检查缓存翻页网格 frame 稳定、实际捕获的 PG UPDATE 出现在确认弹窗、安全锁仍开启。已查看 `.build/ios-driver-previews/postgresql-session-ipad.png` 和 `postgresql-session-iphone.png`。未模拟用户桌面鼠标/键盘。
+- iPhoneOS arm64 编译/链接通过（32.4 s），没有签名或安装实体设备；桌面 PG 13 项测试全部通过（28.782 s）、独立构建通过（23.0 s）。报告 `.build/ios-validation/postgresql-session-mac.json`。
+- PG 外置驱动重新打包/签名并由隔离 installer/registry 实际加载，全部六类驱动签名/API/bundle 路径/会话工厂通过；新 PG 包实连只读元数据和带点物理对象的增删改/整批回滚。记录 `.build/ios-postgres-session-desktop-load.txt`。未覆盖用户的 Dev 安装目录、未修改 Driver API、未提交或发布。
+
+范围与差异：MySQL 与 PG 共用移动 SQL 会话和缓存，MySQL 继续使用 MariaDB 传输；Doris、Redis、ES 仍只读，Kafka 未提供移动入口。PG 图形结构编辑、查询结果单元格编辑、导入/COPY 未移植。错误后主动关闭会话并回滚，不提供在失败事务中继续恢复的操作；物理设备触控/弱网/后台、真实 TLS/证书和多版本服务器仍待验收。中途显示的结果可能尚未解析字段类型/来源，完成后在原连接补齐，不按名称猜测。
+
+## PostgreSQL 表数据编辑验证（2026-10-23，第三轮）
+
+本轮在同一 `codex/ios-ipad-editor` 工作区开放 PG 表数据新增/修改/删除。沿用暂存、安全锁、SQL 预览、撤销与刷新状态，和 macOS 共用 `PostgreSQLDataMutation`；后面的只读记录保留为历史基线。
+
+- iPad Pro 13-inch (M5) / iOS 26.3：隔离 MySQL 8.4、PostgreSQL 17、Doris 4.1.3、Elasticsearch 8.18.0 和 Redis，完整回归 **508 passed / 0 failed / 0 skipped**（172.675 s）。报告 `.build/ios-validation/postgresql-mutation-ipad-full.json`；xcresult `test_sim_2026-10-23T10-11-03-161Z_pid55406_e2ebc51a.xcresult`。
+- iPhone 17 Pro / iOS 26.3：最终新驱动、PG 编辑与原生呈现定向回归 **39 passed / 0 failed / 0 skipped**（25.530 s）。报告 `.build/ios-validation/postgresql-mutation-iphone.json`；xcresult `test_sim_2026-10-23T10-15-29-361Z_pid60641_ef255f41.xcresult`。
+- PG 实库写入覆盖：原始大整数主键、同名跨 Schema 和带点对象名、引号/反斜线/中文、NULL/DEFAULT、identity 默认新增、生成列限制、bytea 文本往返、无主键更新/删除保护、视图禁写、NUL 文本拒绝、只读账号拒绝、字段快照不匹配、目标行消失。CHECK 失败会回滚此前的删除并保留草稿，修正后可显式重提。
+- 故障验证包装真实 libpq 连接：在 UPDATE 已执行后进入后台/取消，确认 ROLLBACK 和原值恢复；COMMIT 已在服务器成功后丢失回执，确认真实数据已变但草稿保留、重复提交被阻止，丢弃后仍需成功刷新。未将故障注入等同于物理设备弱网验收。
+- 实际 `MobileApplicationModel` → PG 工作区 → 表编辑状态 → `MobileCellEditView` / `MobilePendingChangesView` 程序化挂载，检查字段值、Schema-qualified SQL 和安全锁；保留既有刷新 frame/列宽验证。截图 `.build/ios-driver-previews/postgresql-edit-ipad.png` 和 `postgresql-edit-iphone.png` 已查看。没有模拟桌面鼠标或键盘。
+- arm64 iPhoneOS 应用编译/链接成功（50.0 s），未签名、未安装实体设备。桌面 PG 编译成功（26.5 s）、现有 13 项测试全部通过（21.936 s）；报告 `.build/ios-validation/postgresql-mutation-mac.json`。
+- 新 PG 外置驱动独立重新打包、ad-hoc 签名校验，在隔离安装目录由真实 installer/registry 加载。六类驱动的签名/API/实际 bundle 路径/会话工厂全部通过；新 PG 包实连只读账号检查原元数据链路，并以写账号对带点 Schema/表名实际执行新增、修改、删除及重复主键引起的整批回滚。记录 `.build/ios-postgres-mutation-desktop-load.txt`。Driver API 仍为 5，用户安装的 Dev 目录未覆盖，未提交/发布。
+
+六类适用范围：MySQL 原写入、结构编辑、查询结果编辑、SQL 会话在完整回归中覆盖；PG 新增表数据写入，SQL 查询结果仍只读；Doris、Redis、Elasticsearch 保持原只读范围且同次实连回归；Kafka 无移动入口，桌面加载兼容通过。PG SQL 控制台写入、跨执行事务、结构编辑、导入和磁盘缓存未移植。主键定位沿 Mac 规则，不提供旧字段值乐观冲突检查；真实 PG TLS/证书、多版本服务器及物理设备触控/弱网仍待验收。
+
+## PostgreSQL 只读验证（2026-10-23，第二轮）
+
+在 `codex/ios-ipad-editor` 的同一独立工作区接入第五类移动驱动。后面的第一轮和 MySQL 记录是历史基线，当前能力范围见 README / MAC_PARITY.md。
+
+- iPad Pro 13-inch (M5) / iOS 26.3：隔离 MySQL 8.4、PostgreSQL 17、Doris 4.1.3、Elasticsearch 8.18.0 和 Redis 夹具，同一次完整回归 **495 passed / 0 failed / 0 skipped**（287.467 s）。报告 `.build/ios-validation/postgresql-ipad-full.json`；xcresult `test_sim_2026-10-23T09-36-59-314Z_pid71685_096a0d9b.xcresult`。
+- iPad 最终补验：同一四类新增驱动实库/状态/呈现套件 **27 passed / 0 failed / 0 skipped**（42.330 s），包括完整回归后新增的查询入口/历史恢复及 Schema 数量修正；报告 `.build/ios-validation/driver-support-DFE8BA44-CBD5-4403-BB51-949A1FD64AA6-tests.json`。
+- iPhone 17 Pro / iOS 26.3：最终新驱动、PG 原生呈现和查询历史等套件 **27 passed / 0 failed / 0 skipped**（42.550 s）。报告 `.build/ios-validation/driver-support-ECA68ECD-218B-4708-A9DA-94381CBF653F-tests.json`；xcresult `test_sim_2026-10-23T09-43-02-927Z_pid87985_7da31f9d.xcresult`。
+- 最终传输补验：截断后补读元数据的连接同样支持取消，并设置 UTF-8/30 秒查询超时。iPad **10/0/0**（42.021 s）、iPhone **10/0/0**（17.036 s），`.build/ios-validation/postgresql-final-ipad.json` / `postgresql-final-iphone.json`；对应桌面 PostgreSQL **13/0/0**（34.4 s）、驱动构建（14.2 s）与 arm64 应用构建（23.0 s）通过。
+- PostgreSQL 真实只读账号：库/Schema/完整目录与共享模糊搜索，public/audit 同名表独立来源、普通视图与物化视图、SELECT 权限用户的主键、注释、分页和中文筛选；别名/关联/表达式/空结果、带点 Schema/表名、search_path 和查询历史恢复；百万行查询只保留指定前缀，单行字节预算、bytea/NULL/空文本。取消前通过 pg_stat_activity 确认 pg_sleep 已在服务端运行，取消在 3 秒内返回，随后查询成功；拒绝 DELETE 和混入事务的批量 SQL。
+- 真正的 `MobileApplicationModel` → PostgreSQL executor → 查询结果/历史及实际 `MobileLibraryView` 原生表格均验证；刷新后 frame/列宽/Schema 保持，标题显示 Schema，目录数量按当前 Schema 计算。`.build/ios-driver-previews/postgresql-ipad.png` 与 `postgresql-iphone.png` 用 UIHostingController 在模拟器生成并查看；没有模拟真实桌面鼠标/键盘。
+- libpq 18.6 分别从校验后的源码构建 iOS simulator x86_64 和 iphoneos arm64 静态库。arm64 应用构建通过，真机目标未签名，也未安装到物理设备；hiredis 上游 C 源码仍有 size_t 窄化的编译警告。
+- macOS PostgreSQL 13 项回归通过；独立驱动编译、重新打包和签名校验通过。真实 DatabaseDriverPackageInstaller / registry 在隔离目录同进程加载全部六类驱动、检查实际 bundle 路径并建立会话工厂；新 PG 包以测试只读账号实际读取主键、注释、物化视图、空查询来源及带点 Schema 的 search_path，记录 `.build/ios-postgres-desktop-load.txt`。其余五类沿用第一轮相同源码/Feature 构建的隔离包，未替换用户的安装目录。Driver API 保持 5，未修改版本或发布。
+
+通用移动配置/预览适配使 MySQL、Doris、PG 保留各自传输和类型/来源；完整回归覆盖原 MySQL 编辑、结构、SQL 会话、磁盘缓存和导出。Redis/ES 专用只读链路继续实连；Kafka 无本轮移动入口。PG 写入、结构编辑、跨执行事务、SQL 磁盘缓存/完整桌面编辑器未移植；bytea 沿桌面文本格式。尚无真实 PG TLS/证书、多版本服务器和物理设备触控/弱网/后台验收，不用模拟器构建代替真机验收。全部夹具使用 loopback 临时账号，脚本结束清理；用户原有测试容器保持。
+
+## 新增驱动验证（2026-10-23，第一轮）
+
+当前分支 `codex/ios-ipad-editor`，工作区 `ios-drivers/QueryCraftPublic`。以下为本轮新证据；后续的 MySQL 首版记录保留作历史基线，新增驱动的当前范围以 README / MAC_PARITY.md 为准。
+
+- **iPad Pro 13-inch (M5) / iOS 26.3**：复用原完整 MySQL 夹具，加本轮 Redis 进程、Elasticsearch 8.18.0、Doris 4.1.3 独立容器，同一次完整测试 **484 passed / 0 failed / 0 skipped**。当次 XcodeBuildMCP xcresult `test_sim_2026-10-23T08-55-05-931Z_pid58554_6233e4e8.xcresult`。
+- **iPhone 17 Pro / iOS 26.3**：新驱动、状态与原生资源页面测试 **15 passed / 0 failed / 0 skipped**，包含三类新服务实连；xcresult `test_sim_2026-10-23T09-00-07-230Z_pid79846_af2a3f04.xcresult`。最终补充了“已删除默认库不影响 Doris 元数据”和“Redis DB 1 名称选择正确逻辑库”两项状态回归，见下面的补充验证。
+- **最终补充回归**：iPad 新驱动/原生页面套件 **14 passed / 0 failed / 3 skipped**，三项实库在此无夹具复跑中按预期跳过，已在前面的四库全量及 iPhone 实连运行中通过；xcresult `test_sim_2026-10-23T09-07-31-844Z_pid88911_4249cc19.xcresult`。覆盖最后两项默认库/逻辑库修正及全部新增页面状态。
+- 新用例覆盖旧 MySQL 连接解码兼容、驱动默认值/Redis TLS 限制、Doris 无事务/编辑入口、Doris 导出方言、非 SQL 拒绝 SQL 导出、服务端身份与索引路径编码、SCAN 非零游标空批次、首次/失败/空/重试、慢刷新保留内容、快速换库/换键、取消/后台与拒绝迟到回复。原生 UIHostingController 检查加载时网格 frame/列宽/100 行内容保持稳定。
+- **实库读取**：Doris 数据库/表、字段注释、首/下一页、中文文本筛选、别名/表达式空结果及拒绝 DELETE；Redis 逻辑库、SCAN 与 string/list/hash/set/zset；Elasticsearch 索引/别名、中文文档 `_source`、Mapping 和 10,000 条边界。仅使用隔离夹具，退出后容器和临时 Redis 已清理。
+- **macOS 回归**：主程序构建成功；六类驱动分别编译成功。MySQL **47**、Doris **5**、Redis **9**、Elasticsearch **45** 项测试通过，Elasticsearch 的 2 项环境相关实库用例跳过。六类驱动均在 `.build/ios-support-desktop-drivers` 重新打包及 ad-hoc 签名；使用当前 Feature 的真实 `DatabaseDriverPackageInstaller` 验证签名/API、同进程加载、确认 principalClass 所在 bundle 路径并创建全部会话工厂，六项 PASS，记录 `.build/ios-driver-desktop-load.txt`。Driver API 保持 5；没有修改版本号或发布线上驱动，也没有替换用户当前桌面安装目录。
+- **原生渲染**：`.build/ios-driver-previews/elasticsearch-ipad.png` 与 `elasticsearch-iphone.png` 已查看，确认宽屏目录分栏、窄屏详情导航、单一顶部刷新及底栏分页。画面数据是测试服务，用于布局；真实 HTTP/数据库读取由独立实库测试断言。没有移动真实鼠标或模拟桌面键盘输入。
+
+重现：`python3 scripts/test-ios-driver-support.py <simulator UUID> --full`。不传 `--full` 仅验证新增驱动及资源页面。两者均记录结构化测试结果；完整模式复用原 MySQL 准备脚本，防止把未配置 MySQL 的集成用例误当成代码回归。
+
+尚未验证：实体设备、arm64 iPhoneOS 原生库构建/签名、远程/VPN、Redis ACL/集群重定向、Elasticsearch Basic/API Key 及四类 TLS 的真实证书服务器、Doris 老版本回退的实库。认证/TLS/路径安全直接使用原桌面实现；本轮仅实连了本机无认证/禁用 TLS 的新驱动夹具。Redis Stream/模块类型、ES PIT 深分页和写入、PG/Kafka 移动驱动仍未移植，不视为完成桌面全功能对齐。
+
+---
+
 
 日期：2026-10-22。独立 worktree `ios-ipad-proof/QueryCraftPublic`，不替换已安装 Mac/Dev 或驱动，不提交、打 tag、发布或修改用户数据库。
 

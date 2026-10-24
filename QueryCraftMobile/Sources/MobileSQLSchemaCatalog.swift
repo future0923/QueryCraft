@@ -4,28 +4,28 @@ import QueryCraftMobileCore
 import QueryCraftMobileTransport
 
 protocol MobileSQLMetadataProviding: Sendable {
-    func editorCatalog(configuration: MariaDBTransportConfiguration) async throws -> [WorkspaceSchemaDatabase]
-    func editorColumns(configuration: MariaDBTransportConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns]
-    func editorContext(configuration: MariaDBTransportConfiguration) async throws -> SQLHighlightContext
+    func editorCatalog(configuration: MobileSQLConfiguration) async throws -> [WorkspaceSchemaDatabase]
+    func editorColumns(configuration: MobileSQLConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns]
+    func editorContext(configuration: MobileSQLConfiguration) async throws -> SQLHighlightContext
 }
 
 extension MobileMySQLService: MobileSQLMetadataProviding {
-    func editorCatalog(configuration: MariaDBTransportConfiguration) async throws -> [WorkspaceSchemaDatabase] {
+    func editorCatalog(configuration: MobileSQLConfiguration) async throws -> [WorkspaceSchemaDatabase] {
         let names = try await databases(configuration: configuration)
         let result = try await executor.execute(configuration: metadataConfiguration(configuration), sql: MySQLSchemaCatalog.objectsQuery)
         return MySQLSchemaCatalog.databases(names, rows: result.dictionaryRows)
     }
-    func editorColumns(configuration: MariaDBTransportConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] {
+    func editorColumns(configuration: MobileSQLConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] {
         guard !references.isEmpty else { return [] }
         let result = try await executor.execute(configuration: metadataConfiguration(configuration), sql: MySQLSchemaCatalog.columnsQuery(references))
         return MySQLSchemaCatalog.columns(references, rows: result.dictionaryRows)
     }
-    func editorContext(configuration: MariaDBTransportConfiguration) async throws -> SQLHighlightContext {
+    func editorContext(configuration: MobileSQLConfiguration) async throws -> SQLHighlightContext {
         let result = try await executor.execute(configuration: metadataConfiguration(configuration), sql: "SELECT @@SESSION.sql_mode")
         guard let mode = result.rows.first?.first ?? nil else { throw MobileQueryError.invalidServerMetadata }
         return .init(databaseType: .mysql, ansiQuotes: mode.uppercased().split(separator: ",").contains("ANSI_QUOTES"))
     }
-    private func metadataConfiguration(_ config: MariaDBTransportConfiguration) -> MariaDBTransportConfiguration {
+    private func metadataConfiguration(_ config: MobileSQLConfiguration) -> MobileSQLConfiguration {
         .init(host: config.host, port: config.port, username: config.username, password: config.password, database: nil, tlsMode: config.tlsMode)
     }
 }
@@ -39,7 +39,7 @@ extension MobileMySQLService: MobileSQLMetadataProviding {
     private(set) var errorMessage: String?
     private(set) var isBackgrounded = false
     private let service: any MobileSQLMetadataProviding
-    @ObservationIgnored private var configuration: MariaDBTransportConfiguration?
+    @ObservationIgnored private var configuration: MobileSQLConfiguration?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var columnTask: Task<Void, Never>?
@@ -51,10 +51,10 @@ extension MobileMySQLService: MobileSQLMetadataProviding {
 
     init(service: any MobileSQLMetadataProviding = MobileMySQLService()) { self.service = service }
 
-    func configure(_ configuration: MariaDBTransportConfiguration?) {
+    func configure(_ configuration: MobileSQLConfiguration?) {
         guard self.configuration != configuration else { return }
         invalidate(); self.configuration = configuration
-        context = .init(databaseType: .mysql)
+        context = .init(databaseType: configuration?.driver == .postgresql ? .postgresql : configuration?.driver == .doris ? .doris : .mysql)
         publish([])
     }
 

@@ -1,6 +1,10 @@
 import CLibPQ
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 final class LibPQClient: @unchecked Sendable {
     private let queue = DispatchQueue(
@@ -20,7 +24,8 @@ final class LibPQClient: @unchecked Sendable {
         try await runOnQueue {
             if self.connection != nil { return }
             let connection = try self.openConnection()
-            try self.executeSetup(on: connection)
+            do { try self.executeSetup(on: connection) }
+            catch { PQfinish(connection); throw error }
             self.cacheServerVersion(from: connection)
             self.connection = connection
         }
@@ -73,6 +78,163 @@ final class LibPQClient: @unchecked Sendable {
                 if Task.isCancelled { throw CancellationError() }; throw error
             }
         } onCancel: { cancellation.cancel() }
+    }
+
+    /// Native single-row mode and the same bounded channel used by MariaDB.
+    /// Metadata is resolved after draining the result, on this connection, so
+    /// transaction-local tables and physical field origins remain visible.
+    func queryStream(_ sql: String, maximumRowBytes: Int = 8_388_608,
+        onBatch: @escaping @Sendable (WorkspaceDatabaseDataBatch) async throws -> Void
+    ) async throws -> PostgreSQLQueryStreamResult {
+        guard !sql.utf8.contains(0) else { throw PostgreSQLDataMutation.ValidationError.nullCharacter }
+        let channel = WorkspaceTransferBatchChannel(), cancellation = LibPQCopyCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withThrowingTaskGroup(of: PostgreSQLQueryStreamResult?.self) { group in
+                group.addTask {
+                    do {
+                        return try await self.runOnQueue {
+                            guard let connection = self.connection else { throw WorkspaceSessionError.notConnected }
+                            try cancellation.install(connection)
+                            var complete = false, first: OpaquePointer?
+                            defer {
+                                cancellation.finish()
+                                if let first { PQclear(first) }
+                                if !complete { PQfinish(connection); self.connection = nil }
+                            }
+                            // Extended query protocol guarantees one server statement
+                            // even if a parser or dialect edge case split it incorrectly.
+                            guard sql.withCString({ PQsendQueryParams(connection, $0, 0, nil, nil, nil, nil, 0) }) == 1,
+                                  PQsetSingleRowMode(connection) == 1 else { throw self.connectionError(from: connection) }
+                            var columns: [WorkspaceDatabaseDataColumn] = [], rows: [WorkspaceDatabaseDataRow] = []
+                            var count = 0, bytes = 0, affected = 0, finished = false
+                            while let result = PQgetResult(connection) {
+                                let status = PQresultStatus(result)
+                                guard status == PGRES_SINGLE_TUPLE || status == PGRES_TUPLES_OK || status == PGRES_COMMAND_OK else {
+                                    let error = self.resultError(from: result); PQclear(result); throw error
+                                }
+                                if first == nil {
+                                    first = result
+                                    columns = (0..<Int(PQnfields(result))).map { .init(id: $0, name: self.string(from: PQfname(result, Int32($0))) ?? "column_\($0)") }
+                                }
+                                defer { if result != first { PQclear(result) } }
+                                if status == PGRES_SINGLE_TUPLE {
+                                    var rowBytes = 0
+                                    for index in columns.indices {
+                                        let size = Int(PQgetlength(result, 0, Int32(index)))
+                                        guard size <= maximumRowBytes - rowBytes else { throw PostgreSQLQueryStreamError.rowTooLarge }
+                                        rowBytes += size
+                                    }
+                                    let values: [WorkspaceDatabaseDataCell] = columns.indices.map { index in
+                                        PQgetisnull(result, 0, Int32(index)) == 1 ? .null : .text(self.string(from: PQgetvalue(result, 0, Int32(index))) ?? "")
+                                    }
+                                    rows.append(.init(id: count, values: values)); count += 1; bytes += rowBytes
+                                    if rows.count >= 500 || bytes >= 1_048_576 {
+                                        try channel.send(.init(columns: columns, rows: rows)); rows = []; bytes = 0
+                                    }
+                                } else { affected = self.affectedRows(from: result); finished = true }
+                            }
+                            guard finished, let first else { throw self.connectionError(from: connection) }
+                            let state = try Self.transactionState(status: PQtransactionStatus(connection))
+                            let metadata = self.columnMetadata(from: first, connection: connection)
+                            columns = columns.map { field in
+                                let meta = metadata[field.id]
+                                return .init(id: field.id, name: field.name, type: meta?.type, origin: meta?.origin.map {
+                                    .init(databaseName: self.configuration.database, schemaName: $0.schemaName, tableName: $0.tableName, columnName: $0.columnName)
+                                })
+                            }
+                            // Also sends final metadata when the last data batch was full.
+                            try channel.send(.init(columns: columns, rows: rows))
+                            complete = true; channel.finish()
+                            return .init(columns: columns, rowCount: count, affectedRows: affected, transactionState: state)
+                        }
+                    } catch { channel.fail(error); throw error }
+                }
+                group.addTask {
+                    do { while let batch = try await channel.next() { try await onBatch(batch) }; return nil }
+                    catch { channel.fail(error); throw error }
+                }
+                do {
+                    var summary: PostgreSQLQueryStreamResult?
+                    for try await value in group { if let value { summary = value } }
+                    guard let summary else { throw WorkspaceNativeBulkError.invalidStreamState }
+                    return summary
+                } catch { channel.fail(error); cancellation.cancel(); group.cancelAll(); throw error }
+            }
+        } onCancel: { channel.fail(CancellationError()); cancellation.cancel() }
+    }
+
+    func queryPreview(_ sql: String, maximumRows: Int, maximumBytes: Int) async throws -> PostgreSQLQueryPreview {
+        let cancellation = LibPQCopyCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            do {
+                let preview = try await runOnQueue {
+                    guard let connection = self.connection else { throw WorkspaceSessionError.notConnected }
+                    try cancellation.install(connection)
+                    defer { cancellation.finish() }
+                    do { return try self.boundedQuery(sql, connection: connection, maximumRows: maximumRows, maximumBytes: maximumBytes, cancellation: cancellation) }
+                    catch {
+                        cancellation.finish()
+                        if self.connection == connection { PQfinish(connection); self.connection = nil }
+                        throw error
+                    }
+                }
+                try Task.checkCancellation()
+                return preview
+            } catch {
+                if Task.isCancelled { throw CancellationError() }; throw error
+            }
+        } onCancel: { cancellation.cancel() }
+    }
+
+    private func boundedQuery(_ sql: String, connection: OpaquePointer, maximumRows: Int, maximumBytes: Int, cancellation: LibPQCopyCancellation) throws -> PostgreSQLQueryPreview {
+        guard sql.withCString({ PQsendQuery(connection, $0) }) == 1, PQsetSingleRowMode(connection) == 1 else { throw connectionError(from: connection) }
+        var first: OpaquePointer?, names: [String] = [], rows: [[String?]] = []
+        var bytes = 0, truncated = false, finished = false
+        defer { if let first { PQclear(first) } }
+        while let result = PQgetResult(connection) {
+            let status = PQresultStatus(result)
+            guard status == PGRES_SINGLE_TUPLE || status == PGRES_TUPLES_OK || status == PGRES_COMMAND_OK else {
+                let error = resultError(from: result); PQclear(result); throw error
+            }
+            if first == nil {
+                first = result
+                names = (0..<Int(PQnfields(result))).map { string(from: PQfname(result, Int32($0))) ?? "column_\($0)" }
+            }
+            if status == PGRES_SINGLE_TUPLE {
+                let count = names.indices.reduce(0) { $0 + Int(PQgetlength(result, 0, Int32($1))) }
+                if rows.count >= max(0, maximumRows) || count > max(0, maximumBytes) - bytes {
+                    truncated = true
+                } else {
+                    rows.append(names.indices.map { index in
+                        PQgetisnull(result, 0, Int32(index)) == 1 ? nil : string(from: PQgetvalue(result, 0, Int32(index)))
+                    }); bytes += count
+                }
+            } else { finished = true }
+            if result != first { PQclear(result) }
+            if truncated {
+                // Discard the dedicated read connection; do not drain an unbounded result.
+                cancellation.finish()
+                PQfinish(connection); self.connection = nil
+                break
+            }
+        }
+        guard finished || truncated else { throw connectionError(from: connection) }
+        guard let first else { throw connectionError(from: connection) }
+        // libpq metadata queries must run on an idle connection. On truncation,
+        // obtain catalog metadata on a separate connection to the same database.
+        let metadataConnection = truncated ? try openConnection() : connection
+        defer { if truncated { cancellation.finish(); PQfinish(metadataConnection) } }
+        if truncated {
+            try cancellation.install(metadataConnection)
+            try executeSetup(on: metadataConnection)
+            _ = try query("SET statement_timeout TO '30s'", connection: metadataConnection)
+        }
+        let metadata = columnMetadata(from: first, connection: metadataConnection)
+        return .init(result: .init(columns: names, columnTypes: names.indices.map { metadata[$0]?.type },
+            columnOrigins: names.indices.map { metadata[$0]?.origin }, rows: rows,
+            transactionState: truncated ? .disconnected : try Self.transactionState(status: PQtransactionStatus(connection))), isTruncated: truncated)
     }
 
     func copyFrom(sql: String, stream: WorkspaceNativeBulkStream) async throws -> Int {
@@ -330,6 +492,7 @@ final class LibPQClient: @unchecked Sendable {
         if let password = configuration.password, !password.isEmpty {
             components.append("password='\(escape(password))'")
         }
+        if let timeout = configuration.connectTimeout { components.append("connect_timeout=\(max(1, timeout))") }
         components.append("sslmode='\(sslModeString())'")
         return components.joined(separator: " ")
     }

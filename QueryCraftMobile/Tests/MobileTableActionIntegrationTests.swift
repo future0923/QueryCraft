@@ -5,7 +5,7 @@ import QueryCraftMobileTransport
 @testable import QueryCraftMobileProof
 
 @MainActor struct MobileTableActionIntegrationTests {
-    private func config(reader: Bool = false) throws -> MariaDBTransportConfiguration {
+    private func config(reader: Bool = false) throws -> MobileSQLConfiguration {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
         return .init(host: "127.0.0.1", port: port, username: reader ? "proof_reader" : "proof_table_admin",
             password: reader ? "querycraft-proof-reader" : "querycraft-proof-table-admin", database: "querycraft_ios_table_actions", tlsMode: .required)
@@ -139,7 +139,7 @@ private actor TableAuthorizationGate {
 private actor TableLostAcknowledgement: MobileMutationConnection {
     private let client: MobileMariaDBMutationConnection
     private(set) var ddlCount = 0
-    init(configuration: MariaDBTransportConfiguration) { client = .init(client: MariaDBClient(configuration: configuration)) }
+    init(configuration: MobileSQLConfiguration) { client = .init(client: MariaDBClient(configuration: configuration)) }
     func connect() async throws { try await client.connect() }
     func close() async { await client.close() }
     func query(_ sql: String, bindings: [WorkspaceDatabaseDataCell]) async throws -> CDatabaseQueryResult {

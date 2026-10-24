@@ -3526,7 +3526,7 @@ final class WorkspaceModel {
         if case .integer(let count) = exists.reply, count > 0 {
             throw RedisKeyEditError.keyAlreadyExists(reference.name)
         }
-        try await commitRedisKeyChanges(plan.commands, for: reference)
+        try await commitRedisOptimisticMutation(plan.optimisticRequest, previewCommands: plan.commands)
         redisKeys.append(reference)
         redisKeyLoadDiscoveredCount = redisKeys.count
         await rebuildRedisKeyTree()
@@ -3826,10 +3826,7 @@ final class WorkspaceModel {
     }
 
     func deleteRedisKey(_ reference: RedisKeyReference) async throws {
-        let invocation = RedisCommandInvocation(
-            source: "DEL \(reference.name)",
-            arguments: ["DEL", reference.name]
-        )
+        let invocation = RedisKeyMetadataMutationPlan.delete(reference).command
         try await commitRedisKeyChanges([invocation], for: reference)
         redisKeys.removeAll { $0 == reference }
         redisHashFieldsByKey.removeValue(forKey: reference)
@@ -3846,29 +3843,16 @@ final class WorkspaceModel {
         _ reference: RedisKeyReference,
         to proposedName: String
     ) async throws -> RedisKeyReference {
-        let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { throw RedisKeyEditError.invalidKeyName }
-        guard name != reference.name else { return reference }
+        let plan = try RedisKeyRenamePlan.make(reference: reference, proposedName: proposedName)
+        guard plan.newName != reference.name else { return reference }
         guard !safetyLock.isEnabled else {
             throw RedisKeyEditError.safetyLockEnabled
         }
-        let plan = RedisKeyRenamePlan(reference: reference, newName: name)
         let result = try await executeRedisCommand(
             plan.command,
             databaseIndex: reference.databaseIndex
         )
-        guard case let .integer(didRename) = result.reply else {
-            throw RedisWorkspaceError.invalidReply("RENAMENX")
-        }
-        guard didRename == 1 else {
-            throw RedisKeyEditError.keyAlreadyExists(name)
-        }
-
-        let renamed = RedisKeyReference(
-            databaseIndex: reference.databaseIndex,
-            name: name,
-            type: reference.type
-        )
+        let renamed = try plan.result(for: result.reply)
         if let index = redisKeys.firstIndex(of: reference) {
             redisKeys[index] = renamed
         }

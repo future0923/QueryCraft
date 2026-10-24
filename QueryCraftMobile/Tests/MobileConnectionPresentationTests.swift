@@ -48,7 +48,7 @@ private actor PresentationReadGate: MobileQueryExecuting {
     func isWaiting() -> Bool { waiting }
     func callCount() -> Int { calls }
     func release() { continuation?.resume(); continuation = nil; waiting = false }
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         calls += 1
         if calls == 2 { waiting = true; await withCheckedContinuation { continuation = $0 } }
         return .init(columns: (0..<20).map { "column_\($0)" }, rows: (0..<100).map { row in (0..<20).map { "\(row):\($0)" } })

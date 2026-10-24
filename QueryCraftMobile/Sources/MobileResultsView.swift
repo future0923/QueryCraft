@@ -31,6 +31,8 @@ struct MobileResultsView: View {
     var pageContext: MobileGridPageContext? = nil
     var exportName = "query-result"
     var exportScopeDescription = "当前查询结果"
+    var exportDialect: WorkspaceSQLExportDialect? = .mysql
+    var resourcePagination: MobileResourceModel? = nil
     var exportTableIdentifierParts: [String]? = nil
     var editing: MobileTableChanges? = nil
     var editingPage: MobileTableSnapshot? = nil
@@ -106,6 +108,29 @@ struct MobileResultsView: View {
                     }.accessibilityLabel("待提交改动，\(editing.changeCount) 行").accessibilityIdentifier("pendingChangesButton")
                 }
                 if let pagination { MobilePageNavigation(model: pagination) }
+                if let resourcePagination {
+                    if resourcePagination.profile.driver == .redis {
+                        Menu {
+                            Button("编辑值", systemImage: "square.and.pencil") { resourcePagination.beginRedisEditing() }
+                                .disabled(!resourcePagination.canEditRedis)
+                            Button("重命名", systemImage: "pencil") {
+                                if let selected = resourcePagination.selected { resourcePagination.beginRedisKeyRename(selected) }
+                            }.disabled(!resourcePagination.canManageRedisKeys || resourcePagination.selected == nil || resourcePagination.selected?.binaryKeyData != nil)
+                            Button("整键 TTL", systemImage: "clock") {
+                                if let selected = resourcePagination.selected { resourcePagination.beginRedisMetadataAction(selected, action: .expiration) }
+                            }.disabled(!resourcePagination.canManageRedisKeys || resourcePagination.selected?.binaryKeyData != nil || resourcePagination.selected == nil)
+                            Button("删除整个键", systemImage: "trash", role: .destructive) {
+                                if let selected = resourcePagination.selected { resourcePagination.beginRedisMetadataAction(selected, action: .delete) }
+                            }.disabled(!resourcePagination.canManageRedisKeys || resourcePagination.selected?.binaryKeyData != nil || resourcePagination.selected == nil)
+                        } label: { Label("编辑", systemImage: "square.and.pencil") }
+                        .disabled(resourcePagination.selected == nil || resourcePagination.selected?.binaryKeyData != nil || resourcePagination.isBackgrounded)
+                        .accessibilityIdentifier("editRedisKey")
+                    }
+                    HStack(spacing: 6) {
+                        Button("上一页", systemImage: "chevron.left", action: resourcePagination.previous).labelStyle(.iconOnly).disabled(!resourcePagination.canGoBack)
+                        Button("下一页", systemImage: "chevron.right", action: resourcePagination.next).labelStyle(.iconOnly).disabled(resourcePagination.isLoadingDetails || resourcePagination.details?.hasNext != true)
+                    }.buttonStyle(.bordered).controlSize(.small)
+                }
                 if let queryPagination, queryPagination.hasCachePages {
                     HStack(spacing: 6) {
                         Button { queryPagination.pageCache(-1) } label: { Image(systemName: "chevron.left") }
@@ -174,7 +199,7 @@ struct MobileResultsView: View {
                         searchFocused = false
                         onEndEditing?()
                         export = .init(snapshot: tableExportSnapshot ?? .init(data: visible, name: exportName,
-                            scopeDescription: exportScopeDescription, tableIdentifierParts: exportTableIdentifierParts))
+                            scopeDescription: exportScopeDescription, tableIdentifierParts: exportTableIdentifierParts, sqlDialect: exportDialect))
                     }.disabled(!hasLoaded || isLoading || (visible.rows.isEmpty && tableExportSnapshot == nil) || visible.columns.isEmpty)
                     if let restoreHistory {
                         Menu("查询历史", systemImage: "clock.arrow.circlepath") {
@@ -230,7 +255,7 @@ struct MobileResultsView: View {
             if ready, export == nil, !data.rows.isEmpty,
                ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_EXPORT"] == "1" {
                 let model = MobileDataExportModel(snapshot: tableExportSnapshot ?? .init(data: data, name: exportName,
-                    scopeDescription: exportScopeDescription, tableIdentifierParts: exportTableIdentifierParts))
+                    scopeDescription: exportScopeDescription, tableIdentifierParts: exportTableIdentifierParts, sqlDialect: exportDialect))
                 if ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_EXPORT_ALL"] == "1", tableExportSnapshot != nil {
                     model.scope = .allTableRows
                 }

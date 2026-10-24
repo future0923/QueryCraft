@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 struct RedisCommandArgument: Equatable, Sendable {
     let name: String
     let kind: RedisCommandArgumentKind

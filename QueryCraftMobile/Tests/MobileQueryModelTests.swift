@@ -148,7 +148,7 @@ private actor ControlledExecutor: MobileQueryExecuting {
     private var requests: [CheckedContinuation<CDatabaseQueryResult, any Error>?] = []
     private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         // Deliberately ignores task cancellation to exercise late replies from C drivers.
         try await withCheckedThrowingContinuation { continuation in
             requests.append(continuation)

@@ -102,17 +102,8 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
             let result = try await requireClient().query(
                 "SHOW FULL COLUMNS FROM \(qualifiedName(database: reference.databaseName, object: reference.objectName))"
             )
-            let columns = result.dictionaryRows.enumerated().compactMap {
-                index, row -> WorkspaceSchemaColumn? in
-                guard let name = value(in: row, keys: ["Field", "field"]),
-                      let type = value(in: row, keys: ["Type", "type"])
-                else { return nil }
-                return WorkspaceSchemaColumn(
-                    name: name,
-                    type: type,
-                    ordinalPosition: index + 1,
-                    comment: value(in: row, keys: ["Comment", "comment"]) ?? ""
-                )
+            let columns = DorisSchemaMetadata.columns(result.dictionaryRows).enumerated().map { index, column in
+                WorkspaceSchemaColumn(name: column.name, type: column.type, ordinalPosition: index + 1, comment: column.comment)
             }
             output.append(
                 WorkspaceSchemaObjectColumns(reference: reference, columns: columns)
@@ -196,22 +187,7 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
             "SHOW FULL COLUMNS FROM \(name)"
         )
         try Task.checkCancellation()
-        let columns = columnResult.dictionaryRows.compactMap {
-            row -> WorkspaceDatabaseColumn? in
-            guard let name = value(in: row, keys: ["Field", "field"]),
-                  let type = value(in: row, keys: ["Type", "type"])
-            else { return nil }
-            return WorkspaceDatabaseColumn(
-                name: name,
-                type: type,
-                collation: value(in: row, keys: ["Collation", "collation"]),
-                isNullable: value(in: row, keys: ["Null", "null"]) == "YES",
-                key: value(in: row, keys: ["Key", "key"]) ?? "",
-                defaultValue: value(in: row, keys: ["Default", "default"]),
-                extra: value(in: row, keys: ["Extra", "extra"]) ?? "",
-                comment: value(in: row, keys: ["Comment", "comment"]) ?? ""
-            )
-        }
+        let columns = DorisSchemaMetadata.columns(columnResult.dictionaryRows)
         let showCreate = object.kind == .view
             ? "SHOW CREATE VIEW \(name)"
             : "SHOW CREATE TABLE \(name)"

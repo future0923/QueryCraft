@@ -5,7 +5,7 @@ import QueryCraftMobileTransport
 @testable import QueryCraftMobileProof
 
 @MainActor struct MobileTableFilterStateTests {
-    private let config = MariaDBTransportConfiguration(host: "unused", port: 1, username: "unused", password: nil, database: "db", tlsMode: .required)
+    private let config = MobileSQLConfiguration(host: "unused", port: 1, username: "unused", password: nil, database: "db", tlsMode: .required)
     private let object = MobileDatabaseObject(database: "db", name: "first", kind: .table, comment: "")
     private func filter(_ value: String) -> WorkspaceDatabaseDataFilter {
         .init(conditions: [.init(columnName: "id", columnKind: .number, operation: .greaterThan, value: value)])
@@ -128,7 +128,7 @@ import QueryCraftMobileTransport
 }
 
 private enum FilterStateError: Error { case expected, timeout }
-private actor ControlledFilterService: MobileMySQLServicing {
+private actor ControlledFilterService: MobileSQLServicing {
     struct Info: Sendable { let offset: Int; let filter: WorkspaceDatabaseDataFilter; let sort: String? }
     private struct Request {
         let object: MobileDatabaseObject; let info: Info; let size: Int; let columns: [MobileTableColumn]
@@ -136,15 +136,15 @@ private actor ControlledFilterService: MobileMySQLServicing {
     }
     private var requests: [Request] = []
     private var type = "int"
-    func databases(configuration: MariaDBTransportConfiguration) async throws -> [String] { ["db"] }
-    func objects(configuration: MariaDBTransportConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
+    func databases(configuration: MobileSQLConfiguration) async throws -> [String] { ["db"] }
+    func objects(configuration: MobileSQLConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
         .init(objects: ["first", "second"].map { .init(database: database, name: $0, kind: .table, comment: "") }, hasMore: false)
     }
-    func columns(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
+    func columns(configuration: MobileSQLConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
         [.init(name: "id", type: type, isNullable: false, key: "PRI", defaultValue: nil, extra: "", comment: "")]
     }
     func changeColumnType() { type = "varchar(80)" }
-    func page(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot {
+    func page(configuration: MobileSQLConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot {
         try MobileTableFilterDraft.validate(filter, columns: columns)
         return try await withCheckedThrowingContinuation {
             requests.append(.init(object: object, info: .init(offset: offset, filter: filter, sort: sortColumn), size: size, columns: columns, continuation: $0))

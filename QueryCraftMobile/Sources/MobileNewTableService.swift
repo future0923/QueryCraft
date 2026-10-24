@@ -3,8 +3,8 @@ import QueryCraftMobileCore
 import QueryCraftMobileTransport
 
 protocol MobileNewTableServicing: Sendable {
-    func choices(configuration: MariaDBTransportConfiguration) async throws -> WorkspaceDatabaseSchemaChoices
-    func create(plan: WorkspaceDatabaseSchemaExecutionPlan, configuration: MariaDBTransportConfiguration,
+    func choices(configuration: MobileSQLConfiguration) async throws -> WorkspaceDatabaseSchemaChoices
+    func create(plan: WorkspaceDatabaseSchemaExecutionPlan, configuration: MobileSQLConfiguration,
                 authorize: @escaping @Sendable () async throws -> Void) async throws -> WorkspaceDatabaseObjectSelection
 }
 
@@ -19,14 +19,14 @@ enum MobileNewTableError: LocalizedError {
 }
 
 struct MobileNewTableService: MobileNewTableServicing {
-    var makeConnection: @Sendable (MariaDBTransportConfiguration) -> any MobileMutationConnection = {
+    var makeConnection: @Sendable (MobileSQLConfiguration) -> any MobileMutationConnection = {
         MobileMariaDBMutationConnection(client: MariaDBClient(configuration: $0))
     }
-    private func connection(_ configuration: MariaDBTransportConfiguration) throws -> any MobileMutationConnection {
+    private func connection(_ configuration: MobileSQLConfiguration) throws -> any MobileMutationConnection {
         guard configuration.tlsMode == .disabled || configuration.tlsMode == .required else { throw MobileQueryError.verifiedTLSUnavailable }
         return makeConnection(configuration)
     }
-    func choices(configuration: MariaDBTransportConfiguration) async throws -> WorkspaceDatabaseSchemaChoices {
+    func choices(configuration: MobileSQLConfiguration) async throws -> WorkspaceDatabaseSchemaChoices {
         let client = try connection(configuration)
         do {
             try Task.checkCancellation(); try await client.connect()
@@ -34,7 +34,7 @@ struct MobileNewTableService: MobileNewTableServicing {
             await client.close(); try Task.checkCancellation(); return result
         } catch { await client.close(); throw error }
     }
-    func create(plan: WorkspaceDatabaseSchemaExecutionPlan, configuration: MariaDBTransportConfiguration,
+    func create(plan: WorkspaceDatabaseSchemaExecutionPlan, configuration: MobileSQLConfiguration,
                 authorize: @escaping @Sendable () async throws -> Void) async throws -> WorkspaceDatabaseObjectSelection {
         guard case let .tableMutation(mutation) = plan.source,
               case let .create(database, name, columns, _, _) = mutation,
@@ -45,7 +45,7 @@ struct MobileNewTableService: MobileNewTableServicing {
               let selection = mutation.resultingSelection, let statement = plan.statements.first, plan.statements.count == 1 else {
             throw MobileNewTableError.invalidDefinition
         }
-        let config = MariaDBTransportConfiguration(host: configuration.host, port: configuration.port, username: configuration.username,
+        let config = MobileSQLConfiguration(host: configuration.host, port: configuration.port, username: configuration.username,
             password: configuration.password, database: database, tlsMode: configuration.tlsMode)
         let client = try connection(config)
         do {

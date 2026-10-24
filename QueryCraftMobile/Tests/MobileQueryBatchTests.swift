@@ -120,7 +120,7 @@ import QueryCraftMobileTransport
     @Test func historyReceivesEachSuccessfulStatementExactlyAtCompletionNotOnSelection() async throws {
         let model = MobileQueryModel(executor: BatchTestExecutor())
         var recorded: [String] = []
-        model.didExecute = { sql, _ in recorded.append(sql) }
+        model.didExecute = { sql, _, _ in recorded.append(sql) }
         model.sql = "SELECT 1;SELECT 2;"; await model.executeAll()?.value
         #expect(recorded == ["SELECT 1;", "SELECT 2;"])
         #expect(model.selectResult(model.statementResults[1].id))
@@ -141,10 +141,10 @@ private actor BatchTestExecutor: MobileQueryExecuting {
     }
     func waitForGate() async { if !gated { await withCheckedContinuation { waiting = $0 } } }
     func release() { continuation?.resume(); continuation = nil }
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         try await preview(configuration: configuration, sql: sql, maximumRows: 500, maximumBytes: 4_194_304).result
     }
-    func preview(configuration: MariaDBTransportConfiguration, sql: String, maximumRows: Int, maximumBytes: Int) async throws -> CDatabaseQueryPreview {
+    func preview(configuration: MobileSQLConfiguration, sql: String, maximumRows: Int, maximumBytes: Int) async throws -> MobileSQLPreview {
         statements.append(sql)
         if gatesSecond, statements.count == 2 {
             await withCheckedContinuation { continuation = $0; gated = true; waiting?.resume(); waiting = nil }

@@ -109,7 +109,7 @@ import QueryCraftMobileTransport
 }
 
 private struct SurfaceQueryExecutor: MobileQueryExecuting {
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         .init(columns: ["k", "label", "expression"], columnTypes: ["int", "varchar(80)", "varchar(80)"],
             columnOrigins: [.init(databaseName: "db", tableName: "t", columnName: "id"), .init(databaseName: "db", tableName: "t", columnName: "name"), nil],
             rows: [["1", "before", "BEFORE"]])

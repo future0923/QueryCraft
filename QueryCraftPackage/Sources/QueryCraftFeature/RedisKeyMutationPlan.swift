@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
 struct RedisKeyMutationPlan: Equatable, Sendable {
@@ -12,7 +15,8 @@ struct RedisKeyMutationPlan: Equatable, Sendable {
         ttlMillisecondsText: String,
         expectedElementCount: Int? = nil,
         stringData: RedisBinaryValue? = nil,
-        originalStringData: RedisBinaryValue? = nil
+        originalStringData: RedisBinaryValue? = nil,
+        previewByteLimit: Int? = nil
     ) throws -> Self {
         let valuePlan = try valuePlan(
             details: details,
@@ -20,7 +24,8 @@ struct RedisKeyMutationPlan: Equatable, Sendable {
             rows: rows,
             expectedElementCount: expectedElementCount,
             stringData: stringData,
-            originalStringData: originalStringData
+            originalStringData: originalStringData,
+            previewByteLimit: previewByteLimit
         )
         let expiration = try expirationCommands(
             details: details,
@@ -47,7 +52,8 @@ struct RedisKeyMutationPlan: Equatable, Sendable {
         rows: [RedisKeyEditableRow],
         expectedElementCount: Int?,
         stringData: RedisBinaryValue?,
-        originalStringData: RedisBinaryValue?
+        originalStringData: RedisBinaryValue?,
+        previewByteLimit: Int?
     ) throws -> PlanParts {
         let reference = details.reference
         switch reference.type {
@@ -56,12 +62,13 @@ struct RedisKeyMutationPlan: Equatable, Sendable {
                 guard stringData != originalStringData else {
                     return PlanParts()
                 }
-                let source = "SET \(RedisCommandPreviewFormatter.escaped(reference.name)) \(RedisBinaryCommandPreviewFormatter.escaped(stringData)) KEEPTTL"
+                let shownValue = previewByteLimit.map { RedisBinaryCommandPreviewFormatter.preview(stringData, maximumBytes: $0) } ?? RedisBinaryCommandPreviewFormatter.escaped(stringData)
+                let source = "SET \(RedisCommandPreviewFormatter.escaped(reference.name)) \(shownValue) KEEPTTL"
                 let preview = RedisCommandInvocation(
                     source: source,
                     arguments: [
                         "SET", reference.name,
-                        RedisBinaryCommandPreviewFormatter.escaped(stringData),
+                        shownValue,
                         "KEEPTTL",
                     ]
                 )
@@ -413,17 +420,7 @@ struct RedisKeyMutationPlan: Equatable, Sendable {
         let ttlChanged = expirationMode == .expires
             && ttlMillisecondsText != originalTTL
         guard expirationMode != originalMode || ttlChanged else { return [] }
-        switch expirationMode {
-        case .persistent:
-            return [invocation(["PERSIST", details.reference.name])]
-        case .expires:
-            guard let ttl = Int64(ttlMillisecondsText), ttl > 0 else {
-                throw RedisKeyEditError.invalidTTL
-            }
-            return [invocation([
-                "PEXPIRE", details.reference.name, String(ttl),
-            ])]
-        }
+        return [try RedisKeyMetadataMutationPlan.expiration(details.reference, mode: expirationMode, milliseconds: ttlMillisecondsText).command]
     }
 
     private static func validateIdentities(

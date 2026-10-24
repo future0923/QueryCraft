@@ -12,7 +12,9 @@ extension MobileTableColumn {
 }
 extension MobileDatabaseObject {
     var editingSelection: WorkspaceDatabaseObjectSelection {
-        .init(databaseName: database, objectName: name, kind: kind == .table ? .table : .view)
+        .init(databaseName: database, objectName: schemaName.map {
+            PostgreSQLDataMutation.TableIdentity(schema: $0, name: name).sql
+        } ?? name, kind: kind == .table ? .table : .view)
     }
 }
 
@@ -54,7 +56,7 @@ struct MobilePendingInsert: Identifiable {
     private(set) var message: String?
     private(set) var metadata: [MobileTableColumn]
     private var stagedMetadata: [MobileTableColumn]?
-    private let configuration: MariaDBTransportConfiguration
+    private let configuration: MobileSQLConfiguration
     private let service: any MobileDataMutating
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored var didCommit: (() -> Void)?
@@ -62,7 +64,7 @@ struct MobilePendingInsert: Identifiable {
     @ObservationIgnored var didDiscardUncertain: (() -> Void)?
     @ObservationIgnored var isContextCurrent: @MainActor () -> Bool = { true }
 
-    init(object: MobileDatabaseObject, metadata: [MobileTableColumn], configuration: MariaDBTransportConfiguration,
+    init(object: MobileDatabaseObject, metadata: [MobileTableColumn], configuration: MobileSQLConfiguration,
          safetyLock: WorkspaceSafetyLock, service: any MobileDataMutating = MobileDataMutationService(), isQueryResult: Bool = false) {
         self.object = object; self.metadata = metadata; self.configuration = configuration
         self.safetyLock = safetyLock; self.service = service
@@ -104,7 +106,7 @@ struct MobilePendingInsert: Identifiable {
     func request(page: MobileTableSnapshot, row index: Int, column: Int) throws -> WorkspaceDatabaseDataCellEditRequest {
         try validate()
         let row = try row(index, page: page)
-        var target = WorkspaceDatabaseDataCellEditTarget(rowIndex: index, dataColumnIndex: column, columns: page.preview.result.workspaceColumns, row: row)
+        var target = WorkspaceDatabaseDataCellEditTarget(rowIndex: index, dataColumnIndex: column, columns: page.preview.workspaceColumns, row: row)
         if isQueryResult {
             target = try WorkspaceQueryResultEditing.editTarget(selection: object.editingSelection, target: target, metadata: metadata.map(\.editingColumn))
         }
@@ -134,7 +136,7 @@ struct MobilePendingInsert: Identifiable {
     }
     func toggleDelete(page: MobileTableSnapshot, row index: Int) throws {
         try validate()
-        let row = try row(index, page: page), columns = page.preview.result.workspaceColumns
+        let row = try row(index, page: page), columns = page.preview.workspaceColumns
         let deletion = try isQueryResult
             ? WorkspaceQueryResultEditing.deleteRequest(selection: object.editingSelection, row: row, columns: columns, metadata: metadata.map(\.editingColumn))
             : WorkspaceDatabaseDataRowDeleteRequest.make(selection: object.editingSelection, row: row, columns: columns, metadata: metadata.map(\.editingColumn))
@@ -176,6 +178,9 @@ struct MobilePendingInsert: Identifiable {
     }
     func previewSQL() throws -> String {
         let changes = changeSet
+        if configuration.driver == .postgresql, let schema = object.schemaName {
+            return try PostgreSQLDataMutation.preview(changes, table: .init(schema: schema, name: object.name))
+        }
         let deletes = try changes.deletes.map { try MySQLWorkspaceDataRowDeleteStatement.make(delete: $0).previewTokens.map(\.text).joined() }
         let updates = try changes.rowUpdates.map { try MySQLWorkspaceDataCellUpdateStatement.make(rowUpdate: $0).previewTokens.map(\.text).joined() }
         let inserts = try changes.inserts.map { try MySQLWorkspaceDataRowInsertStatement.make(insert: $0).previewSQL }
@@ -184,7 +189,7 @@ struct MobilePendingInsert: Identifiable {
     @discardableResult func submit() -> Task<Void, Never>? {
         guard canSubmit else { return nil }
         guard !safetyLock.isEnabled else { message = WorkspaceDatabaseDataCellEditError.safetyLockEnabled.localizedDescription; return nil }
-        let changes = changeSet, configuration = configuration, service = service
+        let changes = changeSet, configuration = configuration, service = service.scoped(to: object, columns: metadata)
         isSubmitting = true; message = nil
         // A short system lease lets a background cancellation finish rollback
         // and close its socket. It never schedules or replays a write.
@@ -228,7 +233,7 @@ extension MobileTableChanges {
         guard hasChanges else { return original }
         var cells = original.rows.indices.map { row in original.columns.indices.map { original.cell(row: row, column: $0) } }
         var pending = Set<MobileGridCellAddress>(), deleted = Set<Int>()
-        let columns = page.preview.result.workspaceColumns
+        let columns = page.preview.workspaceColumns
         for row in original.rows.indices {
             func matches(_ key: [WorkspaceDatabaseDataCellUpdateCondition]) -> Bool {
                 key.allSatisfy { condition in

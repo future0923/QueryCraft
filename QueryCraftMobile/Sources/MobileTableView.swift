@@ -22,14 +22,14 @@ struct MobileTableView: View {
                     pageContext: model.snapshot.map(MobileGridPageContext.init(page:)),
                     exportName: model.snapshot?.object.name ?? "table-data",
                     exportScopeDescription: "当前表页",
-                    exportTableIdentifierParts: model.snapshot.map { [$0.object.database, $0.object.name] },
+                    exportTableIdentifierParts: model.snapshot.map { [$0.object.schemaName ?? $0.object.database, $0.object.name] },
                     editing: model.currentChanges, editingPage: model.snapshot, readOnlyReason: model.currentChanges?.editingRestriction,
                     dataRevision: model.revision.uuidString,
                     tableExportSnapshot: model.dataExportSnapshot())
             } else { MobileStructureView(model: model, controller: schema) }
         }
         .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle(model.selectedObject?.name ?? "表").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(model.selectedObject?.displayName ?? "表").navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if model.tab == .structure, let tableActions, let object = model.selectedObject, object.kind == .table {
                 ToolbarItem(placement: .primaryAction) {
@@ -71,7 +71,7 @@ struct MobileTableView: View {
         filterDraft = .init(object: object, columns: columns, filter: model.dataFilter)
     }
     private var columnDetails: [String]? {
-        model.snapshot.map { MobileColumnDetails.resolve(result: $0.preview.result, object: $0.object, columns: $0.columns) }
+        model.snapshot.map { MobileColumnDetails.resolve(preview: $0.preview, object: $0.object, columns: $0.columns) }
     }
     private var dataStatus: String {
         guard let page = model.snapshot else { return "" }

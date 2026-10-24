@@ -69,7 +69,7 @@ import QueryCraftMobileTransport
 }
 
 private struct BatchPresentationExecutor: MobileQueryExecuting {
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         .init(columns: ["实际执行 SQL"], rows: [[sql]])
     }
 }

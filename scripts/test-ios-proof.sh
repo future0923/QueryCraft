@@ -158,8 +158,14 @@ test_report="$root/.build/ios-validation/mysql-first-$simulator-tests.json"
 xcodebuildmcp simulator test \
     --project-path "$root/QueryCraftMobile/QueryCraftMobile.xcodeproj" \
     --scheme QueryCraftMobileProof --simulator-id "$simulator" \
-    --derived-data-path "$root/.build/ios-proof-derived" \
-    --json "{\"testRunnerEnv\":{\"PROOF_MYSQL_PORT\":\"$port\"}}" --output json > "$test_report"
+    --derived-data-path "${IOS_PROOF_DERIVED_DATA:-$root/.build/ios-proof-derived}" \
+    --json "$(python3 - "$port" <<'PYENV'
+import json,os,sys
+values=json.loads(os.environ.get('PROOF_ADDITIONAL_TEST_ENV', '{}'))
+values['PROOF_MYSQL_PORT']=sys.argv[1]
+print(json.dumps({'testRunnerEnv': values}))
+PYENV
+)" --output json > "$test_report"
 cat "$test_report"
 # The CLI may exit zero while its structured result reports a build/test failure.
 # Never render a stale binary after a failed test/build.

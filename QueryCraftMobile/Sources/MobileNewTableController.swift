@@ -38,9 +38,9 @@ import QueryCraftMobileTransport
     @ObservationIgnored private var readTask: Task<Void, Never>?
     @ObservationIgnored private var writeTask: Task<Void, Never>?
     @ObservationIgnored private var loadID = UUID()
-    private let configuration: MariaDBTransportConfiguration
+    private let configuration: MobileSQLConfiguration
     private let service: any MobileNewTableServicing
-    init(configuration: MariaDBTransportConfiguration, safetyLock: WorkspaceSafetyLock, service: any MobileNewTableServicing = MobileNewTableService()) {
+    init(configuration: MobileSQLConfiguration, safetyLock: WorkspaceSafetyLock, service: any MobileNewTableServicing = MobileNewTableService()) {
         self.configuration = configuration; self.safetyLock = safetyLock; self.service = service
     }
 

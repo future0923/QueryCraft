@@ -1,7 +1,10 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
 actor RedisValueFormatter {
-    func formattedJSON(from source: String) -> String? {
+    func formattedJSON(from source: String, maximumOutputBytes: Int? = nil) -> String? {
         guard let data = source.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(
                   with: data,
@@ -9,27 +12,28 @@ actor RedisValueFormatter {
               ),
               object is [Any] || object is [String: Any]
         else { return nil }
-        return prettyPrintedJSONPreservingLexemes(source)
+        return prettyPrintedJSONPreservingLexemes(source, maximumOutputBytes: maximumOutputBytes)
     }
 
     private func prettyPrintedJSONPreservingLexemes(
-        _ source: String
-    ) -> String {
-        let scalars = Array(source.unicodeScalars)
+        _ source: String,
+        maximumOutputBytes: Int?
+    ) -> String? {
+        let scalars = source.unicodeScalars
         var output = ""
         var indentation = 0
         var isInsideString = false
         var isEscaped = false
-        var index = 0
+        var index = scalars.startIndex
 
-        func nextNonWhitespace(after position: Int) -> Unicode.Scalar? {
-            var cursor = position + 1
-            while cursor < scalars.count {
+        func nextNonWhitespace(after position: String.UnicodeScalarView.Index) -> Unicode.Scalar? {
+            var cursor = scalars.index(after: position)
+            while cursor < scalars.endIndex {
                 let scalar = scalars[cursor]
                 if !CharacterSet.whitespacesAndNewlines.contains(scalar) {
                     return scalar
                 }
-                cursor += 1
+                cursor = scalars.index(after: cursor)
             }
             return nil
         }
@@ -38,7 +42,8 @@ actor RedisValueFormatter {
             output.append(String(repeating: "  ", count: indentation))
         }
 
-        while index < scalars.count {
+        while index < scalars.endIndex {
+            if let maximumOutputBytes, output.utf8.count > maximumOutputBytes { return nil }
             let scalar = scalars[index]
             if isInsideString {
                 output.unicodeScalars.append(scalar)
@@ -49,7 +54,7 @@ actor RedisValueFormatter {
                 } else if scalar == "\"" {
                     isInsideString = false
                 }
-                index += 1
+                index = scalars.index(after: index)
                 continue
             }
 
@@ -67,13 +72,13 @@ actor RedisValueFormatter {
                     appendIndentation()
                 }
             } else if scalar == "}" || scalar == "]" {
-                let opensEmpty = index > 0 && {
-                    var cursor = index - 1
-                    while cursor >= 0 {
+                let opensEmpty = index > scalars.startIndex && {
+                    var cursor = scalars.index(before: index)
+                    while cursor >= scalars.startIndex {
                         let candidate = scalars[cursor]
                         if CharacterSet.whitespacesAndNewlines.contains(candidate) {
-                            if cursor == 0 { break }
-                            cursor -= 1
+                            if cursor == scalars.startIndex { break }
+                            cursor = scalars.index(before: cursor)
                             continue
                         }
                         return candidate == "{" || candidate == "["
@@ -95,8 +100,9 @@ actor RedisValueFormatter {
             } else {
                 output.unicodeScalars.append(scalar)
             }
-            index += 1
+            index = scalars.index(after: index)
         }
+        if let maximumOutputBytes, output.utf8.count > maximumOutputBytes { return nil }
         return output
     }
 }

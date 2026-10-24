@@ -132,12 +132,12 @@ actor SchemaStateService: MobileSchemaServicing {
     func waitForGate() async { if continuation != nil { return }; await withCheckedContinuation { waiting = $0 } }
     func releaseGate() { continuation?.resume(); continuation = nil; gate = false; writeGate = false }
     private func suspend() async { await withCheckedContinuation { continuation = $0; waiting?.resume(); waiting = nil } }
-    func load(object: MobileDatabaseObject, configuration: MariaDBTransportConfiguration) async throws -> MobileSchemaSnapshot {
+    func load(object: MobileDatabaseObject, configuration: MobileSQLConfiguration) async throws -> MobileSchemaSnapshot {
         if gate { await suspend() }
         if readFailure { throw URLError(.notConnectedToInternet) }
         var snapshot = Self.snapshot; snapshot.options = options; return snapshot
     }
-    func apply(object: MobileDatabaseObject, baseline: MobileSchemaSnapshot, plan: WorkspaceDatabaseSchemaExecutionPlan, configuration: MariaDBTransportConfiguration, authorize: @escaping @Sendable () async throws -> Void) async throws {
+    func apply(object: MobileDatabaseObject, baseline: MobileSchemaSnapshot, plan: WorkspaceDatabaseSchemaExecutionPlan, configuration: MobileSQLConfiguration, authorize: @escaping @Sendable () async throws -> Void) async throws {
         applies += 1; if writeGate { await suspend() }; try await authorize(); writes += 1
         if partial { throw MobileSchemaError.partial(completed: 1, total: 2, detail: "lost acknowledgement") }
         if case .changes(let changes) = plan.source, let change = changes.tableOptionsChange { options = change.updated }

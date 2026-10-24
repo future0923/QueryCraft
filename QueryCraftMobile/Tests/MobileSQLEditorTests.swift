@@ -385,13 +385,13 @@ import QueryCraftMobileTransport
 }
 
 private struct CompletionCatalog: MobileSQLMetadataProviding {
-    func editorCatalog(configuration: MariaDBTransportConfiguration) async throws -> [WorkspaceSchemaDatabase] {
+    func editorCatalog(configuration: MobileSQLConfiguration) async throws -> [WorkspaceSchemaDatabase] {
         [.init(name: "proof", objects: [.init(name: "sample", kind: .table, columns: [])])]
     }
-    func editorColumns(configuration: MariaDBTransportConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] {
+    func editorColumns(configuration: MobileSQLConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] {
         references.map { .init(reference: $0, columns: [.init(name: "id", type: "int", ordinalPosition: 1)]) }
     }
-    func editorContext(configuration: MariaDBTransportConfiguration) async throws -> SQLHighlightContext { .init(databaseType: .mysql) }
+    func editorContext(configuration: MobileSQLConfiguration) async throws -> SQLHighlightContext { .init(databaseType: .mysql) }
 }
 
 @MainActor private final class EditorBox {

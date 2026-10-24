@@ -5,7 +5,7 @@ import QueryCraftMobileTransport
 @testable import QueryCraftMobileProof
 
 @MainActor struct MobileMutationReliabilityTests {
-    private func configuration() throws -> MariaDBTransportConfiguration {
+    private func configuration() throws -> MobileSQLConfiguration {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
         return .init(host: "127.0.0.1", port: port, username: "proof_writer", password: "querycraft-proof-writer", database: "querycraft_ios_edit", tlsMode: .required)
     }
@@ -80,7 +80,7 @@ private actor FaultConnection: MobileMutationConnection {
     private var fired = false, waiting = false
     private var continuation: CheckedContinuation<Void, Never>?
     private(set) var statements: [String] = []
-    init(configuration: MariaDBTransportConfiguration, mode: Mode) {
+    init(configuration: MobileSQLConfiguration, mode: Mode) {
         client = .init(client: MariaDBClient(configuration: configuration)); self.mode = mode
     }
     func connect() async throws { try await client.connect() }

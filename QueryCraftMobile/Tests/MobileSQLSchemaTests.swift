@@ -5,7 +5,7 @@ import QueryCraftMobileTransport
 @testable import QueryCraftMobileProof
 
 struct MobileSQLSchemaTests {
-    private func config(_ host: String = "one", port: Int = 3306) -> MariaDBTransportConfiguration {
+    private func config(_ host: String = "one", port: Int = 3306) -> MobileSQLConfiguration {
         .init(host: host, port: port, username: "reader", password: "test", database: "db", tlsMode: .required)
     }
 
@@ -64,7 +64,7 @@ struct MobileSQLSchemaTests {
 
     @Test func realCatalogSharedQueriesSupportViewsCrossDatabaseAndAliasCompletion() async throws {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
-        let configuration = MariaDBTransportConfiguration(host: "127.0.0.1", port: port, username: "proof_reader", password: "querycraft-proof-reader", database: "querycraft_ios_proof", tlsMode: .required)
+        let configuration = MobileSQLConfiguration(host: "127.0.0.1", port: port, username: "proof_reader", password: "querycraft-proof-reader", database: "querycraft_ios_proof", tlsMode: .required)
         let service = MobileMySQLService()
         let databases = try await service.editorCatalog(configuration: configuration)
         #expect(databases.contains { $0.name == "querycraft_ios_other" })
@@ -146,40 +146,40 @@ private actor SchemaFixture: MobileSQLMetadataProviding {
     private(set) var columnCalls = 0
     private var fails = false
     func failColumns() { fails = true }
-    func editorCatalog(configuration: MariaDBTransportConfiguration) async throws -> [WorkspaceSchemaDatabase] {
+    func editorCatalog(configuration: MobileSQLConfiguration) async throws -> [WorkspaceSchemaDatabase] {
         catalogCalls += 1
         return [.init(name: "db", objects: [.init(name: "users", kind: .table, columns: [])])]
     }
-    func editorColumns(configuration: MariaDBTransportConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] {
+    func editorColumns(configuration: MobileSQLConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] {
         columnCalls += 1
         if fails { fails = false; throw CocoaError(.fileReadNoPermission) }
         return references.map { .init(reference: $0, columns: [.init(name: "name", type: "varchar(80)", ordinalPosition: 3, comment: "actual comment")]) }
     }
-    func editorContext(configuration: MariaDBTransportConfiguration) async throws -> SQLHighlightContext { .init(databaseType: .mysql) }
+    func editorContext(configuration: MobileSQLConfiguration) async throws -> SQLHighlightContext { .init(databaseType: .mysql) }
 }
 
 private actor ControlledSchema: MobileSQLMetadataProviding {
     private var continuations: [CheckedContinuation<[WorkspaceSchemaDatabase], Never>] = []
     var count: Int { continuations.count }
-    func editorCatalog(configuration: MariaDBTransportConfiguration) async throws -> [WorkspaceSchemaDatabase] {
+    func editorCatalog(configuration: MobileSQLConfiguration) async throws -> [WorkspaceSchemaDatabase] {
         await withCheckedContinuation { continuations.append($0) }
     }
     func complete(_ index: Int, database: String) { continuations[index].resume(returning: [.init(name: database, objects: [])]) }
-    func editorColumns(configuration: MariaDBTransportConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] { [] }
-    func editorContext(configuration: MariaDBTransportConfiguration) async throws -> SQLHighlightContext { .init(databaseType: .mysql) }
+    func editorColumns(configuration: MobileSQLConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] { [] }
+    func editorContext(configuration: MobileSQLConfiguration) async throws -> SQLHighlightContext { .init(databaseType: .mysql) }
 }
 
 private actor ColumnGate: MobileSQLMetadataProviding {
     private var values: [([WorkspaceSchemaObjectReference], CheckedContinuation<[WorkspaceSchemaObjectColumns], Never>)] = []
     var count: Int { values.count }
-    func editorCatalog(configuration: MariaDBTransportConfiguration) async throws -> [WorkspaceSchemaDatabase] {
+    func editorCatalog(configuration: MobileSQLConfiguration) async throws -> [WorkspaceSchemaDatabase] {
         [.init(name: "db", objects: [.init(name: "users", kind: .table, columns: [])])]
     }
-    func editorColumns(configuration: MariaDBTransportConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] {
+    func editorColumns(configuration: MobileSQLConfiguration, references: [WorkspaceSchemaObjectReference]) async throws -> [WorkspaceSchemaObjectColumns] {
         await withCheckedContinuation { values.append((references, $0)) }
     }
     func complete(_ index: Int) {
         values[index].1.resume(returning: values[index].0.map { .init(reference: $0, columns: [.init(name: "id", type: "int", ordinalPosition: 1)]) })
     }
-    func editorContext(configuration: MariaDBTransportConfiguration) async throws -> SQLHighlightContext { .init(databaseType: .mysql) }
+    func editorContext(configuration: MobileSQLConfiguration) async throws -> SQLHighlightContext { .init(databaseType: .mysql) }
 }

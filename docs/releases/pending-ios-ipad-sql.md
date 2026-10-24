@@ -3,6 +3,9 @@
 本记录用于功能分支提交，尚未安排正式版本或发布。范围以 `v0.1.12` 为基线。
 This records a feature-branch commit relative to `v0.1.12`; no release version or publication is scheduled.
 
+下文为前一轮 SQL 提交的范围与决定；后续驱动扩展已更新发布影响，当前请一并查看 [移动驱动记录](pending-ios-ipad-drivers.md)。
+The scope and decisions below describe the earlier SQL commit; see the subsequent [mobile driver record](pending-ios-ipad-drivers.md) for current driver impacts.
+
 ## 中文
 
 - iPhone 和 iPad 共用 Mac 的 SQL 格式化、执行范围解析及批次预检，支持当前语句、完整选区、整篇文稿执行和独立结果切换。

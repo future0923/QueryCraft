@@ -38,6 +38,10 @@ struct MobileConnectionWorkspaceView: View {
         .onChange(of: workspace.browser.selectedObject) { _, selected in
             if selected == nil, case .table = app.destination { app.destination = nil }
         }
+        .onChange(of: workspace.browser.selectedSchema) { _, schema in
+            workspace.query.schemaName = schema
+            if app.workspaceTab != .query { app.destination = nil }
+        }
         .onChange(of: workspace.browser.selectedDatabase) { _, database in
             workspace.newTable.cancel()
             workspace.query.database = database ?? ""
@@ -100,7 +104,7 @@ private struct MobileObjectDetail: View {
     var body: some View {
         Group {
             if case let .table(object) = app.destination, object.kind == kind {
-                MobileTableView(model: workspace.browser, profileID: workspace.profile.id, schema: workspace.schema, tableActions: workspace.tableActions)
+                MobileTableView(model: workspace.browser, profileID: workspace.profile.id, schema: workspace.profile.driver == .mysql ? workspace.schema : nil, tableActions: workspace.profile.driver == .mysql ? workspace.tableActions : nil)
             } else {
                 ContentUnavailableView(kind == .view ? "选择视图" : "选择表", systemImage: kind == .view ? "eye" : "tablecells",
                     description: Text("从侧栏选择要浏览的对象。"))

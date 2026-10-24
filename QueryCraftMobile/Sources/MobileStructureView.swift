@@ -10,7 +10,10 @@ struct MobileStructureView: View {
                 .id(object.id)
         } else {
             // Standalone model previews keep the same stable readonly container.
-            List(model.columns ?? []) { column in LabeledContent(column.name, value: column.type) }
+            MobileResultsView(data: .init(columns: ["名称", "类型", "允许 NULL", "键", "默认值", "附加", "注释"], rows: (model.columns ?? []).map {
+                [$0.name, $0.type, $0.isNullable ? "是" : "否", $0.key, $0.defaultValue, $0.extra, $0.comment]
+            }), revision: model.revision.uuidString + ".structure", widthKey: (model.selectedObject?.id ?? "") + ".structure",
+                hasLoaded: model.columns != nil, isLoading: model.isLoadingTable, errorMessage: model.tableError, status: "只读结构")
         }
     }
 }

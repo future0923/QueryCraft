@@ -12,6 +12,7 @@ actor RedisDriverWorkspaceSession: RedisTransactionalMutationSession,
 
     private let configuration: RedisConnectionConfiguration
     var client: RedisClient?
+    var pagedValueReader: RedisCollectionReader?
     var hashFieldExpirationSupport: Bool?
 
     init(configuration: RedisConnectionConfiguration) {
@@ -24,6 +25,7 @@ actor RedisDriverWorkspaceSession: RedisTransactionalMutationSession,
         let newClient = RedisClient(configuration: configuration)
         try await newClient.connect()
         try Task.checkCancellation()
+        pagedValueReader = nil
         client = newClient
     }
 
@@ -85,28 +87,10 @@ actor RedisDriverWorkspaceSession: RedisTransactionalMutationSession,
         pattern: String?,
         count: Int
     ) async throws -> RedisKeyScanPage {
-        var arguments = ["SCAN", String(cursor)]
-        if let pattern, !pattern.isEmpty {
-            arguments.append(contentsOf: ["MATCH", pattern])
-        }
-        arguments.append(contentsOf: ["COUNT", String(max(1, count))])
         let reply = try await requireClient().execute(
-            arguments,
-            databaseIndex: databaseIndex
-        )
+            RedisScanCodec.arguments(cursor: cursor, pattern: pattern, count: count), databaseIndex: databaseIndex)
         try Task.checkCancellation()
-        guard let parts = reply.collectionValues,
-              parts.count == 2,
-              let nextCursorText = parts[0].stringValue,
-              let nextCursor = UInt64(nextCursorText),
-              let keyValues = parts[1].collectionValues
-        else {
-            throw invalidReply("SCAN")
-        }
-        let keys = keyValues.compactMap(\.stringValue).map {
-            RedisKeyReference(databaseIndex: databaseIndex, name: $0)
-        }
-        return RedisKeyScanPage(nextCursor: nextCursor, keys: keys)
+        return try RedisScanCodec.page(reply, databaseIndex: databaseIndex)
     }
 
     func fetchRedisKey(
@@ -229,6 +213,7 @@ actor RedisDriverWorkspaceSession: RedisTransactionalMutationSession,
     func close() async {
         let activeClient = client
         client = nil
+        pagedValueReader = nil
         await activeClient?.close()
     }
 
@@ -446,33 +431,8 @@ actor RedisDriverWorkspaceSession: RedisTransactionalMutationSession,
         maximumElements: Int,
         client: RedisClient
     ) async throws -> RedisKeyValueSnapshot {
-        let count = try await client.execute(
-            ["XLEN", reference.name],
-            databaseIndex: reference.databaseIndex
-        ).integerValue ?? 0
-        let reply = try await client.execute(
-            ["XRANGE", reference.name, "-", "+", "COUNT", String(maximumElements)],
-            databaseIndex: reference.databaseIndex
-        )
-        let rows = (reply.collectionValues ?? []).compactMap { entry -> [String]? in
-            guard let parts = entry.collectionValues, parts.count == 2 else {
-                return nil
-            }
-            let fieldValues = parts[1].collectionValues ?? []
-            let fields = stride(
-                from: 0,
-                to: max(0, fieldValues.count - 1),
-                by: 2
-            ).map {
-                "\(fieldValues[$0].stringValue ?? "")=\(fieldValues[$0 + 1].stringValue ?? "")"
-            }.joined(separator: ", ")
-            return [parts[0].stringValue ?? "", fields]
-        }
-        return RedisKeyValueSnapshot(
-            columns: ["entryID", "fields"],
-            rows: rows,
-            isTruncated: count > rows.count
-        )
+        let page = try await RedisStreamReader.read(client: client, reference: reference, limit: maximumElements)
+        return RedisKeyValueSnapshot(columns: ["entryID", "fields"], rows: page.rows, isTruncated: page.hasMore)
     }
 
     private func scanCollection(

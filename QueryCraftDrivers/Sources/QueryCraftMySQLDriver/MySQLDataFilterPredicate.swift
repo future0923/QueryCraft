@@ -9,7 +9,7 @@ import QueryCraftFeature
 /// The desktop retains transport bindings; mobile uses mode-independent UTF-8
 /// literals because its streaming preview API intentionally has no bind step.
 struct MySQLDataFilterPredicate: Sendable {
-    enum Values { case bindings, literals }
+    enum Values { case bindings, literals, dorisLiterals }
     let sql: String
     let bindings: [WorkspaceDatabaseDataCell]
 
@@ -23,6 +23,8 @@ struct MySQLDataFilterPredicate: Sendable {
         func parameter(_ value: String) -> String {
             switch values {
             case .bindings: bindings.append(.text(value)); return "?"
+            case .dorisLiterals:
+                return "UNHEX('" + value.utf8.map { String(format: "%02x", $0) }.joined() + "')"
             case .literals:
                 guard !value.isEmpty else { return "''" }
                 return "CONVERT(0x" + value.utf8.map { String(format: "%02x", $0) }.joined() + " USING utf8mb4)"

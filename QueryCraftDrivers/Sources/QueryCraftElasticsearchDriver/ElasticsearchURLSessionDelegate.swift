@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 import Security
 
 final class ElasticsearchURLSessionDelegate: NSObject, URLSessionTaskDelegate,

@@ -4,7 +4,7 @@ import QueryCraftMobileTransport
 
 enum MobileQueryBatchEvent: Sendable {
     case started(Int)
-    case completed(Int, CDatabaseQueryPreview)
+    case completed(Int, MobileSQLPreview)
 }
 
 enum MobileQueryBatchError: LocalizedError {
@@ -26,7 +26,7 @@ enum MobileQueryBatchLimits {
         guard statements.allSatisfy({ $0.kind == .read }) else { throw MobileQueryError.readOnlySQLRequired }
     }
 
-    static func retainedBytes(_ preview: CDatabaseQueryPreview) -> Int {
+    static func retainedBytes(_ preview: MobileSQLPreview) -> Int {
         preview.result.rows.enumerated().reduce(0) { total, row in
             total + row.element.enumerated().reduce(0) { bytes, cell in
                 if preview.cells.indices.contains(row.offset), preview.cells[row.offset].indices.contains(cell.offset),

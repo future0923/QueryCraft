@@ -5,7 +5,7 @@ import QueryCraftMobileTransport
 
 @MainActor
 final class MobileMariaDBIntegrationTests: XCTestCase {
-    private func configuration(tls: ConnectionTLSMode = .required) throws -> MariaDBTransportConfiguration {
+    private func configuration(tls: ConnectionTLSMode = .required) throws -> MobileSQLConfiguration {
         guard let port = ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init) else {
             throw XCTSkip("Set PROOF_MYSQL_PORT for the isolated local MySQL fixture.")
         }
@@ -49,7 +49,7 @@ final class MobileMariaDBIntegrationTests: XCTestCase {
         } catch let error as CDatabaseClientError {
             XCTAssertEqual(error.code, 1054)
         }
-        let invalid = MariaDBTransportConfiguration(host: config.host, port: config.port, username: config.username,
+        let invalid = MobileSQLConfiguration(host: config.host, port: config.port, username: config.username,
             password: "intentionally-invalid", database: config.database, tlsMode: config.tlsMode)
         do {
             _ = try await MobileMariaDBExecutor().execute(configuration: invalid, sql: "SELECT 1")
@@ -143,7 +143,7 @@ final class MobileMariaDBIntegrationTests: XCTestCase {
 
     func testUnimplementedVerifiedTLSModesAreRefusedBeforeConnecting() async throws {
         for mode in [ConnectionTLSMode.verifyCA, .verifyIdentity] {
-            let config = MariaDBTransportConfiguration(host: "127.0.0.1", port: 1, username: "unused",
+            let config = MobileSQLConfiguration(host: "127.0.0.1", port: 1, username: "unused",
                 password: nil, database: nil, tlsMode: mode)
             do {
                 _ = try await MobileMariaDBExecutor().execute(configuration: config, sql: "SELECT 1")

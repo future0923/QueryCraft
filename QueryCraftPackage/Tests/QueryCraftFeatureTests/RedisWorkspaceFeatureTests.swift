@@ -7,6 +7,20 @@ import Testing
 
 struct RedisWorkspaceFeatureTests {
     @Test
+    func keyCreationRequiresAbsenceAndRenameSharesValidation() throws {
+        let plan = try RedisKeyCreationPlan.make(databaseIndex: 3, name: " key ", type: .string, stringValue: "value", expirationMode: .expires, ttlMillisecondsText: "5000")
+        #expect(plan.optimisticRequest.assertions == [.keyType(.none)])
+        #expect(plan.optimisticRequest.reference.databaseIndex == 3)
+        #expect(plan.optimisticRequest.operations.count == 2)
+        let rename = try RedisKeyRenamePlan.make(reference: plan.reference, proposedName: " new ")
+        #expect(rename.command.arguments == ["RENAMENX", "key", "new"])
+        #expect(try rename.result(for: .integer(1)).name == "new")
+        #expect(throws: RedisKeyEditError.self) { try rename.result(for: .integer(0)) }
+        #expect(throws: RedisWorkspaceError.self) { try rename.result(for: .integer(2)) }
+        #expect(throws: RedisKeyEditError.self) { try RedisKeyRenamePlan.make(reference: plan.reference, proposedName: " ") }
+    }
+
+    @Test
     func commandParserPreservesQuotedAndEscapedArguments() async throws {
         let invocation = try await RedisCommandParser().parse(
             "SET user:1 \"Ada Lovelace\" EX 60"

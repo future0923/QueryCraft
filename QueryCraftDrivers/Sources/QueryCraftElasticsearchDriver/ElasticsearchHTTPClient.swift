@@ -1,6 +1,10 @@
 import Foundation
 import OSLog
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 actor ElasticsearchHTTPClient {
     private static let logger = Logger(

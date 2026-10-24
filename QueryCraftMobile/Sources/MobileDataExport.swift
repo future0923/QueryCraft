@@ -12,6 +12,7 @@ struct MobileDataExportSnapshot: Sendable {
     var hasBinaryColumns = false
     var allRowsLabel = "全部匹配数据"
     var isQueryCache = false
+    var sqlDialect: WorkspaceSQLExportDialect? = .mysql
 
     var canExport: Bool { !data.rows.isEmpty && !data.columns.isEmpty }
     var hasBinaryValues: Bool {
@@ -19,6 +20,11 @@ struct MobileDataExportSnapshot: Sendable {
     }
 
     func request(options: WorkspaceDataExportOptions) throws -> WorkspaceDataExportRequest {
+        var options = options
+        if options.format == .sql {
+            guard let sqlDialect else { throw WorkspaceDataExportError.unsupportedSQLValue }
+            options.sqlDialect = sqlDialect
+        }
         if options.scope == .allTableRows {
             guard let provider = allRowsProvider, !data.columns.isEmpty else {
                 throw WorkspaceDataExportError.missingColumns
@@ -92,7 +98,7 @@ extension WorkspaceDataExporter: MobileDataExportWriting {}
 
     var canPrepare: Bool {
         (scope == .allTableRows ? snapshot.allRowsProvider != nil && !snapshot.data.columns.isEmpty : snapshot.canExport)
-            && preferences.isValid && !isExporting && !isBackgrounded
+            && (format != .sql || snapshot.sqlDialect != nil) && preferences.isValid && !isExporting && !isBackgrounded
             && (format != .sql || !sqlTableName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 

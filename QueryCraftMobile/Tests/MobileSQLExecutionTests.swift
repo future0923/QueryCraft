@@ -140,7 +140,7 @@ private actor TargetExecutor: MobileQueryExecuting {
     private(set) var statements: [String] = []
     private let failsFirst: Bool
     init(failsFirst: Bool = false) { self.failsFirst = failsFirst }
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         statements.append(sql)
         if failsFirst, statements.count == 1 { throw CocoaError(.fileReadUnknown) }
         return try await QueryEditingExecutor().execute(configuration: configuration, sql: sql)

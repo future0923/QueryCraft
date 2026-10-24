@@ -182,15 +182,15 @@ import QueryCraftMobileTransport
     func setPassword(_ password: String?, for id: UUID) throws { values[id] = password }
 }
 
-private actor LibraryBrowserService: MobileMySQLServicing {
+private actor LibraryBrowserService: MobileSQLServicing {
     private var calls = 0
     func callCount() -> Int { calls }
-    func databases(configuration: MariaDBTransportConfiguration) async throws -> [String] { calls += 1; return ["db"] }
-    func objects(configuration: MariaDBTransportConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
+    func databases(configuration: MobileSQLConfiguration) async throws -> [String] { calls += 1; return ["db"] }
+    func objects(configuration: MobileSQLConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
         calls += 1
         return .init(objects: [.init(database: database, name: kind == .view ? "sample_view" : "sample", kind: kind ?? .table, comment: "")], hasMore: false)
     }
-    func columns(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] { throw UnexpectedRequest.request }
-    func page(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot { throw UnexpectedRequest.request }
+    func columns(configuration: MobileSQLConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] { throw UnexpectedRequest.request }
+    func page(configuration: MobileSQLConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot { throw UnexpectedRequest.request }
     private enum UnexpectedRequest: Error { case request }
 }

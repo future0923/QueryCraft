@@ -6,6 +6,7 @@ import QueryCraftMobileTransport
 
 @MainActor final class MobileSQLSessionPresentationTests: XCTestCase {
     func testCachePagesRetainGridFrameAndWriteConfirmationRendersActualCapturedSQL() async throws {
+        guard ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"] != nil else { throw XCTSkip("Requires the isolated MySQL fixture") }
         let model = MobileQueryModel(), config = try MobileSchemaIntegrationTests().config()
         model.port = String(config.port); model.username = config.username; model.password = config.password ?? ""
         model.database = config.database ?? ""; model.tlsMode = .required

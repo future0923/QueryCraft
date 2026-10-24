@@ -119,12 +119,12 @@ actor NewTableFixture: MobileNewTableServicing {
     func waitForGate() async { if gate != nil { return }; await withCheckedContinuation { waiting = $0 } }
     func release() { gate?.resume(); gate = nil; mode = .normal }
     private func suspend() async { await withCheckedContinuation { gate = $0; waiting?.resume(); waiting = nil } }
-    func choices(configuration: MariaDBTransportConfiguration) async throws -> WorkspaceDatabaseSchemaChoices {
+    func choices(configuration: MobileSQLConfiguration) async throws -> WorkspaceDatabaseSchemaChoices {
         if mode == .holdChoices { await suspend() }
         if mode == .readFailure { throw URLError(.notConnectedToInternet) }
         return .init(engines: ["InnoDB"], characterSets: ["utf8mb4"], collations: [])
     }
-    func create(plan: WorkspaceDatabaseSchemaExecutionPlan, configuration: MariaDBTransportConfiguration, authorize: @escaping @Sendable () async throws -> Void) async throws -> WorkspaceDatabaseObjectSelection {
+    func create(plan: WorkspaceDatabaseSchemaExecutionPlan, configuration: MobileSQLConfiguration, authorize: @escaping @Sendable () async throws -> Void) async throws -> WorkspaceDatabaseObjectSelection {
         calls += 1
         if mode == .holdBeforeSend { await suspend() }
         try Task.checkCancellation(); try await authorize()

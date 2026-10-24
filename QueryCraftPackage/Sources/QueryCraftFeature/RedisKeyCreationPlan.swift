@@ -1,8 +1,20 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 struct RedisKeyCreationPlan: Equatable, Sendable {
     let reference: RedisKeyReference
     let commands: [RedisCommandInvocation]
+
+    static let creatableTypes: [RedisKeyType] = [.string, .hash, .list, .set, .sortedSet]
+
+    // WATCH guards the absence assertion through EXEC, including concurrent creators.
+    var optimisticRequest: RedisOptimisticMutationRequest {
+        .init(reference: reference, assertions: [.keyType(.none)], operations: commands.map {
+            .command(.init(source: $0.source, utf8Arguments: $0.arguments))
+        })
+    }
 
     static func make(
         databaseIndex: Int,

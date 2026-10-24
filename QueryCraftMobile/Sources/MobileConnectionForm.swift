@@ -9,31 +9,42 @@ struct MobileConnectionForm: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("MySQL") {
+                Section {
+                    Picker("驱动", selection: $draft.driver) { ForEach(MobileDriver.allCases) { Text($0.title).tag($0) } }
+                    if draft.driver == .elasticsearch {
+                        Picker("认证", selection: $draft.authentication) { ForEach(MobileAuthentication.allCases) { Text($0.title).tag($0) } }
+                    }
+                } footer: { Text("PostgreSQL 支持表数据编辑、SQL 写入和事务。Redis 支持键值编辑；Doris 和 Elasticsearch 提供只读浏览，Kafka 尚未移植。") }
+                Section(draft.driver.title) {
                     TextField("连接名称", text: $draft.name)
                     TextField("服务器", text: $draft.host).textContentType(.URL)
                     TextField("端口", text: $draft.port).keyboardType(.numberPad)
-                    TextField("用户名", text: $draft.username).textContentType(.username)
-                    SecureField("密码", text: $draft.password).textContentType(.password)
-                    TextField("数据库（可选）", text: $draft.database)
+                    if draft.authentication == .usernamePassword { TextField("用户名", text: $draft.username).textContentType(.username) }
+                    if draft.authentication != .none { SecureField(draft.authentication == .apiKey ? "API Key（已编码）" : "密码", text: $draft.password).textContentType(.password) }
+                    if draft.driver != .elasticsearch { TextField(draft.driver == .redis ? "逻辑数据库（默认 0）" : "数据库（可选）", text: $draft.database) }
+                    if draft.driver == .postgresql { TextField("默认 Schema（可选）", text: $draft.schemaName) }
                     Picker("TLS", selection: $draft.tlsMode) {
                         Text("关闭").tag(ConnectionTLSMode.disabled)
-                        Text("必须加密（不验证身份）").tag(ConnectionTLSMode.required)
+                        if draft.driver != .redis { Text("必须加密（不验证身份）").tag(ConnectionTLSMode.required) }
+                        if draft.driver == .elasticsearch || draft.driver == .postgresql {
+                            Text("验证 CA").tag(ConnectionTLSMode.verifyCA)
+                            Text("验证证书与主机名").tag(ConnectionTLSMode.verifyIdentity)
+                        }
                     }
-                    Toggle("将密码保存到本机钥匙串", isOn: $draft.remembersPassword)
+                    if draft.authentication != .none { Toggle("将密码保存到本机钥匙串", isOn: $draft.remembersPassword) }
                 }
                 Section {
                     Button("测试连接") { testConnection() }.disabled(draft.isTesting)
                     HStack {
                         ProgressView().opacity(draft.isTesting ? 1 : 0)
-                        Text(draft.message ?? "密码不会写入连接文件。SQL 查询保持只读，表数据修改由安全锁控制。")
+                        Text(draft.message ?? "凭据不会写入连接文件。Redis 当前不支持 TLS；Doris 与 Elasticsearch 提供只读浏览。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }.frame(minHeight: 44)
                 }
             }
             .disabled(draft.isTesting)
             .textInputAutocapitalization(.never).autocorrectionDisabled()
-            .navigationTitle("MySQL 连接").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(draft.driver.title + " 连接").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -48,7 +59,12 @@ struct MobileConnectionForm: View {
             draft.isTesting = true; draft.message = "正在连接…"
             testTask = Task {
                 do {
-                    _ = try await MobileMariaDBExecutor().execute(configuration: profile.configuration(password: password), sql: "SELECT 1")
+                    switch profile.driver {
+                    case .mysql: _ = try await MobileMariaDBExecutor().execute(configuration: profile.configuration(password: password), sql: "SELECT 1")
+                    case .postgresql: _ = try await MobilePostgreSQLExecutor().execute(configuration: profile.configuration(password: password), sql: "SELECT 1")
+                    case .doris: _ = try await MobileDorisExecutor().execute(configuration: profile.configuration(password: password), sql: "SELECT 1")
+                    case .redis, .elasticsearch: try await MobileResourceService(profile: profile, password: password).test()
+                    }
                     try Task.checkCancellation()
                     draft.message = "连接成功"
                 } catch { if !(error is CancellationError) { draft.message = error.localizedDescription } }

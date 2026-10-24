@@ -83,13 +83,13 @@ import QueryCraftMobileTransport
     func password(for id: UUID) throws -> String? { nil }
     func setPassword(_ password: String?, for id: UUID) throws { }
 }
-private struct LayoutService: MobileMySQLServicing {
-    func databases(configuration: MariaDBTransportConfiguration) async throws -> [String] { ["db"] }
-    func objects(configuration: MariaDBTransportConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
+private struct LayoutService: MobileSQLServicing {
+    func databases(configuration: MobileSQLConfiguration) async throws -> [String] { ["db"] }
+    func objects(configuration: MobileSQLConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
         .init(objects: [], hasMore: false)
     }
-    func columns(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] { [] }
-    func page(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot {
+    func columns(configuration: MobileSQLConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] { [] }
+    func page(configuration: MobileSQLConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot {
         .init(object: object, preview: .init(result: .init()), columns: columns, offset: offset, pageSize: size, hasNextPage: false, hasStableOrder: true)
     }
 }

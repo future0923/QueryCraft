@@ -1,4 +1,8 @@
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 enum ElasticsearchReadOnlyRequestPolicy {
     static func validate(_ request: WorkspaceRequest) throws {

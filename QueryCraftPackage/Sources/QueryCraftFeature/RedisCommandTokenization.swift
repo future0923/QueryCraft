@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 struct RedisCommandTokenization {
     let arguments: [String]
     let currentTokenRange: Range<String.Index>?

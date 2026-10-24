@@ -1,6 +1,32 @@
 # QueryCraft iOS / iPadOS 移植验证
 
-这是独立 worktree 中的 MySQL 移动端首版工程，最低 iOS / iPadOS 18。直接共享现有模型与原生 MariaDB 传输，尚未达到桌面版全部功能。
+这是独立 worktree 中的 iOS / iPadOS 工程，最低系统版本 18。MySQL 保留已有完整移动功能；PostgreSQL 支持 SQL 写入/事务、查询磁盘缓存与表数据编辑，Redis 支持键/成员管理、搜索分页、Stream 浏览及命令事务控制台，Doris、Elasticsearch 支持只读连接与浏览，具体范围见下文。直接共享现有模型与原生驱动源码，尚未达到桌面版全部功能。
+
+
+## 新增驱动范围（2026-10-23）
+
+连接表单可选 MySQL、PostgreSQL、Doris、Redis、Elasticsearch，旧连接文件缺少驱动字段时仍按 MySQL 解码，连接 ID 和钥匙串键不变。连接摘要显示驱动类型；切换驱动使用对应端口和认证/TLS 默认值。PostgreSQL 支持数据库和默认 Schema 配置。Kafka 的传输/消费链路尚未移植，表单不提供 Kafka 连接选项。
+
+- **PostgreSQL**：直接编译 macOS 的 libpq 客户端、真实类型/字段来源转换，共用 `PostgreSQLCatalog` 的目录/字段/筛选逻辑及 `PostgreSQLDataMutation` 的行 SQL/事务批次。支持数据库、Schema、表/视图/物化视图、字段注释、分页/排序/筛选、共享模糊搜索和实际 Schema 的查询历史。物理 Schema/表名分别保留，点号和引号按单个标识符引用；别名/关联/表达式/空结果均按协议来源处理，注释不按显示名称猜测。
+  SQL 控制台复用 MySQL 已有的执行范围、确认、安全锁、多结果、事务/保存点/提交/回滚、取消和后台断开状态。同一连接保留跨次执行的会话；自动提交下读取使用只读事务，显式事务内读取使用当前事务。支持 DML/DDL 和 RETURNING；错误时停止后续语句、关闭会话并回滚未提交事务，结果不明禁止自动重放。libpq 单行模式配合公共分批通道写入同一磁盘缓存，当前页最多 500 行/4 MiB，单行 8 MiB、整批缓存 256 MiB；分页和全部缓存导出不重执行 SQL。字段类型/来源在完整响应后于原连接解析，保留事务临时表信息；缓存分页继续保留 Schema 和注释。加载途中尚未解析的字段元数据为空，不伪造。
+  表数据增删改沿用暂存、安全锁、SQL 预览、提交/撤销入口，事务内锁表并复查字段/主键。支持默认值、NULL、identity 默认新增和原始大整数主键；生成列不可直接编辑，无主键表不可修改/删除已有行，视图表格保持只读。bytea 沿桌面文本表示；NUL 文本明确拒绝。目录/表预览仍使用独立只读连接与有界结果，和 SQL 持续会话分开。SQL 查询结果的单元格编辑、图形结构编辑、导入/COPY 和完整桌面编辑器尚未移植；SQL 补全显示名称无法唯一反解时不猜物理字段。真实 TLS/证书、多版本服务器和实体设备场景仍待验收。
+- **Doris**：沿 macOS 的只读能力，复用 MariaDB 原生传输、SQL 编辑器、当前语句/选区、多结果、表/视图目录、列注释、分页、排序与筛选。Doris 与 Mac 共用 `DorisSchemaMetadata`，旧版本信息模式缺字段时回退 `SHOW FULL TABLES`。不发送 MySQL 的 `SET SESSION TRANSACTION READ ONLY` / `START TRANSACTION`，不开放事务、表/结构编辑与写 SQL。DUPLICATE/AGGREGATE KEY 不冒充唯一行标识，分页明确提示顺序限制。读取预览沿用 500 行/4 MiB 上限，尚未接入 MySQL 的 SQL 流式磁盘缓存。CSV/JSON/XLSX 与 SQL INSERT 导出共用原写入器，SQL 使用 Doris 方言并省略事务包装。
+- **Redis**：iPhone/iPad 接入与 Mac 共用的键搜索/前缀树、集合读取/搜索、编辑计划、二进制编解码、命令控制台和命令导出源码。支持 ACL 和逻辑库；目录默认包含匹配，也可选前缀/精确及 Redis glob，SCAN 可继续扫描，COUNT 是提示。属性读取真实 TYPE/PTTL、MEMORY USAGE、OBJECT ENCODING；无权限的可选元数据标为不可用。
+  String 按 64 KiB GETRANGE 浏览，整值编辑沿 Mac 的 **100 MiB** 上限；文本/HEX/JSON 展示、原始字节与整键命令导出均保留完整值。大文本以约 32 KiB 的 UTF-8 安全片段展示，提交校验完整原值并写完整值，不拿预览覆盖原值；JSON 展示不改原始字节，格式化输出限 100 MiB。集合支持 list/hash/set/zset 增删改、List 头尾插入、选择/批量删除/所选命令导出，超过 1,000 项按页编辑；页请求 200 项，每页最多保留 1,000 项/1 MiB。全键成员搜索共用 Mac 的字段范围、包含/前缀/精确、大小写与变音符号规则，不局限当前页。ZSet 默认降序，List 保留实际绝对索引；有草稿时禁止翻页/换搜索。
+  新建五种常用类型、RENAMENX 重命名、整键 TTL/PERSIST/删除；独立整键操作也适用于大集合和 Stream。Hash 字段 TTL 按实际 HPTTL 能力探测，支持读取、设置、移除，旧服务降级；改值沿 HSET 清除字段 TTL，重命名按剩余 TTL 时长重新计时。Stream 共用 Mac 的 XRANGE 解析，按实际 entry ID 继续浏览，通过控制台执行 XADD/XDEL 等写命令。
+  命令控制台共用 Mac catalog/tokenizer/history/completion，支持 SELECT、WATCH、MULTI/EXEC/DISCARD 的同连接会话；已知读取命令可直接执行，写入和未知命令先解锁、预览、确认。输入每条限 1 MiB，历史限 1 MiB，记录限 4 MiB，大回复明确保留前缀，单条显示最多 120 行；这些是 UI 保留预算，非协议解析内存硬上限。后台上锁并关闭连接，未 EXEC 的事务丢弃；已发命令等真实回执。写入未知结果禁止直接重放，必须重新连接、读取核实；核实不推断原写入成功。
+  所有图形写入沿共享 WATCH/原值断言及精确草稿确认，新建使用缺失断言防并发覆盖。刷新失败保留内容，取消/切换/后台隔离旧响应。新建内容限 1,000 成员/1 MiB，新建/重命名键名限 64 KiB。部分集合页不可冒充完整快照操作整键或整键导出，整键 TTL/删除走独立明确入口。二进制集合成员与 Mac 一样只读，可保留原字节导出；非 UTF-8 键名显示 HEX，不用有损别名操作。模块类型内容、TLS、MOVED/ASK 集群路由未支持；集群直连沿 Mac 仅 DB0。SCAN 不是稳定快照；原值比较不是持久版本，TTL 不作并发版本断言。
+- **Elasticsearch**：直接编译 macOS 的 HTTP 客户端、认证、TLS/禁止重定向策略、响应上限、服务器身份校验、只读请求策略与 Mapping/Field Caps 解析；支持 Basic、已编码 API Key、无认证和四种 TLS 模式。浏览索引、别名和数据流；目录复用 Mac 模糊匹配/排序。数据页保留真实 `_id`、`_index`、完整已加载 `_source` JSON，Mapping 展示字段类型/搜索/聚合/冲突。文档每页 100 条，当前明确限制前 10,000 条，尚未移植 PIT/search_after、服务端筛选/排序、REST 控制台、文档/Mapping 编辑。分页在并发写入时可能变化；失败分片或超时不作为成功空结果。Redis/Elasticsearch 仅提供已加载页 CSV/JSON/XLSX 导出，不生成 SQL INSERT。
+
+四类新增驱动页面均沿用当前顶部公共刷新入口、固定底栏加载/错误、表格查找/全屏/检查器及列宽状态；刷新保留已有内容，切对象隔离旧数据，取消及过期响应不能覆盖当前对象。Redis 的搜索框按所选包含/前缀/精确模式生成 MATCH，键盘搜索或顶部刷新应用；Elasticsearch 名称搜索在完整有界目录内本地匹配。目录最多保留 10,000 个对象/8 MiB 名称数据，HTTP 响应最多 8 MiB；这些是读取/保留预算，不是整个进程内存硬上限，hiredis 解析单个响应仍有额外分配。
+
+可复现的五库隔离验证（本地已有 Docker 镜像、redis-server/redis-cli；脚本不拉镜像，退出清理容器和临时数据）：
+
+```sh
+python3 scripts/test-ios-driver-support.py '<iPad simulator UUID>' --full
+```
+
+不传 `--full` 只跑新驱动与原生资源页面测试；完整模式复用 `test-ios-proof.sh` 的 MySQL 夹具，同时把其他四库端口传给同一次测试，不访问用户已有连接。
 
 ## 当前 MySQL 范围
 
@@ -32,6 +58,7 @@
 # 如果没有 CMake，可仅安装到忽略的工作目录，不修改系统环境。
 python3 -m pip install --target .build/ios-tools cmake==3.31.6
 bash scripts/build-ios-mariadb.sh
+bash scripts/build-ios-libpq.sh
 xcodegen generate --spec QueryCraftMobile/project.yml
 xcodebuildmcp simulator list
 xcodebuildmcp simulator build-and-run \
@@ -41,13 +68,13 @@ xcodebuildmcp simulator build-and-run \
   --derived-data-path .build/ios-proof-derived
 ```
 
-可通过 `CMAKE_BIN` 指定已有 CMake，通过 `IOS_BUILD_JOBS` 限制并发。单独构建一个平台可传入 `iphonesimulator x86_64`、`iphonesimulator arm64` 或 `iphoneos arm64`。
+可通过 `CMAKE_BIN` 指定已有 CMake，通过 `IOS_BUILD_JOBS` 限制并发。两个原生库脚本均可按平台/架构构建，传入 `iphonesimulator x86_64`、`iphonesimulator arm64` 或 `iphoneos arm64`。
 
-OpenSSL 3.6.3 与 MariaDB Connector/C 3.4.9 沿用仓库现有版本和 SHA-256 校验值，从上游源码构建；库、构建工具和日志全部写入 `.build/`。发布前需要单独评估依赖版本、许可证与签名。真机工程目前关闭签名，安装真机需要配置自己的开发团队和签名设置。
+OpenSSL 3.6.3、MariaDB Connector/C 3.4.9 与 PostgreSQL libpq 18.6 沿用仓库现有版本和 SHA-256 校验值，从上游源码构建；库、构建工具和日志全部写入 `.build/`。发布前需要单独评估依赖版本、许可证与签名。真机工程目前关闭签名，安装真机需要配置自己的开发团队和签名设置。
 
 ## 共享方式
 
-`project.yml` 的 `QueryCraftMobileCore` 直接编译已有 Foundation 模型、错误、事务状态和流类型；`QueryCraftMobileTransport` 直接编译现有 MariaDB 传输源码。没有复制或重写数据库协议，也没有引入 TablePro 源码或预编译库。
+`project.yml` 的 `QueryCraftMobileCore` 直接编译已有 Foundation 模型、错误、事务状态和流类型；`QueryCraftMobileTransport` 直接编译现有 MariaDB 传输源码；移动应用直接编译原 libpq 客户端。`MobileSQLConfiguration` / `MobileSQLPreview` 只适配移动端的配置和结果边界，保留 PostgreSQL 的完整 Schema 来源，不修改桌面传输的公开 ABI。没有复制或重写数据库协议，也没有引入 TablePro 源码或预编译库。
 
 桌面端依然将这些类型编入 `QueryCraftFeature`，保持原模块中的名义类型身份。三个仅依赖 `WorkspaceSession` 的能力协议移到同一 Feature 模块的独立文件，便于将可移植流实现单独编译。Driver API 和版本号未改动。
 
@@ -90,9 +117,9 @@ Debug 应用可接收 `QUERYCRAFT_PROOF_MYSQL_PORT` 和 `QUERYCRAFT_PROOF_AUTORU
 | --- | --- | --- |
 | MySQL | 连接、数据库/表、结构/注释、分页、SQL 结果 | 原传输不改变结果 ABI；新增有界预览；重新编译、打包、加载与实库 |
 | PostgreSQL | 延后 | 共享表格采样/单元格预览语义不变；旧驱动 API5 加载兼容 |
-| Doris | 延后 | 共用 MariaDB 传输，重新编译、打包与加载 |
-| Redis | 延后 | 共享表格采样/单元格预览语义不变；旧驱动 API5 加载兼容 |
-| Elasticsearch | 延后 | 共享表格采样/单元格预览语义不变；旧驱动 API5 加载兼容 |
+| Doris | 只读连接、表/视图、结构注释、排序/筛选/分页、SQL 与补全 | 共用 MariaDB 传输，重新编译、打包与加载 |
+| Redis | 逻辑库、SCAN/MATCH、string/list/hash/set/zset 只读分页 | 共享表格采样/单元格预览语义不变；旧驱动 API5 加载兼容 |
+| Elasticsearch | 索引/别名/数据流、文档分页与 Mapping | 共享表格采样/单元格预览语义不变；旧驱动 API5 加载兼容 |
 | Kafka | 按用户要求不做 | 旧驱动 API5 加载兼容 |
 
 SQL 编辑器右上方的「{}」打开代码片段管理，可新增、编辑、启用／停用、删除及恢复默认片段。输入 `sel`、`cte`、`join` 等缩写后选择片段，即可展开完整模板；`${名称}` 会成为待填写位置。编辑器上方的箭头切换上一项／下一项，最后一项的勾号结束填写；外接键盘支持 Tab、Shift-Tab 和 Escape。使用 Mac 同一份模板、匹配、占位符与持久化逻辑，内置 11 个片段；自定义片段各设备本地保存，目前不自动同步。写操作模板不会绕过现有只读 SQL 执行限制。

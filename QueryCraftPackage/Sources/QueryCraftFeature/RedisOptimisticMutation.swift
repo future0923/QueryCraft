@@ -28,9 +28,3 @@ public struct RedisOptimisticMutationRequest: Equatable, Sendable {
         self.operations = operations
     }
 }
-
-public protocol RedisOptimisticMutationSession: RedisWorkspaceSession {
-    func executeRedisOptimisticMutation(
-        _ request: RedisOptimisticMutationRequest
-    ) async throws
-}

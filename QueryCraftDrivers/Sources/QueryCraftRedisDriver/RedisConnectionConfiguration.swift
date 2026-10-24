@@ -1,4 +1,8 @@
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 struct RedisConnectionConfiguration: Equatable, Sendable {
     let host: String
@@ -7,6 +11,11 @@ struct RedisConnectionConfiguration: Equatable, Sendable {
     let password: String?
     let databaseIndex: Int
 
+    init(host: String, port: Int, username: String, password: String?, databaseIndex: Int) {
+        self.host = host; self.port = port; self.username = username
+        self.password = password; self.databaseIndex = databaseIndex
+    }
+#if canImport(QueryCraftFeature)
     init(_ configuration: DatabaseConnectionConfiguration) throws {
         guard configuration.databaseType == .redis else {
             throw DatabaseDriverError.configurationTypeMismatch(
@@ -36,6 +45,8 @@ struct RedisConnectionConfiguration: Equatable, Sendable {
         password = configuration.password
         self.databaseIndex = databaseIndex
     }
+
+#endif
 
     static func databaseIndex(from name: String?) -> Int? {
         guard let name, !name.isEmpty else { return 0 }

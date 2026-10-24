@@ -5,7 +5,7 @@ import QueryCraftMobileTransport
 @testable import QueryCraftMobileProof
 
 struct MobileDataEditingTests {
-    private func config(user: String = "proof_writer") throws -> MariaDBTransportConfiguration {
+    private func config(user: String = "proof_writer") throws -> MobileSQLConfiguration {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
         return .init(host: "127.0.0.1", port: port, username: user,
             password: user == "proof_writer" ? "querycraft-proof-writer" : "querycraft-proof-reader",
@@ -204,7 +204,7 @@ struct MobileDataEditingTests {
 
 private actor UnknownCommitWriter: MobileDataMutating {
     var calls = 0
-    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MariaDBTransportConfiguration,
+    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MobileSQLConfiguration,
                authorize: @escaping @Sendable () async throws -> Void) async throws {
         try await authorize(); calls += 1; throw MobileDataMutationError.uncertainCommit
     }

@@ -121,7 +121,7 @@ import QueryCraftMobileTransport
     }
 }
 
-actor ActionFixture: MobileMySQLServicing {
+actor ActionFixture: MobileSQLServicing {
     private var failCatalog = false
     private var names = ["t", "other"]
     func apply(_ statement: WorkspaceTableActionStatement, object: MobileDatabaseObject) {
@@ -129,16 +129,16 @@ actor ActionFixture: MobileMySQLServicing {
         if let result = statement.resultingSelection { names.append(result.objectName) }
     }
     func failNextCatalog() { failCatalog = true }
-    func databases(configuration: MariaDBTransportConfiguration) async throws -> [String] { ["db", "elsewhere"] }
-    func objects(configuration: MariaDBTransportConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
+    func databases(configuration: MobileSQLConfiguration) async throws -> [String] { ["db", "elsewhere"] }
+    func objects(configuration: MobileSQLConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
         if failCatalog { failCatalog = false; throw CocoaError(.fileReadUnknown) }
         return .init(objects: names.map { .init(database: database, name: $0, kind: .table, comment: "") }, hasMore: false)
     }
-    func columns(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
+    func columns(configuration: MobileSQLConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
         [.init(name: "id", type: "int", isNullable: false, key: "PRI", defaultValue: nil, extra: "auto_increment", comment: ""),
          .init(name: "name", type: "varchar(80)", isNullable: true, key: "", defaultValue: nil, extra: "", comment: "")]
     }
-    func page(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int,
+    func page(configuration: MobileSQLConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int,
               sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot {
         .init(object: object, preview: .init(result: .init(columns: ["id","name"], rows: [["1","before"]])), columns: columns,
               offset: offset, pageSize: size, hasNextPage: false, hasStableOrder: true)
@@ -153,7 +153,7 @@ actor ActionWriter: MobileTableActionServicing {
     private var waiting = false
     private var continuation: CheckedContinuation<Void, Never>?
     init(mode: Mode = .normal) { self.mode = mode }
-    func inspect(object: MobileDatabaseObject, configuration: MariaDBTransportConfiguration) async throws -> MobileTableActionInfo {
+    func inspect(object: MobileDatabaseObject, configuration: MobileSQLConfiguration) async throws -> MobileTableActionInfo {
         .init(nextAutoIncrement: "43", hasAutoIncrement: true)
     }
     func waitForGate() async -> Bool {
@@ -162,7 +162,7 @@ actor ActionWriter: MobileTableActionServicing {
         return waiting
     }
     func release() { continuation?.resume(); continuation = nil; waiting = false }
-    func perform(action: WorkspaceTableAction, object: MobileDatabaseObject, input: String, configuration: MariaDBTransportConfiguration,
+    func perform(action: WorkspaceTableAction, object: MobileDatabaseObject, input: String, configuration: MobileSQLConfiguration,
                  authorize: @escaping @Sendable () async throws -> Void) async throws -> WorkspaceTableActionStatement {
         calls += 1; try await authorize()
         if mode == .holdBeforeSend { waiting = true; await withCheckedContinuation { continuation = $0 }; try Task.checkCancellation(); try await authorize() }

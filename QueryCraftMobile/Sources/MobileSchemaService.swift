@@ -15,9 +15,9 @@ struct MobileSchemaSnapshot: Equatable, Sendable {
     }
 }
 protocol MobileSchemaServicing: Sendable {
-    func load(object: MobileDatabaseObject, configuration: MariaDBTransportConfiguration) async throws -> MobileSchemaSnapshot
+    func load(object: MobileDatabaseObject, configuration: MobileSQLConfiguration) async throws -> MobileSchemaSnapshot
     func apply(object: MobileDatabaseObject, baseline: MobileSchemaSnapshot, plan: WorkspaceDatabaseSchemaExecutionPlan,
-               configuration: MariaDBTransportConfiguration, authorize: @escaping @Sendable () async throws -> Void) async throws
+               configuration: MobileSQLConfiguration, authorize: @escaping @Sendable () async throws -> Void) async throws
 }
 enum MobileSchemaError: LocalizedError {
     case stale, pending, partial(completed: Int, total: Int, detail: String)
@@ -30,10 +30,10 @@ enum MobileSchemaError: LocalizedError {
     }
 }
 struct MobileSchemaService: MobileSchemaServicing {
-    var makeConnection: @Sendable (MariaDBTransportConfiguration) -> any MobileMutationConnection = {
+    var makeConnection: @Sendable (MobileSQLConfiguration) -> any MobileMutationConnection = {
         MobileMariaDBMutationConnection(client: MariaDBClient(configuration: $0))
     }
-    private func client(_ config: MariaDBTransportConfiguration, object: MobileDatabaseObject) throws -> any MobileMutationConnection {
+    private func client(_ config: MobileSQLConfiguration, object: MobileDatabaseObject) throws -> any MobileMutationConnection {
         guard config.tlsMode == .disabled || config.tlsMode == .required else { throw MobileQueryError.verifiedTLSUnavailable }
         return makeConnection(.init(host: config.host, port: config.port, username: config.username, password: config.password,
                                     database: object.database, tlsMode: config.tlsMode))
@@ -63,13 +63,13 @@ struct MobileSchemaService: MobileSchemaServicing {
         try Task.checkCancellation()
         return .init(columns: columns, indexes: indexes, choices: choices, ddl: text, options: options)
     }
-    func load(object: MobileDatabaseObject, configuration: MariaDBTransportConfiguration) async throws -> MobileSchemaSnapshot {
+    func load(object: MobileDatabaseObject, configuration: MobileSQLConfiguration) async throws -> MobileSchemaSnapshot {
         let connection = try client(configuration, object: object)
         do { try Task.checkCancellation(); try await connection.connect(); let result = try await read(connection, object: object); await connection.close(); return result }
         catch { await connection.close(); throw error }
     }
     func apply(object: MobileDatabaseObject, baseline: MobileSchemaSnapshot, plan: WorkspaceDatabaseSchemaExecutionPlan,
-               configuration: MariaDBTransportConfiguration, authorize: @escaping @Sendable () async throws -> Void) async throws {
+               configuration: MobileSQLConfiguration, authorize: @escaping @Sendable () async throws -> Void) async throws {
         guard object.kind == .table, plan.dialectIdentifier == MySQLSchemaEditingProvider.dialectIdentifier,
               case let .changes(changes) = plan.source, changes.selection == object.editingSelection,
               plan == MySQLSchemaEditingProvider().makeExecutionPlan(for: changes) else { throw MobileSchemaError.stale }

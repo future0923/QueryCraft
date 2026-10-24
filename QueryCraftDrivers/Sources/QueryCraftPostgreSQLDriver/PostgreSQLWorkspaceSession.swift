@@ -7,9 +7,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         let name: String
     }
 
-    private struct MutationStatement: Sendable {
-        let sql: String
-    }
+    private typealias MutationStatement = PostgreSQLDataMutation.Statement
 
     private let configuration: PostgreSQLConnectionConfiguration
     private var client: LibPQClient?
@@ -77,14 +75,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
     func fetchSchemas(in database: String) async throws -> [String] {
         try requireCurrentDatabase(database)
         let result = try await requireClient().query(
-            """
-            SELECT n.nspname::text
-            FROM pg_catalog.pg_namespace n
-            WHERE n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
-              AND n.nspname <> 'information_schema'
-              AND has_schema_privilege(current_user, n.oid, 'USAGE')
-            ORDER BY n.nspname
-            """
+            PostgreSQLCatalog.schemasQuery
         )
         return result.rows.compactMap { $0.first ?? nil }
     }
@@ -93,7 +84,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         try requireCurrentDatabase(context.databaseName ?? currentDatabase)
         if let schema = context.schemaName, !schema.isEmpty {
             _ = try await requireClient().query(
-                "SELECT set_config('search_path', \(Self.literal(schema)), false)"
+                PostgreSQLCatalog.searchPathQuery(schema: schema, local: false)
             )
         } else {
             _ = try await requireClient().query("RESET search_path")
@@ -107,20 +98,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
     func fetchSchemaObjectCatalog() async throws -> [WorkspaceSchemaDatabase] {
         try requireCurrentDatabase(currentDatabase)
         let rows = try await requireClient().query(
-            """
-            SELECT
-                n.nspname::text AS schema_name,
-                c.relname::text AS object_name,
-                c.relkind::text AS object_kind,
-                COALESCE(obj_description(c.oid, 'pg_class'), '')::text AS object_comment
-            FROM pg_catalog.pg_class c
-            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-            WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
-              AND n.nspname NOT LIKE 'pg!_%' ESCAPE '!'
-              AND n.nspname <> 'information_schema'
-              AND has_schema_privilege(current_user, n.oid, 'USAGE')
-            ORDER BY n.nspname, c.relname
-            """
+            PostgreSQLCatalog.objectsQuery
         ).dictionaryRows
         try Task.checkCancellation()
         objectIdentities.removeAll(keepingCapacity: true)
@@ -288,48 +266,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         try requireCurrentDatabase(database)
         let identity = identity(for: object.name)
         let rows = try await requireClient().query(
-            """
-            SELECT
-                c.column_name::text AS column_name,
-                COALESCE(
-                    pg_catalog.format_type(attr.atttypid, attr.atttypmod),
-                    c.data_type
-                )::text AS column_type,
-                c.collation_name::text AS collation_name,
-                c.is_nullable::text AS is_nullable,
-                CASE WHEN pk.column_name IS NULL THEN '' ELSE 'PRI' END::text AS column_key,
-                c.column_default::text AS column_default,
-                CASE
-                    WHEN c.is_identity = 'YES' THEN 'IDENTITY'
-                    WHEN c.is_generated = 'ALWAYS' THEN 'STORED GENERATED'
-                    ELSE ''
-                END::text AS extra,
-                COALESCE(pgd.description, '')::text AS column_comment,
-                COALESCE(c.generation_expression, '')::text AS generation_expression
-            FROM information_schema.columns c
-            LEFT JOIN pg_catalog.pg_namespace ns
-              ON ns.nspname = c.table_schema
-            LEFT JOIN pg_catalog.pg_class rel
-              ON rel.relnamespace = ns.oid AND rel.relname = c.table_name
-            LEFT JOIN pg_catalog.pg_attribute attr
-              ON attr.attrelid = rel.oid AND attr.attname = c.column_name
-             AND attr.attnum > 0 AND NOT attr.attisdropped
-            LEFT JOIN pg_catalog.pg_description pgd
-              ON pgd.objoid = rel.oid AND pgd.objsubid = attr.attnum
-            LEFT JOIN (
-                SELECT kcu.table_schema, kcu.table_name, kcu.column_name
-                FROM information_schema.table_constraints tc
-                JOIN information_schema.key_column_usage kcu
-                  ON kcu.constraint_name = tc.constraint_name
-                 AND kcu.constraint_schema = tc.constraint_schema
-                WHERE tc.constraint_type = 'PRIMARY KEY'
-            ) pk ON pk.table_schema = c.table_schema
-                AND pk.table_name = c.table_name
-                AND pk.column_name = c.column_name
-            WHERE c.table_schema = \(Self.literal(identity.schema))
-              AND c.table_name = \(Self.literal(identity.name))
-            ORDER BY c.ordinal_position
-            """
+            PostgreSQLCatalog.columnsQuery(schema: identity.schema, name: identity.name)
         )
         let columns = rows.dictionaryRows.compactMap(Self.makeColumn)
         let ddl: String
@@ -572,7 +509,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         _ insert: WorkspaceDatabaseDataRowInsert
     ) async throws -> Int {
         try requireCurrentDatabase(insert.selection.databaseName)
-        return try await executeMutation(Self.insertStatement(insert))
+        return try await executeMutation(insertStatement(insert))
     }
 
     func insertDataRows(
@@ -592,7 +529,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         _ delete: WorkspaceDatabaseDataRowDelete
     ) async throws -> Int {
         try requireCurrentDatabase(delete.selection.databaseName)
-        return try await executeMutation(Self.deleteStatement(delete))
+        return try await executeMutation(deleteStatement(delete))
     }
 
     func applyDataChanges(
@@ -604,46 +541,9 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         }
         try requireCurrentDatabase(selection.databaseName)
         let client = try requireClient()
-        _ = try await client.query("BEGIN")
-        do {
-            for delete in changes.deletes {
-                try Task.checkCancellation()
-                let affectedRows = try await executeMutation(
-                    Self.deleteStatement(delete)
-                )
-                guard affectedRows == 1 else {
-                    if affectedRows == 0 {
-                        throw WorkspaceDatabaseDataRowDeleteError.rowChanged
-                    }
-                    throw WorkspaceDatabaseDataRowDeleteError
-                        .unexpectedAffectedRows(affectedRows)
-                }
-            }
-            for update in changes.rowUpdates {
-                try Task.checkCancellation()
-                let affectedRows = try await updateDataRow(update)
-                guard affectedRows == 1 else {
-                    if affectedRows == 0 {
-                        throw WorkspaceDatabaseDataCellEditError.rowChanged
-                    }
-                    throw WorkspaceDatabaseDataCellEditError
-                        .unexpectedAffectedRows(affectedRows)
-                }
-            }
-            for insert in changes.inserts {
-                try Task.checkCancellation()
-                let affectedRows = try await executeMutation(
-                    Self.insertStatement(insert)
-                )
-                guard affectedRows == 1 else {
-                    throw WorkspaceDatabaseDataRowInsertError
-                        .unexpectedAffectedRows(affectedRows)
-                }
-            }
-            _ = try await client.query("COMMIT")
-        } catch {
-            _ = try? await client.query("ROLLBACK")
-            throw error
+        let target = identity(for: selection.objectName)
+        try await PostgreSQLDataMutation.apply(changes, table: .init(schema: target.schema, name: target.name)) { sql in
+            try await client.query(sql).affectedRows
         }
     }
 
@@ -779,7 +679,7 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         _ update: WorkspaceDatabaseDataRowUpdate
     ) async throws -> Int {
         try requireCurrentDatabase(update.selection.databaseName)
-        return try await executeMutation(Self.updateStatement(update))
+        return try await executeMutation(updateStatement(update))
     }
 
     private func executeMutation(
@@ -861,194 +761,23 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         )
     }
 
-    private static func makeColumn(
-        _ row: [String: String?]
-    ) -> WorkspaceDatabaseColumn? {
-        guard
-            let name = row["column_name"] ?? nil,
-            let type = row["column_type"] ?? nil
-        else { return nil }
-        return WorkspaceDatabaseColumn(
-            name: name,
-            type: type,
-            collation: row["collation_name"] ?? nil,
-            isNullable: (row["is_nullable"] ?? nil) == "YES",
-            key: (row["column_key"] ?? nil) ?? "",
-            defaultValue: row["column_default"] ?? nil,
-            extra: (row["extra"] ?? nil) ?? "",
-            comment: (row["column_comment"] ?? nil) ?? "",
-            generationExpression: (row["generation_expression"] ?? nil) ?? ""
-        )
+    private static func makeColumn(_ row: [String: String?]) -> WorkspaceDatabaseColumn? { PostgreSQLCatalog.column(row) }
+
+    private static func filterPredicate(_ filter: WorkspaceDatabaseDataFilter) throws -> String { try PostgreSQLCatalog.filterPredicate(filter) }
+
+    private func updateStatement(_ change: WorkspaceDatabaseDataRowUpdate) throws -> MutationStatement {
+        let target = identity(for: change.selection.objectName)
+        return try PostgreSQLDataMutation.updateStatement(change, table: .init(schema: target.schema, name: target.name))
     }
 
-    private static func filterPredicate(
-        _ filter: WorkspaceDatabaseDataFilter
-    ) throws -> String {
-        let conditions = filter.enabledConditions
-        guard !conditions.isEmpty else { return "" }
-        guard filter.isValid else {
-            throw WorkspaceSessionError.invalidDataFilter
-        }
-
-        var predicates: [String] = []
-        predicates.reserveCapacity(conditions.count)
-        for condition in conditions {
-            let column = identifier(condition.columnName)
-            let predicate: String
-            switch condition.operation {
-            case .equal:
-                predicate = "\(column) = \(literal(condition.value))"
-            case .notEqual:
-                predicate = "\(column) <> \(literal(condition.value))"
-            case .contains:
-                predicate = "\(column)::text LIKE "
-                    + literal("%\(escapedLike(condition.value))%")
-                    + " ESCAPE E'\\\\'"
-            case .startsWith:
-                predicate = "\(column)::text LIKE "
-                    + literal("\(escapedLike(condition.value))%")
-                    + " ESCAPE E'\\\\'"
-            case .endsWith:
-                predicate = "\(column)::text LIKE "
-                    + literal("%\(escapedLike(condition.value))")
-                    + " ESCAPE E'\\\\'"
-            case .lessThan:
-                predicate = "\(column) < \(literal(condition.value))"
-            case .lessThanOrEqual:
-                predicate = "\(column) <= \(literal(condition.value))"
-            case .greaterThan:
-                predicate = "\(column) > \(literal(condition.value))"
-            case .greaterThanOrEqual:
-                predicate = "\(column) >= \(literal(condition.value))"
-            case .between:
-                predicate = "\(column) BETWEEN \(literal(condition.value)) "
-                    + "AND \(literal(condition.secondValue))"
-            case .isNull:
-                predicate = "\(column) IS NULL"
-            case .isNotNull:
-                predicate = "\(column) IS NOT NULL"
-            case .term, .terms, .match, .matchPhrase, .wildcard,
-                 .rangeLessThan, .rangeLessThanOrEqual,
-                 .rangeGreaterThan, .rangeGreaterThanOrEqual, .exists:
-                throw WorkspaceSessionError.invalidDataFilter
-            }
-            predicates.append("(\(predicate))")
-        }
-        let separator = filter.logic == .matchAll ? " AND " : " OR "
-        return " WHERE " + predicates.joined(separator: separator)
+    private func insertStatement(_ change: WorkspaceDatabaseDataRowInsert) throws -> MutationStatement {
+        let target = identity(for: change.selection.objectName)
+        return try PostgreSQLDataMutation.insertStatement(change, table: .init(schema: target.schema, name: target.name))
     }
 
-    private static func updateStatement(
-        _ update: WorkspaceDatabaseDataRowUpdate
-    ) throws -> MutationStatement {
-        guard update.selection.kind == .table else {
-            throw WorkspaceDatabaseDataCellEditError.tableRequired
-        }
-        guard !update.primaryKey.isEmpty else {
-            throw WorkspaceDatabaseDataCellEditError.primaryKeyRequired
-        }
-        guard
-            !update.assignments.isEmpty,
-            update.assignments.allSatisfy({
-                $0.selection == update.selection
-                    && $0.primaryKey == update.primaryKey
-            })
-        else {
-            throw WorkspaceDatabaseDataCellEditError.editingContextChanged
-        }
-
-        let assignments = try update.assignments.map { assignment in
-            if assignment.assignment == .useDefault {
-                return "\(identifier(assignment.columnName)) = DEFAULT"
-            }
-            let value = try sqlLiteral(assignment.newValue)
-            return "\(identifier(assignment.columnName)) = \(value)"
-        }
-        let predicates = try update.primaryKey.map {
-            "\(identifier($0.columnName)) = \(try sqlLiteral($0.value))"
-        }
-        return MutationStatement(
-            sql: "UPDATE \(qualifiedTable(update.selection)) SET "
-                + assignments.joined(separator: ", ")
-                + " WHERE " + predicates.joined(separator: " AND ")
-        )
-    }
-
-    private static func insertStatement(
-        _ insert: WorkspaceDatabaseDataRowInsert
-    ) throws -> MutationStatement {
-        guard insert.selection.kind == .table else {
-            throw WorkspaceDatabaseDataRowInsertError.tableRequired
-        }
-        guard !insert.values.isEmpty else {
-            return MutationStatement(
-                sql: "INSERT INTO \(qualifiedTable(insert.selection)) DEFAULT VALUES"
-            )
-        }
-        let columns = insert.values.map { identifier($0.columnName) }
-        let values = try insert.values.map { try sqlLiteral($0.value) }
-        return MutationStatement(
-            sql: "INSERT INTO \(qualifiedTable(insert.selection)) ("
-                + columns.joined(separator: ", ") + ") VALUES ("
-                + values.joined(separator: ", ") + ")"
-        )
-    }
-
-    private static func deleteStatement(
-        _ delete: WorkspaceDatabaseDataRowDelete
-    ) throws -> MutationStatement {
-        guard delete.selection.kind == .table else {
-            throw WorkspaceDatabaseDataRowDeleteError.tableRequired
-        }
-        guard !delete.conditions.isEmpty else {
-            throw WorkspaceDatabaseDataRowDeleteError.primaryKeyRequired
-        }
-        let predicates = try delete.conditions.map {
-            "\(identifier($0.columnName)) = \(try sqlLiteral($0.value))"
-        }
-        return MutationStatement(
-            sql: "DELETE FROM \(qualifiedTable(delete.selection)) WHERE "
-                + predicates.joined(separator: " AND ")
-        )
-    }
-
-    private static func sqlLiteral(
-        _ cell: WorkspaceDatabaseDataCell
-    ) throws -> String {
-        switch cell {
-        case .null:
-            return "NULL"
-        case .text(let value):
-            return literal(value)
-        case .binary:
-            throw WorkspaceDatabaseDataCellEditError.binaryValueUnavailable
-        }
-    }
-
-    private static func escapedLike(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_")
-    }
-
-    private static func qualifiedTable(
-        _ selection: WorkspaceDatabaseObjectSelection
-    ) -> String {
-        let parts = splitObjectName(selection.objectName)
-        return "\(identifier(parts.schema)).\(identifier(parts.name))"
-    }
-
-    private static func splitObjectName(
-        _ value: String
-    ) -> (schema: String, name: String) {
-        guard let separator = value.firstIndex(of: ".") else {
-            return ("public", value)
-        }
-        return (
-            String(value[..<separator]),
-            String(value[value.index(after: separator)...])
-        )
+    private func deleteStatement(_ change: WorkspaceDatabaseDataRowDelete) throws -> MutationStatement {
+        let target = identity(for: change.selection.objectName)
+        return try PostgreSQLDataMutation.deleteStatement(change, table: .init(schema: target.schema, name: target.name))
     }
 
     private static func pgBool(_ value: String) -> Bool {
@@ -1064,13 +793,8 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         return value
     }
 
-    private static func literal(_ value: String) -> String {
-        "'\(value.replacingOccurrences(of: "'", with: "''"))'"
-    }
-
-    private static func identifier(_ value: String) -> String {
-        "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
-    }
+    private static func literal(_ value: String) -> String { PostgreSQLCatalog.literal(value) }
+    private static func identifier(_ value: String) -> String { PostgreSQLCatalog.identifier(value) }
 
     private static func qualified(_ identity: ObjectIdentity) -> String {
         "\(identity.schema).\(identity.name)"

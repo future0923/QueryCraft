@@ -14,7 +14,7 @@ import QueryCraftMobileTransport
     var errorMessage: String?
     var lastExecutedRange: SQLSourceRange? = nil
     var result: CDatabaseQueryResult? = nil
-    var preview: CDatabaseQueryPreview? = nil
+    var preview: MobileSQLPreview? = nil
     var lastExecutedSQL: String? = nil
     var lastExecutedDatabase: String? = nil
     var elapsed: Duration? = nil
@@ -23,7 +23,7 @@ import QueryCraftMobileTransport
     var editing: MobileTableChanges? = nil
     var editingPage: MobileTableSnapshot? = nil
     var editingMessage: String? = nil
-    var lastExecutedConfiguration: MariaDBTransportConfiguration? = nil
+    var lastExecutedConfiguration: MobileSQLConfiguration? = nil
     var requiresResultReload: Bool = false
     var cache: MobileCachedQueryResult?
     var cachedRowCount = 0

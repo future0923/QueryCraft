@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 import Observation
 
@@ -28,6 +31,9 @@ final class WorkspaceRedisCommandDocumentModel: Identifiable {
     @ObservationIgnored private let executeCommand: Executor
     @ObservationIgnored private let loadSuggestions: SuggestionLoader
     @ObservationIgnored private let parser = RedisCommandParser()
+    @ObservationIgnored private let replyByteLimit: Int?
+    @ObservationIgnored private let transcriptByteLimit: Int?
+    @ObservationIgnored private let historyByteLimit: Int?
     @ObservationIgnored private var executionTask: Task<Void, Never>?
     @ObservationIgnored private var suggestionTask: Task<Void, Never>?
     @ObservationIgnored private var activeSuggestionRequest:
@@ -50,8 +56,12 @@ final class WorkspaceRedisCommandDocumentModel: Identifiable {
         ) -> [String] = { _ in [] },
         isSafetyLockEnabled: @escaping @MainActor () -> Bool,
         loadSuggestions: @escaping SuggestionLoader = { _ in [] },
+        replyByteLimit: Int? = nil,
+        transcriptByteLimit: Int? = nil,
+        historyByteLimit: Int? = nil,
         executeCommand: @escaping Executor
     ) {
+        self.replyByteLimit = replyByteLimit; self.transcriptByteLimit = transcriptByteLimit; self.historyByteLimit = historyByteLimit
         self.id = id
         self.title = title
         self.databaseIndex = databaseIndex
@@ -311,6 +321,7 @@ final class WorkspaceRedisCommandDocumentModel: Identifiable {
                 transcriptEntries.count - Self.maximumTranscriptEntries
             )
         }
+        trimTranscriptBytes()
         transcriptRevision &+= 1
     }
 
@@ -320,13 +331,34 @@ final class WorkspaceRedisCommandDocumentModel: Identifiable {
     ) {
         guard let index = transcriptEntries.firstIndex(where: { $0.id == id })
         else { return }
-        transcriptEntries[index].outcome = outcome
+        if let replyByteLimit, case let .success(reply, seconds) = outcome {
+            transcriptEntries[index].outcome = .success(reply: reply.retainedTranscriptReply(maximumBytes: replyByteLimit), elapsedSeconds: seconds)
+        } else { transcriptEntries[index].outcome = outcome }
+        trimTranscriptBytes()
         transcriptRevision &+= 1
     }
 
+    private func trimTranscriptBytes() {
+        guard let limit = transcriptByteLimit else { return }
+        func cost(_ entry: RedisCommandTranscriptEntry) -> Int {
+            let reply: Int
+            switch entry.outcome {
+            case .success(let value, _): reply = value.estimatedByteCount(upTo: limit)
+            case .failure(let message): reply = message.utf8.count
+            case .cancelled, .executing: reply = 16
+            }
+            return entry.command.utf8.count + reply
+        }
+        var total = transcriptEntries.reduce(0) { $0 + cost($1) }
+        while total > limit && transcriptEntries.count > 1 { total -= cost(transcriptEntries.removeFirst()) }
+    }
     private func remember(_ command: String) {
         if commandHistory.last != command {
             commandHistory.append(command)
+        }
+        if let limit = historyByteLimit {
+            var total = commandHistory.reduce(0) { $0 + $1.utf8.count }
+            while total > limit && commandHistory.count > 1 { total -= commandHistory.removeFirst().utf8.count }
         }
         if commandHistory.count > Self.maximumHistoryEntries {
             commandHistory.removeFirst(

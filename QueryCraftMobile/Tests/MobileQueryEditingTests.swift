@@ -5,7 +5,7 @@ import QueryCraftMobileTransport
 @testable import QueryCraftMobileProof
 
 struct MobileQueryEditingTests {
-    private func configuration(user: String = "proof_writer") throws -> MariaDBTransportConfiguration {
+    private func configuration(user: String = "proof_writer") throws -> MobileSQLConfiguration {
         .init(host: "127.0.0.1", port: try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init)),
             username: user, password: user == "proof_writer" ? "querycraft-proof-writer" : "querycraft-proof-reader",
             database: "querycraft_ios_edit", tlsMode: .required)

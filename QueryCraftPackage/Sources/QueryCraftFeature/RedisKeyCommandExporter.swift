@@ -1,7 +1,25 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
-@MainActor
 enum RedisKeyCommandExporter {
+    static func wholeKey(details: RedisKeyDetails, stringData: RedisBinaryValue?, rows: [RedisKeyEditableRow], isFullyLoaded: Bool) -> String? {
+        guard isFullyLoaded, [.string, .list, .hash, .set, .sortedSet].contains(details.reference.type) else { return nil }
+        let commands: [[RedisBinaryValue]]
+        if details.reference.type == .string {
+            guard let stringData else { return nil }
+            commands = [[value("SET"), value(details.reference.name), stringData]]
+        } else {
+            commands = collectionCommands(details: details, rows: activeRows(rows))
+        }
+        return render(commands + expirationCommand(for: details))
+    }
+    static func selectedRows(details: RedisKeyDetails, rows: [RedisKeyEditableRow]) -> String? {
+        render(collectionCommands(details: details, rows: activeRows(rows)))
+    }
+#if !os(iOS)
+    @MainActor
     static func wholeKey(
         details: RedisKeyDetails,
         editor: RedisKeyEditorState
@@ -31,6 +49,7 @@ enum RedisKeyCommandExporter {
         return render(commands + expirationCommand(for: details))
     }
 
+    @MainActor
     static func selectedRows(
         details: RedisKeyDetails,
         editor: RedisKeyEditorState
@@ -42,6 +61,7 @@ enum RedisKeyCommandExporter {
         ))
     }
 
+#endif
     private static func collectionCommands(
         details: RedisKeyDetails,
         rows: [RedisKeyEditableRow]
@@ -120,5 +140,13 @@ enum RedisKeyCommandExporter {
 
     private static func value(_ string: String) -> RedisBinaryValue {
         RedisBinaryValue(utf8: string)
+    }
+}
+
+
+actor RedisKeyCommandExportWorker {
+    func export(details: RedisKeyDetails, stringData: RedisBinaryValue?, rows: [RedisKeyEditableRow], wholeKey: Bool) -> String? {
+        if wholeKey { return RedisKeyCommandExporter.wholeKey(details: details, stringData: stringData, rows: rows, isFullyLoaded: true) }
+        return RedisKeyCommandExporter.selectedRows(details: details, rows: rows)
     }
 }

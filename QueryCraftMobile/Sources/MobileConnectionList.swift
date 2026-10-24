@@ -65,7 +65,7 @@ private struct MobileConnectionRow: View {
                 .background(.tint.opacity(0.08), in: .rect(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 5) {
                 Text(profile.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
-                Text(profile.host + ":" + String(profile.port))
+                Text(profile.driver.title + " · " + profile.host + ":" + String(profile.port))
                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 12)

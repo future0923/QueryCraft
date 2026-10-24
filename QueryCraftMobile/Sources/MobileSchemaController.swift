@@ -68,9 +68,9 @@ import QueryCraftMobileTransport
     @ObservationIgnored private var readTask: Task<Void, Never>?
     @ObservationIgnored private var writeTask: Task<Void, Never>?
     @ObservationIgnored private var loadID = UUID()
-    private let configuration: MariaDBTransportConfiguration
+    private let configuration: MobileSQLConfiguration
     private let service: any MobileSchemaServicing
-    init(configuration: MariaDBTransportConfiguration, safetyLock: WorkspaceSafetyLock, service: any MobileSchemaServicing = MobileSchemaService()) {
+    init(configuration: MobileSQLConfiguration, safetyLock: WorkspaceSafetyLock, service: any MobileSchemaServicing = MobileSchemaService()) {
         self.configuration = configuration; self.safetyLock = safetyLock; self.service = service
     }
     var hasPendingChanges: Bool { isSubmitting || drafts.values.contains { $0.hasChanges || $0.needsVerification || $0.requiresReload } }

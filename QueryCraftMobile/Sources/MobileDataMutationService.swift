@@ -3,8 +3,13 @@ import QueryCraftMobileCore
 import QueryCraftMobileTransport
 
 protocol MobileDataMutating: Sendable {
-    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MariaDBTransportConfiguration,
+    func scoped(to object: MobileDatabaseObject, columns: [MobileTableColumn]) -> any MobileDataMutating
+    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MobileSQLConfiguration,
                authorize: @escaping @Sendable () async throws -> Void) async throws
+}
+
+extension MobileDataMutating {
+    func scoped(to object: MobileDatabaseObject, columns: [MobileTableColumn]) -> any MobileDataMutating { self }
 }
 
 enum MobileDataMutationError: LocalizedError {
@@ -39,10 +44,10 @@ struct MobileMariaDBMutationConnection: MobileMutationConnection {
 }
 
 struct MobileDataMutationService: MobileDataMutating {
-    var makeConnection: @Sendable (MariaDBTransportConfiguration) -> any MobileMutationConnection = {
+    var makeConnection: @Sendable (MobileSQLConfiguration) -> any MobileMutationConnection = {
         MobileMariaDBMutationConnection(client: MariaDBClient(configuration: $0))
     }
-    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MariaDBTransportConfiguration,
+    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MobileSQLConfiguration,
                authorize: @escaping @Sendable () async throws -> Void) async throws {
         guard changes.hasConsistentSelection, let selection = changes.selection, selection.kind == .table else {
             throw WorkspaceDatabaseDataCellEditError.editingContextChanged

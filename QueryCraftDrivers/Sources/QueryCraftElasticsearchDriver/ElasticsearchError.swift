@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 enum ElasticsearchError: LocalizedError, Equatable {
     case invalidEndpoint

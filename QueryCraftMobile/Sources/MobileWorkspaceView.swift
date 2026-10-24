@@ -17,12 +17,22 @@ struct MobileWorkspaceView: View {
     @State private var snippetContext = MobileSQLSnippetContext()
     @State private var showingSnippets = false
     @State private var formatting = MobileSQLFormattingContext()
+    init(model: MobileQueryModel, widthKey: String, browser: MobileBrowserModel? = nil, history: [MobileQueryHistoryItem] = [], restoreHistory: ((MobileQueryHistoryItem) -> Void)? = nil) {
+        self.model = model; self.widthKey = widthKey; self.browser = browser; self.history = history; self.restoreHistory = restoreHistory
+        _editorSchema = State(initialValue: MobileSQLSchemaCatalog(service: model.metadataProvider))
+    }
     var body: some View {
         VStack(spacing: 0) {
             if !findingResults { VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     if let browser {
                         Menu {
+                            if browser.supportsSchemas {
+                                Picker("Schema", selection: Binding(get: { browser.selectedSchema ?? "" }, set: { browser.selectSchema($0.isEmpty ? nil : $0) })) {
+                                    Text("默认 search_path").tag("")
+                                    ForEach(browser.schemas ?? [], id: \.self) { Text($0).tag($0) }
+                                }
+                            }
                             Picker("数据库", selection: Binding(get: { model.database }, set: {
                                 model.database = $0
                                 if model.database == $0 { browser.selectDatabase($0) }
@@ -39,6 +49,7 @@ struct MobileWorkspaceView: View {
                     }
                     Spacer()
                     Menu {
+                        if model.supportsTransactions {
                         Toggle("安全锁", isOn: Binding(get: { model.safetyLock.isEnabled }, set: {
                             if $0 { model.safetyLock.enable() } else { model.safetyLock.disable() }
                         }))
@@ -47,6 +58,7 @@ struct MobileWorkspaceView: View {
                         Button("提交事务") { model.transaction(.commit) }.disabled(model.isLoading || model.transactionState != .inTransaction || model.writeOutcomeUncertain)
                         Button("回滚事务") { model.transaction(.rollback) }.disabled(model.isLoading || model.transactionState != .inTransaction || model.writeOutcomeUncertain)
                         Button("断开 SQL 会话") { model.disconnectSQL() }.disabled(model.isLoading)
+                        }
                         Button("清空查询结果缓存") { model.clearQueryResults() }.disabled(model.isLoading || model.isLoadingEditing || model.hasSubmittingChanges)
                         if model.writeOutcomeUncertain { Button("已核对服务器结果，解除待核实状态") { model.acknowledgeUncertainOutcome() } }
                     } label: {

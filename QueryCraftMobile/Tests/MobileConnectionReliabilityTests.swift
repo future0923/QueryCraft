@@ -5,7 +5,7 @@ import QueryCraftMobileTransport
 @testable import QueryCraftMobileProof
 
 @MainActor struct MobileConnectionReliabilityTests {
-    private let configuration = MariaDBTransportConfiguration(host: "127.0.0.1", port: 1, username: "unused", password: nil, database: "db", tlsMode: .disabled)
+    private let configuration = MobileSQLConfiguration(host: "127.0.0.1", port: 1, username: "unused", password: nil, database: "db", tlsMode: .disabled)
 
     @Test func confirmedCommitFinishingDuringBackgroundRequiresExplicitTableReload() async throws {
         let service = ReliabilityBrowser(), writer = ReliabilityConfirmedWriter()
@@ -169,7 +169,7 @@ import QueryCraftMobileTransport
     }
 }
 
-private actor ReliabilityBrowser: MobileMySQLServicing {
+private actor ReliabilityBrowser: MobileSQLServicing {
     private var hold = false, waiting = false, fails = false
     private var continuation: CheckedContinuation<Void, Never>?
     private(set) var pageCalls = 0
@@ -181,15 +181,15 @@ private actor ReliabilityBrowser: MobileMySQLServicing {
         return waiting
     }
     func release() { continuation?.resume(); continuation = nil; waiting = false }
-    func databases(configuration: MariaDBTransportConfiguration) async throws -> [String] { ["db"] }
-    func objects(configuration: MariaDBTransportConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
+    func databases(configuration: MobileSQLConfiguration) async throws -> [String] { ["db"] }
+    func objects(configuration: MobileSQLConfiguration, database: String, search: String, kind: MobileDatabaseObject.Kind?) async throws -> MobileObjectCatalog {
         .init(objects: [.init(database: database, name: "t", kind: .table, comment: "")], hasMore: false)
     }
-    func columns(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
+    func columns(configuration: MobileSQLConfiguration, object: MobileDatabaseObject) async throws -> [MobileTableColumn] {
         [.init(name: "id", type: "int", isNullable: false, key: "PRI", defaultValue: nil, extra: "", comment: ""),
          .init(name: "name", type: "varchar(80)", isNullable: true, key: "", defaultValue: nil, extra: "", comment: "")]
     }
-    func page(configuration: MariaDBTransportConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot {
+    func page(configuration: MobileSQLConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot {
         pageCalls += 1
         if hold { hold = false; waiting = true; await withCheckedContinuation { continuation = $0 } }
         if fails { fails = false; throw CocoaError(.fileReadUnknown) }
@@ -211,7 +211,7 @@ private actor ReliabilityQuery: MobileQueryExecuting {
         return waiting
     }
     func release() { continuation?.resume(); continuation = nil; waiting = false }
-    func execute(configuration: MariaDBTransportConfiguration, sql: String) async throws -> CDatabaseQueryResult {
+    func execute(configuration: MobileSQLConfiguration, sql: String) async throws -> CDatabaseQueryResult {
         calls += 1
         if hold { hold = false; waiting = true; await withCheckedContinuation { continuation = $0 } }
         if fail {
@@ -224,7 +224,7 @@ private actor ReliabilityQuery: MobileQueryExecuting {
 }
 
 private struct ReliabilityUnknownWriter: MobileDataMutating {
-    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MariaDBTransportConfiguration,
+    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MobileSQLConfiguration,
                authorize: @escaping @Sendable () async throws -> Void) async throws {
         try await authorize(); throw MobileDataMutationError.uncertainCommit
     }
@@ -257,7 +257,7 @@ private actor ReliabilityConfirmedWriter: MobileDataMutating {
         return waiting
     }
     func release() { continuation?.resume(); continuation = nil; waiting = false }
-    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MariaDBTransportConfiguration,
+    func apply(_ changes: WorkspaceDatabaseDataChangeSet, configuration: MobileSQLConfiguration,
                authorize: @escaping @Sendable () async throws -> Void) async throws {
         try await authorize()
         waiting = true; await withCheckedContinuation { continuation = $0 }

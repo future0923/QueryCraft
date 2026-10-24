@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 enum RedisKeySearchMatchMode: String, CaseIterable, Equatable, Identifiable,
     Sendable
 {

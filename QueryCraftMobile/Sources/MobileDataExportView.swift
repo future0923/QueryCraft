@@ -21,7 +21,7 @@ struct MobileDataExportView: View {
                     } else { LabeledContent("范围", value: model.snapshot.scopeDescription) }
                     LabeledContent("行数", value: model.scope == .allTableRows ? "生成时统计" : "\(model.snapshot.data.rows.count)")
                     Picker("格式", selection: $model.format) {
-                        ForEach(WorkspaceDataExportFormat.allCases) { Text($0.menuTitle).tag($0) }
+                        ForEach(WorkspaceDataExportFormat.allCases.filter { $0 != .sql || model.snapshot.sqlDialect != nil }) { Text($0.menuTitle).tag($0) }
                     }
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
@@ -45,7 +45,7 @@ struct MobileDataExportView: View {
                                 .focused($focusedInput, equals: .target).submitLabel(.done)
                         }
                         if model.snapshot.tableIdentifierParts != nil {
-                            Toggle("包含数据库名", isOn: $model.preferences.sqlIncludesDatabaseName)
+                            Toggle(model.snapshot.sqlDialect == .postgresql ? "包含 Schema 名" : "包含数据库名", isOn: $model.preferences.sqlIncludesDatabaseName)
                         }
                     } footer: { Text("生成 INSERT 文件，不会执行 SQL。二进制字段不支持 SQL 导出。") }
                 }
@@ -134,7 +134,7 @@ struct MobileDataExportView: View {
                     .multilineTextAlignment(.trailing).keyboardType(.numbersAndPunctuation).submitLabel(.done)
                     .focused($focusedInput, equals: .batch)
             }
-            Toggle("事务包装", isOn: $model.preferences.sqlWrapsInTransaction)
+            if model.snapshot.sqlDialect != .doris { Toggle("事务包装", isOn: $model.preferences.sqlWrapsInTransaction) }
         }
     }
 

@@ -28,9 +28,21 @@
 | 选区／当前语句执行 | 原解析、范围定位、预检与批量能力保留 | 同源 resolver/preflight，UIKit 实际选区／IME 校验和异步修订防护；选区／整篇文稿多语句，写入经确认，多结果独立状态；公共刷新仅重读读取语句 |
 | 自定义 SQL 配色、完整编辑等 | 原行为保留 | 尚未移植完整设置；当前支持 MySQL 查询、写入、事务与浏览 |
 
-PG、Doris、Redis、ES、Kafka 的桌面页面没有改动。共享抽样只是原函数提取，预览只是新增公开访问级别，语义未变；MariaDB 原 `query` 路径仍不施加预览限制。移动版只接 MySQL，其他驱动不会因此自动获得移动支持。
+Kafka 的移动链路仍未移植。PostgreSQL 支持 SQL 写入/事务、查询磁盘缓存与表数据编辑，Redis 支持键/成员编辑、搜索、Stream 浏览与命令事务控制台，Doris、Elasticsearch 提供只读浏览；范围、源码共享方式和未移植能力见 README 的“新增驱动范围”。MySQL 原编辑和事务行为保留；MariaDB 原 `query` 路径仍不施加预览限制。桌面页面保留原入口和状态。
 
 加载验证覆盖：慢首次打开、成功为空、失败重试、保留内容刷新、重复请求、快速换表/库、页签切换、下一页失败和取消。程序化截图只确认真实渲染，不替代真机触摸、拖列宽、键盘/IME、旋转或后台恢复验收。
+
+## Redis 当前整体范围（2026-10-23，覆盖下方历次增量记录）
+
+Mac 真实入口与移动入口逐项核对：侧栏逻辑库/键名搜索/前缀树 → `RedisKeySearchMatchMode` / `RedisKeyTreeBuilder`；详情/编辑 → `RedisCollectionReader`、Hash 字段 TTL 读取器、`RedisKeyMutationPlan`；新建/重命名 → 原共享计划；整键 TTL/删除 → 共享 `RedisKeyMetadataMutationPlan`；控制台 → 原 `WorkspaceRedisCommandDocumentModel` / catalog / tokenizer / suggestions / history；导出 → 原 `RedisKeyCommandExporter`；String → 原 HEX/JSON/100 MiB 规则；Stream → 新提取的公共 `RedisStreamReader`。Mac 入口保留，新增预算参数默认为 nil，搜索批量默认仍为 2,000，移动仅调整传输批量和触控呈现。
+
+移动端已接通以上入口。成员搜索覆盖整个键而非当前页，共用匹配/排序；成功后切换结果，慢请求/失败保持原结果并标明查询状态，草稿阻止切换。String 完整读取与保存、大值分段展示、HEX/JSON/原始字节/命令导出、成员选择/批量删除、独立整键操作和同连接命令事务均有原生页面。独立弹窗保留自身范围的重读/核实，主内容只用顶部公共刷新。控制台关闭/后台会丢弃未 EXEC 的事务，回前台等待旧连接实际关闭；未知写回执不会自动重放或被刷新误当成功。
+
+协议和平台边界：二进制集合编辑/模块值编辑沿 Mac 不支持；二进制成员可原字节导出，非 UTF-8 键名不做有损操作。Stream 图形页只读，写入走控制台；TLS 和集群 MOVED/ASK 路由均未新增（集群直连仅 DB0）。集合单页 1,000 项/1 MiB、目录 10,000 名称/8 MiB 是明确预算；SCAN 非快照。String 完整编辑 ≤100 MiB，触控长文本约32 KiB片段；移动 JSON 格式化输出≤100 MiB。控制台有界保留历史/回复，不保证 hiredis 任意响应的硬内存上限。真实设备触控、系统挂起/杀进程和真实弱网仍不能用模拟器/门控故障注入替代。
+
+六类逐项：Redis 的外置驱动读取器和 shared host 变化独立构建/打包/实际 registry 加载验证；MySQL/PG SQL 表页、查询结果页、事务不经过 Redis 计划；Doris 只读路径保持；ES 共用资源容器但不显示 Redis 菜单；Kafka 未迁移移动端。公共网格/导出保留真实元数据，不增加名称猜测。完整五库移动回归与六类 Mac 加载的具体结果见 VALIDATION 最新节；Driver API 保持 5，不覆盖用户 Dev 安装。
+
+下方章节为历史增量记录；其中“尚未移植”的列表只代表当轮状态，当前范围以上述说明和 README 为准。
 
 ## TablePro UI 参考
 
@@ -283,3 +295,87 @@ MySQLWorkspaceSession.fetchTableInformation 原查询／转换提取进已有跨
 写入／事务状态由服务器 OK／EOF 状态提供，支持同连接跨执行、保存点、隐式 DDL 提交；不会仅凭 SQL 文本推断。安全锁和危险语句沿用共享分类，确认捕获全文与配置，发送前复核锁／代次／后台状态。事务或写入在途阻止独立页面写入和连接切换；后台／返回首页断开会话，未提交事务回滚。明确权限／语法拒绝和未知写入结果分开处理；后者需核对服务器才可解除，刷新不重放写入。
 
 六类评估：MySQL Mac 查询及移动链路实库覆盖；Doris 只升级同源 transport V4 及重编译，保留原查询／事务和方言，不假称完成 Doris 实库或移动支持。PostgreSQL 的执行／协议不变，共享缓存默认不变；Redis／Elasticsearch／Kafka 专用链路不接入 SQL 事务，六类加载与会话工厂需逐项验证。移动仍仅支持 MySQL；大结果和事务内结果暂不提供单元格编辑，来源明确且不超过 500 行的读取保留原编辑路径。
+
+
+## 驱动扩展边界（2026-10-23）
+
+| 驱动 | 移动链路与共享边界 | 尚未对齐 |
+| --- | --- | --- |
+| MySQL | 原连接、MariaDBTransport、目录/表页/SQL/编辑/导出继续使用原链路 | 原记录的移动限制 |
+| PostgreSQL | 共用 libpq、PostgreSQLCatalog、类型/物理来源；支持 Schema、只读表页和 SQL，详见下节 | 写入、结构编辑、跨执行事务、SQL 磁盘缓存及其他桌面功能 |
+| Doris | 共用 MariaDBTransport；结构解析同 Mac `DorisSchemaMetadata`；过滤复用相同条件模型和 SQL 谓词构造，文本使用 Doris UNHEX；只读 SQL 与表页分别接入 | SQL 流式磁盘缓存、索引/DDL详情；不支持写入或事务，与桌面只读能力一致 |
+| Redis | 共用 hiredis/RedisClient、回复模型、Keyspace 解析与 `RedisScanCodec`；表格和检查器共用移动公共组件 | 键/值写入、Stream/模块类型、完整二进制集合、集群路由；与桌面一致暂无 TLS |
+| Elasticsearch | 共用 HTTP/TLS/认证/服务器身份/请求策略与 Mapping 解析；真实文档 JSON 与类型分别展示 | PIT 深分页、筛选/排序、REST 控制台、文档/Mapping 编辑；当前前 10,000 条，明确提示限制 |
+| Kafka | 保留此前“不做”的移动范围；桌面及现有驱动不变 | Kafka 移动传输、元数据与消费状态全部链路 |
+
+新增页面不会把缺失的物理来源或字段注释从显示名称推断出来。Doris 的表达式/别名/空结果依赖协议真实来源；ES 文档保留 JSON，Mapping 类型单独展示；Redis 的属性来自 TYPE/PTTL，均不套用 SQL 表元数据。公共 Swift 类型只拆分文件，仍在原桌面 Feature 模块，Driver API 保持 5。
+
+
+## PostgreSQL 只读链路（2026-10-23）
+
+追踪 macOS `PostgreSQLWorkspaceSession` → `LibPQClient` 的数据库、Schema、对象目录、字段、筛选、SQL 查询与物理来源。新增 `PostgreSQLCatalog` 后两端直接编译同一份 SQL、转换和谓词；桌面类型的原名义模块和公开协议不变。发现只读 SELECT 用户在 information_schema 中看不到主键约束，因此主键识别改用 pg_catalog.pg_index；物化视图字段在 information_schema 中缺失，使用 pg_attribute 的真实信息补齐。两处修复在共用目录中同时生效，保留普通表的类型、默认值、生成列及注释行为。
+
+移动连接增加真实 PostgreSQL 驱动、数据库/默认 Schema、5432/TLS 配置；Schema 默认选择对齐 Mac 的 public/首项规则，显式全部 Schema 在刷新后保持。目录使用共享匹配排序，跨 Schema 同名对象有独立身份，物理 Schema 与表名不通过点号拆分。SQL 上下文共用 Schema 标识符引用设置 search_path，修正桌面带点号/引号的 Schema 被当作路径拆分的问题；成功历史保存/恢复对应 Schema；旧配置和历史继续解码。查询结果以 libpq 的类型 OID、表 OID、字段编号建立完整来源；表页、别名、关联、表达式、空结果分别处理，注释不按显示名猜测。
+
+现有 MariaDB 配置/结果边界改为移动通用适配，但 MySQL 原会话/流式缓存、Doris 只读执行链仍使用各自传输。PG 专用查询用服务端只读事务，libpq 单行模式在行数/字节超限时关闭连接；取消通过原客户端的 PQcancel 路径中断实际查询。表分页/排序/筛选、列注释、已加载页导出、SQL 当前语句/选区/批量多结果和原生网格复用现有公共链路。刷新保留同页内容，换 Schema/库/对象隔离旧数据并拒收过期响应。
+
+范围：MySQL 保留完整移动功能；PostgreSQL/Doris 仅本轮已列明的只读浏览和 SQL，PG 尚无写入/结构编辑/跨执行事务/磁盘缓存；Redis/Elasticsearch 继续使用上一轮专用只读链路；Kafka 没有新增移动支持。不能将此轮当作五类驱动全部对齐 macOS。PG 多语句各自独立连接，bytea 与当前桌面协议一样使用文本形式；名称模型无法唯一解析的 SQL 补全不猜物理字段。真机触控、后台弱网、TLS 证书及全部桌面 PostgreSQL 版本仍需进一步验收。
+
+
+## PostgreSQL 表数据编辑（2026-10-23）
+
+沿 macOS `PostgreSQLWorkspaceSession` 的行编辑链路提取 `PostgreSQLDataMutation`，两端直接共用 INSERT/UPDATE/DELETE SQL 生成、删除→更新→新增的批次顺序和受影响行数检查。移动端复用现有 `MobileTableChanges` 暂存、安全锁、预览、撤销、取消/后台及结果不明状态；每次提交捕获当前字段快照和独立 Schema/表名，事务内锁表后复查真实字段/主键。主键仍是 Mac 的原始主键定位规则，不宣称新增了旧字段值冲突检测。
+
+表格、记录和全屏页面共享同一份改动状态；目录中的建表和结构操作继续按独立能力限制，PG 不会进入 MySQL DDL 链路。SQL 控制台保持只读，查询结果编辑和跨执行事务尚未开放。视图不写入；无主键表可新增，不能更新/删除已有行。生成列、NULL/默认值与 identity 使用桌面共享字段规则；bytea 沿桌面文本表示；NUL 文本明确拒绝。提交回执不明后保留草稿并禁止重放，丢弃后仍需实际刷新成功才能继续编辑。
+
+六类评估：MySQL 共用暂存接口但继续走原 MariaDB 写入服务；PG 表数据新增写入，SQL 查询页仍只读；Doris 的只读表/查询能力不变；Redis/Elasticsearch 的专用只读页不进入 SQL 编辑链路；Kafka 移动链路仍未移植。此次未改变 Driver API。桌面 PG 共享源码的实际打包/加载与移动端实库结果见 VALIDATION.md 最新记录。
+
+
+## PostgreSQL SQL 会话与缓存（2026-10-23，当前范围）
+
+在前一节表数据编辑上增加 SQL 控制台写入、DDL、RETURNING、跨执行事务/保存点/提交/回滚。读取、写入分类和危险 SQL 确认继续使用桌面共享 parser/preflight；移动端与 MySQL 直接共用 `MobileSQLSession`、确认 UI、磁盘缓存、结果页、刷新和取消状态，驱动适配只处理协议、连接设置与真实错误分类。SQL 查询结果单元格编辑和图形结构编辑仍未开放；Doris/Redis/ES 继续只读，Kafka 仍未接入。
+
+libpq 新流式入口使用 extended query protocol 保证一次请求只能包含一个服务端语句，单行模式配合 Mac/MySQL 共用 `WorkspaceTransferBatchChannel` 背压和 `WorkspaceQueryResultStore` 磁盘缓存，避免一次收齐大结果。当前可见页 500 行/4 MiB、单行 8 MiB、整批缓存 256 MiB。字段元数据在完整响应后通过同一连接解析，临时表和事务内 DDL 可见；最终 Schema/类型/真实来源和注释写回缓存，分页保留。原桌面执行入口保持原路径，新流式传输供移动会话使用。
+
+自动提交读取使用服务端只读事务；显式事务内读取不另开事务。错误/取消停止后续批次并关闭 SQL 会话、回滚未提交事务；不会自动重连恢复事务。活动事务或未核实写入阻止端点及 Schema 切换。已确认成功的写入不因刷新重放；丢失提交回执要求显式核实。SQL 改变 `standard_conforming_strings` 后，目录/编辑共用字面量通过显式 E 字符串正确处理反斜线。
+
+功能语义与限制以本节和 README 为准，前面的只读阶段记录为历史基线。真机输入/弱网/后台、真实 TLS 证书和全部服务器版本尚待验收。
+
+## Redis 键值编辑（2026-10-23，第五轮）
+
+沿桌面 RedisKeyEditorState → RedisKeyMutationPlan → RedisOptimisticMutationSession → RedisClient 的真实链路接入移动弹窗，直接编译共享 planner、editable row、HEX codec、命令预览和原值断言模型。适用 string、list、hash、set、zset；默认安全锁、预览/确认、TTL 保留语义及 List 删除顺序与 Mac 共用。属性/数据页共用原有底栏编辑入口，不新增主内容刷新按钮或独占工具栏。弹窗的加载/错误在固定底栏，刷新保留已加载内容和草稿，取消及后台失效令牌隔离旧响应。
+
+编辑快照读取真实二进制数据，上限 1,000 个成员或 1 MiB；未完整读取就不生成写入请求。string 支持文本/HEX，集合中的非 UTF-8 成员明确只读；非 UTF-8 键名不会被有损转换后写到另一个同名键。值编辑直接使用共享 planner 的成员级断言，不把其他无关字段的并发变化误判为冲突；独立 TTL/DEL 操作检查完整已加载键的类型、数量和原值。未知回执和 EXEC 部分失败必须重新读取核实，确认绑定当前草稿和固定 DB/key。切对象/逻辑库/端点不会丢失编辑中的草稿；后台重新上锁、失效确认，已发送的写入等待真实结果，绝不自动重试。
+
+同步修正共享 RedisClient 的两个问题：WATCH/断言读取被 ACL 拒绝必须立即失败；RESP3 ZSCORE 的 double 与 ZSCAN bulk string 的等值分数按数值比较，避免 2.0 和 2 的误冲突。Driver API 保持 5，未新增公开协议能力。六类评估：Redis 适用并有移动/桌面独立实库验证；MySQL/PostgreSQL SQL 表页和查询页不经过 Redis planner；Doris/Elasticsearch 继续只读，Kafka 未新增移动能力。公共结果组件只在 resourcePagination.driver == redis 时显示编辑入口，其余页面行为保留。新版 Redis 驱动单独编译/打包并通过真实安装器和 registry 验证，与其他五类包共同加载；不替换用户现有 Dev 配置。
+
+尚未对齐：新建/重命名键、Hash 字段 TTL、超限键分页编辑、二进制集合编辑、Stream/模块、任意命令和集群路由；TLS 与现有桌面 Redis 驱动一样未支持。完整基线比较不是持久版本号，无法检测外部将值改回原值，TTL 本身也没有并发断言。真实设备触控、系统挂起/杀进程、真实网络断连及旧 Redis 版本仍待验收；隔离测试的回执丢失注入不冒充真实弱网测试。
+
+
+## Redis 新建与重命名（2026-10-23，当前范围）
+
+移动端直接编译 macOS `RedisKeyCreationPlan` / `RedisKeyRenamePlan`，共用五类新建类型、名称 trim、Hash/Set/ZSet 身份与分数校验、List 空白过滤和顺序、TTL 命令。Mac 新建从 EXISTS 后直接事务改为共享缺失断言的 WATCH/MULTI/EXEC，消除检查后其他客户端抢先创建导致覆盖的窗口。重命名继续使用原 RENAMENX；同名不覆盖、源数据和 TTL 保留，空名/未变名称不提交。Driver API 仍为 5，未修改外置驱动源码。
+
+新建入口放在现有数据库选择行，重命名在目录上下文菜单和数据/属性共用底栏编辑菜单；不新增主内容刷新行。弹窗复用安全锁、精确命令预览/确认、后台上锁，键身份操作与值编辑互斥。默认持久化；新建允许空 String，集合依 Mac 规则至少一个有效成员；新建值限 1,000 个成员/1 MiB，键名限 64 KiB。原始非 UTF-8 键名不开放操作；RENAMENX 不读取值，超限值和 Stream 可重命名，内容浏览/编辑仍遵循已有能力限制。
+
+提交后读取 TYPE/PTTL，丢失回执时保留已提交操作和草稿，禁止重放；核实失败保留未核实状态，切后台取消读取并隔离迟到响应，已发送写入等待真实结果。核实成功显示原/目标当前存在性、类型和 TTL，未知回执不能据目标存在推断本次成功；确认关闭后刷新实际目录/详情。已确认成功且目标仍存在时更新选中项，目录始终重新 SCAN 当前 MATCH，不混入不匹配目标。外部后续写入与 TTL 到期可能改变核实时状态，不宣称原子历史快照。
+
+六类评估：仅 Redis 新增键操作；MySQL/PostgreSQL 表页和查询页不进入此链路，Doris 仍只读，Elasticsearch 共用资源页面但没有 Redis 操作菜单，Kafka 仍无移动入口。此次修改 Feature 内部共享计划与桌面调用，既有六类外置包用新版 Feature 验证加载，不替换用户 Dev 安装目录。仍未对齐 Hash 字段 TTL、超限键分页编辑、二进制集合成员编辑、Stream/模块内容、任意命令、集群路由和 TLS；实体设备弱网、系统挂起/杀进程待验收。
+
+
+## Redis Hash 字段 TTL（2026-10-23，当前增量）
+
+Mac 分页读取和移动编辑快照共用 RedisHashFieldExpirationReader 的 COMMAND INFO HPTTL 能力探测、二进制参数与 HPTTL 回复校验；移动端直接使用已有 RedisKeyMutationPlan 的 HPEXPIRE/HPERSIST 生成和字段原值断言。支持设置正整数毫秒、留空移除 TTL；旧版服务不显示输入且模型拒绝 TTL 改动。探测权限不足标为未知，不能当作永久；已确认支持后的 TTL 读取失败或字段已消失会失败，保留旧内容，不发布假的永久状态。桌面分页读取也同步采用失败行为。
+
+字段值 HSET 会清除字段 TTL；仅修改值时沿用 Mac 行为，UI 已明确提示。字段重命名沿 Mac 规则用已读取的 TTL 时长重新计时，不宣称保留绝对截止时间。TTL 本身没有原值断言，外部只改变 TTL 的并发不会被检测；不增加 Driver API。
+
+此增量只适用 Redis Hash 编辑；MySQL、PostgreSQL、Doris、Elasticsearch、Kafka 不使用该读取器或字段 TTL 输入。Hash 全量编辑仍有 1,000 成员/1 MiB 限制；大键分页编辑、Stream 内容、二进制成员修改和真实设备弱网仍待后续。
+
+
+## Redis 大集合分页编辑（2026-10-23，当前增量）
+
+将 Mac 既有 RedisDriverWorkspaceSession+PagedValues 的分页实现整体提取为 RedisCollectionReader actor，桌面 session 持有同一连接的读取器并在重连/关闭时失效；移动端编译同一份源码，List 绝对索引、Hash/Set 游标、ZSet 默认降序、搜索匹配规则和字段 TTL 读取不另写一套。移动编辑集合超过 1,000 项自动切入分页，单页请求 200 项，SCAN 可多返回；单页仍有 1,000 成员/1 MiB 上限。
+
+读取新页时保留旧内容/固定底栏，只有成功才更新页号和历史。草稿阻止翻页，提交和核实刷新当前页；翻页失败、后台取消与迟到响应不会发布新页或破坏历史。List 修改继续以完整总长度和真实绝对索引断言；Hash/Set/ZSet 使用 Mac 成员原值断言。部分页不提供整键 TTL 或删除，模型也拒绝绕过 UI 提交，不将一页数据当整键快照。
+
+本轮只接入逐页编辑入口；共享读取器支持的成员搜索 UI 尚未移植。String 仍是 1 MiB 整值编辑，未做分块写入；二进制集合成员仍只读。SCAN 不是稳定快照，前后翻页可能因外部写入而重复/变化；ZSet 改分数可能使成员移出当前页。五类其他驱动不经过该读取器和编辑页，协议/API 不变。实际覆盖与驱动包验证见 VALIDATION.md 最新记录。

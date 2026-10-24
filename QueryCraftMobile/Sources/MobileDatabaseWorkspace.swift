@@ -14,14 +14,21 @@ final class MobileDatabaseWorkspace: Identifiable {
     @ObservationIgnored var tableDidCreate: ((MobileDatabaseObject) -> Void)?
     @ObservationIgnored var tableDidChange: ((MobileDatabaseObject, WorkspaceTableActionStatement) -> Void)?
 
-    init(profile: MobileConnectionProfile, password: String?, service: any MobileMySQLServicing, tableActionService: any MobileTableActionServicing = MobileTableActionService(), queryExecutor: any MobileQueryExecuting = MobileMariaDBExecutor(), schemaService: any MobileSchemaServicing = MobileSchemaService(), newTableService: any MobileNewTableServicing = MobileNewTableService()) {
+    init(profile: MobileConnectionProfile, password: String?, service: any MobileSQLServicing, tableActionService: any MobileTableActionServicing = MobileTableActionService(), queryExecutor: any MobileQueryExecuting = MobileMariaDBExecutor(), schemaService: any MobileSchemaServicing = MobileSchemaService(), newTableService: any MobileNewTableServicing = MobileNewTableService()) {
         self.profile = profile
-        browser = MobileBrowserModel(configuration: profile.configuration(password: password), service: service)
+        let service: any MobileSQLServicing = profile.driver == .postgresql ? MobilePostgreSQLService() : profile.driver == .doris ? MobileDorisService() : service
+        let queryExecutor: any MobileQueryExecuting = profile.driver == .postgresql ? MobilePostgreSQLExecutor() : profile.driver == .doris ? MobileDorisExecutor() : queryExecutor
+        let mutations: any MobileDataMutating = profile.driver == .postgresql ? MobilePostgreSQLMutationService() : MobileDataMutationService()
+        browser = MobileBrowserModel(configuration: profile.configuration(password: password), service: service, mutationService: mutations,
+                                     supportsEditing: profile.driver == .mysql || profile.driver == .postgresql)
         tableActions = MobileTableActionController(configuration: profile.configuration(password: password), safetyLock: browser.safetyLock, service: tableActionService)
         schema = MobileSchemaController(configuration: profile.configuration(password: password), safetyLock: browser.safetyLock, service: schemaService)
         newTable = MobileNewTableController(configuration: profile.configuration(password: password), safetyLock: browser.safetyLock, service: newTableService)
-        browser.schema = schema
+        browser.schema = profile.driver == .mysql ? schema : nil
         query = MobileQueryModel(executor: queryExecutor, metadataService: service, safetyLock: browser.safetyLock)
+        query.driver = profile.driver
+        query.schemaName = profile.schemaName
+        query.exportDialect = profile.driver == .postgresql ? .postgresql : profile.driver == .doris ? .doris : .mysql
         query.host = profile.host
         query.port = String(profile.port)
         query.username = profile.username
@@ -41,11 +48,11 @@ final class MobileDatabaseWorkspace: Identifiable {
         }
         browser.allowsDataMutation = { [weak self] in
             guard let self else { return false }
-            return !self.query.blocksOtherWrites && !self.newTable.blocksWrites && !self.tableActions.blocksWrites && !self.schema.blocksWrites && self.browser.selectedObject.flatMap { self.schema.drafts[$0.id] }.map { !$0.hasChanges && !$0.requiresReload } != false
+            return (self.profile.driver == .mysql || self.profile.driver == .postgresql) && !self.query.blocksOtherWrites && !self.newTable.blocksWrites && !self.tableActions.blocksWrites && !self.schema.blocksWrites && self.browser.selectedObject.flatMap { self.schema.drafts[$0.id] }.map { !$0.hasChanges && !$0.requiresReload } != false
         }
         query.allowsDataMutation = { [weak self] in
             guard let self else { return false }
-            return !self.newTable.blocksWrites && !self.tableActions.blocksWrites && !self.schema.blocksWrites && self.query.editing.flatMap { self.schema.drafts[$0.object.id] }.map { !$0.hasChanges && !$0.requiresReload } != false
+            return self.profile.driver == .mysql && !self.newTable.blocksWrites && !self.tableActions.blocksWrites && !self.schema.blocksWrites && self.query.editing.flatMap { self.schema.drafts[$0.object.id] }.map { !$0.hasChanges && !$0.requiresReload } != false
         }
         query.allowsSQLExecution = { [weak self] in
             guard let self else { return false }
@@ -56,7 +63,7 @@ final class MobileDatabaseWorkspace: Identifiable {
         query.didExecuteWrite = { [weak self] in self?.browser.sqlDidWrite(); self?.schema.sqlDidWrite() }
         schema.contextID = { [weak browser] in browser?.contextID ?? UUID() }
         schema.isCurrent = { [weak browser] object in browser?.selectedObject?.editingSelection == object.editingSelection && browser?.isBackgrounded == false }
-        schema.allowsWrites = { [weak self] in self.map { !$0.query.blocksOtherWrites && !$0.tableActions.blocksWrites && !$0.newTable.blocksWrites } ?? false }
+        schema.allowsWrites = { [weak self] in self.map { $0.profile.driver == .mysql && !$0.query.blocksOtherWrites && !$0.tableActions.blocksWrites && !$0.newTable.blocksWrites } ?? false }
         schema.hasPendingData = { [weak self] object in
             guard let self else { return true }
             return self.query.blocksOtherWrites || self.browser.changesByObject[object.id]?.hasChanges == true
@@ -69,7 +76,7 @@ final class MobileDatabaseWorkspace: Identifiable {
         }
         newTable.allowsWrites = { [weak self] in
             guard let self else { return false }
-            return !self.query.blocksOtherWrites && !self.tableActions.blocksWrites && !self.schema.blocksWrites
+            return self.profile.driver == .mysql && !self.query.blocksOtherWrites && !self.tableActions.blocksWrites && !self.schema.blocksWrites
                 && !self.browser.changesByObject.values.contains { $0.isSubmitting } && !self.query.hasSubmittingChanges
         }
         newTable.didComplete = { [weak self] object in
