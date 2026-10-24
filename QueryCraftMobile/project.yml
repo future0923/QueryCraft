@@ -127,6 +127,48 @@ targets:
     type: application
     platform: iOS
     sources:
+      - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchFilterTranslator.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchWorkspaceSession.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/ElasticsearchConsoleParser.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/ElasticsearchConsoleResponseConverter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/ElasticsearchJSONWhitespaceFormatter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataFetchResult.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataPage.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRowInsertEditorState.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataRowStore.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseDataSort.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseInspectorMutation.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseObjectDetails.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDocumentEditingSession.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDocumentInspectorSession.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchAliasBinding.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchAliasWorker.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchConsoleDiagnostic.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchConsoleWorker.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchDSLCompletionEngine.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchDocumentCellEditor.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchDocumentPasteParser.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchDocumentValidator.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchIndexCreation.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchIndexDeletion.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchIndexName.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchIndexSettings.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchIndexTemplate.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchPageRefresh.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchResponseDetails.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchTemplateSimulation.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceKafkaScanning.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceKafkaTailing.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceMappingEditingSession.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryContext.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryExecutionResult.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceRequestExecutingSession.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceGridClipboardPayload.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchCellChangesModel.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchCompletionResource.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceElasticsearchRequestCompletion.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSession.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSessionCapabilities.swift
       - Sources
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyCreationPlan.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyRenamePlan.swift
@@ -160,6 +202,9 @@ targets:
       - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLCQueryResult.swift
       - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLConnectionConfiguration.swift
       - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLCatalog.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLCapabilities.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLSchemaEditingProvider.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLSchemaMetadata.swift
       - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLDataMutation.swift
       - ../QueryCraftDrivers/Sources/QueryCraftDorisDriver/DorisSchemaMetadata.swift
       - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisHashFieldExpirationReader.swift
@@ -251,6 +296,16 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceGridSearchOperator.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceGridSearchMatch.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceGridCopyTypes.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDataImportFile.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDataImportRows.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDataImportTextStream.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDelimitedImporter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceJSONImporter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSQLImporter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceXLSXImporter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDataImportPlan.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSQLPreviewStatement.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/PostgreSQLWorkspaceDataPreviewStatement.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDataExporter.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspacePagedDataExportRowSource.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDataExportRequest.swift
@@ -286,6 +341,20 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
+      - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchURLProtocolStub.swift
+      - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchPaginationTests.swift
+      - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchMappingAndFilterTests.swift
+      - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchMappingWriteTests.swift
+      - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchGETBodyTests.swift
+      - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchDocumentEditingTests.swift
+      - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchStreamingResponseTests.swift
+      - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchHTTPClientTests.swift
+      - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchReadOnlyRequestPolicyTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/ElasticsearchDSLCompletionTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/WorkspaceDataImportParserTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/WorkspaceDataImportStreamingTests.swift
+      - ../QueryCraftDrivers/Tests/QueryCraftPostgreSQLDriverTests/PostgreSQLSchemaEditingProviderTests.swift
+      - ../QueryCraftDrivers/Tests/QueryCraftPostgreSQLDriverTests/PostgreSQLCapabilitiesTests.swift
       - Tests
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLCompletionEngineTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLFormatterTests.swift

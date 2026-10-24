@@ -106,7 +106,7 @@ struct WorkspaceTableActionStatement: Equatable, Sendable {
                 : "ALTER TABLE \(table) RENAME \(databaseType == .postgresql ? "TO " : "")\(dialect.identifier(name))"
             return Self(sql: sql, kind: .ddl(.alter), resultingSelection: .init(
                 databaseName: selection.databaseName,
-                objectName: databaseType == .postgresql ? "\(schema).\(name)" : name, kind: .table))
+                objectName: databaseType == .postgresql ? WorkspaceDatabaseObject.postgreSQLName(schema: schema, table: name) : name, kind: .table))
         case .drop:
             return Self(sql: "DROP TABLE \(table)", kind: .ddl(.drop), resultingSelection: nil)
         case .truncate:

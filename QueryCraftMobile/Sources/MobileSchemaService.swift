@@ -8,6 +8,7 @@ struct MobileSchemaSnapshot: Equatable, Sendable {
     let choices: WorkspaceDatabaseSchemaChoices
     let ddl: String
     var options: WorkspaceDatabaseTableOptions? = nil
+    var serverVersion: Int? = nil
     func matchesStructure(_ other: Self) -> Bool {
         columns == other.columns && indexes.count == other.indexes.count && zip(indexes, other.indexes).allSatisfy {
             WorkspaceDatabaseSchemaEditorState.IndexDefinition(index: $0).matches($1)

@@ -49,7 +49,7 @@ import QueryCraftMobileCore
         let object = try XCTUnwrap(workspace.browser.visibleObjects.first { $0.name == "records" })
         await workspace.browser.selectObject(object)?.value
         let changes = try XCTUnwrap(workspace.browser.currentChanges), page = try XCTUnwrap(workspace.browser.snapshot)
-        XCTAssertFalse(workspace.browser.supportsSchemaEditing)
+        XCTAssertTrue(workspace.browser.supportsSchemaEditing)
         let request = try changes.request(page: page, row: 0, column: 1)
         let host = UIHostingController(rootView: AnyView(MobileCellEditView(request: request, changes: changes, deleteRow: {})))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)

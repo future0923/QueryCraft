@@ -1,8 +1,15 @@
 import Foundation
 import Synchronization
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 import QueryCraftFeature
+#endif
+#if !os(iOS)
 @testable import QueryCraftElasticsearchDriver
+#endif
 
 @Suite("Elasticsearch GET body compatibility", .timeLimit(.minutes(1)))
 struct ElasticsearchGETBodyTests {
@@ -85,9 +92,7 @@ struct ElasticsearchGETBodyTests {
     }
 
     private func makeClient(_ host: String) throws -> ElasticsearchHTTPClient {
-        try ElasticsearchHTTPClient(configuration: ElasticsearchConnectionConfiguration(
-            DatabaseConnectionConfiguration(databaseType: .elasticsearch, databaseProduct: .elasticsearch,
-                host: host, port: 9200, authentication: .apiKey("test-key"), database: nil, tlsMode: .disabled)),
+        try ElasticsearchHTTPClient(configuration: ElasticsearchConnectionConfiguration(host: host, port: 9200, authentication: .apiKey("test-key"), tlsMode: .disabled),
             protocolClasses: [ElasticsearchURLProtocolStub.self])
     }
 

@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Synchronization
 
 final public class WorkspaceDatabaseDataRowStore: Sendable {

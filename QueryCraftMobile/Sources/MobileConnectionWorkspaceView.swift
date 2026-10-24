@@ -35,6 +35,9 @@ struct MobileConnectionWorkspaceView: View {
         .sheet(item: Binding(get: { workspace.newTable.request }, set: { if $0 == nil { workspace.newTable.dismiss() } else { workspace.newTable.request = $0 } })) { draft in
             MobileNewTableView(controller: workspace.newTable, draft: draft)
         }
+        .sheet(item: Binding(get: { workspace.dataImport?.showing == true ? workspace.dataImport : nil }, set: { if $0 == nil { workspace.closeImport() } })) { model in
+            MobileDataImportView(model: model, close: { workspace.closeImport() }, discard: { workspace.closeImport(discard: true) })
+        }
         .onChange(of: workspace.browser.selectedObject) { _, selected in
             if selected == nil, case .table = app.destination { app.destination = nil }
         }
@@ -104,7 +107,7 @@ private struct MobileObjectDetail: View {
     var body: some View {
         Group {
             if case let .table(object) = app.destination, object.kind == kind {
-                MobileTableView(model: workspace.browser, profileID: workspace.profile.id, schema: workspace.profile.driver == .mysql ? workspace.schema : nil, tableActions: workspace.profile.driver == .mysql ? workspace.tableActions : nil)
+                MobileTableView(model: workspace.browser, profileID: workspace.profile.id, schema: workspace.browser.supportsSchemaEditing ? workspace.schema : nil, tableActions: workspace.browser.supportsSchemaEditing ? workspace.tableActions : nil)
             } else {
                 ContentUnavailableView(kind == .view ? "选择视图" : "选择表", systemImage: kind == .view ? "eye" : "tablecells",
                     description: Text("从侧栏选择要浏览的对象。"))

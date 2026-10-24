@@ -26,7 +26,7 @@ final class MobileBrowserModel {
     private(set) var catalogError: String?
     private(set) var tableError: String?
     let supportsEditing: Bool
-    var supportsSchemaEditing: Bool { supportsEditing && configuration.driver == .mysql }
+    var supportsSchemaEditing: Bool { supportsEditing && (configuration.driver == .mysql || configuration.driver == .postgresql) }
     let safetyLock = WorkspaceSafetyLock()
     private(set) var changesByObject: [String: MobileTableChanges] = [:]
     var schema: MobileSchemaController?
@@ -270,15 +270,15 @@ final class MobileBrowserModel {
             if let catalog {
                 var objects = catalog.objects.filter { $0.id != object.id }
                 if let result = statement.resultingSelection {
-                    objects.append(.init(database: result.databaseName, name: result.objectName, kind: .table, comment: object.comment))
+                    objects.append(.init(database: result.databaseName, name: object.schemaName == nil ? result.objectName : result.object.nameWithinSchema, kind: .table, comment: object.comment, schemaName: object.schemaName == nil ? nil : result.object.schemaName))
                 }
                 self.catalog = .init(objects: MobileCatalogSearch.objects(objects, matching: ""), hasMore: catalog.hasMore)
             }
         }
-        if statement.resultingSelection?.objectName != object.name {
+        if statement.resultingSelection != object.editingSelection {
             changesByObject.removeValue(forKey: object.id)
             if affected {
-                selectedObject = statement.resultingSelection.map { .init(database: $0.databaseName, name: $0.objectName, kind: .table, comment: object.comment) }
+                selectedObject = statement.resultingSelection.map { .init(database: $0.databaseName, name: object.schemaName == nil ? $0.objectName : $0.object.nameWithinSchema, kind: .table, comment: object.comment, schemaName: object.schemaName == nil ? nil : $0.object.schemaName) }
                 snapshot = nil; columns = nil; dataFilter = .empty; sortColumn = nil
             }
         } else if affected { currentChanges?.requireSuccessfulReload() }

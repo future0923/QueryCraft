@@ -2,7 +2,12 @@ import Foundation
 import CoreFoundation
 import Testing
 import zlib
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 struct WorkspaceDataImportStreamingTests {
     @Test("CSV windows preserve CRLF, escaped quotes, multiline data and Unicode delimiters")

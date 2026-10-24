@@ -50,10 +50,12 @@ struct MobileSchemaColumnEditor: View {
             Form {
                 Section {
                     MobileSchemaTextField(title: "名称", text: $definition.name)
-                    MobileSchemaTextField(title: "类型", text: $definition.type, suggestions: MySQLSchemaEditingProvider().descriptor.columnTypes)
+                    MobileSchemaTextField(title: "类型", text: $definition.type, suggestions: context.descriptor.columnTypes)
                     Toggle("主键", isOn: $primary)
                     Toggle("允许 NULL", isOn: $definition.isNullable).disabled(primary)
-                    Toggle("自增", isOn: $definition.isAutoIncrement).disabled(definition.isGenerated)
+                    if let style = context.descriptor.automaticValueStyle {
+                        Toggle(style == .identity ? "IDENTITY" : "自增", isOn: $definition.isAutoIncrement).disabled(definition.isGenerated)
+                    }
                 }
                 Section("默认值") {
                     Picker("方式", selection: $definition.defaultMode) {
@@ -65,21 +67,21 @@ struct MobileSchemaColumnEditor: View {
                     if definition.defaultMode == .value || definition.defaultMode == .expression {
                         MobileSchemaTextField(title: "默认值", text: $definition.defaultValue)
                     }
-                    MobileSchemaTextField(title: "更新表达式", text: $definition.onUpdateExpression, suggestions: ["", "CURRENT_TIMESTAMP"])
+                    if context.descriptor.supportsOnUpdateExpression {
+                        MobileSchemaTextField(title: "更新表达式", text: $definition.onUpdateExpression, suggestions: ["", "CURRENT_TIMESTAMP"])
+                    }
                 }
                 Section {
                     MobileSchemaTextField(title: "注释", text: $definition.comment)
-                    Toggle("可见", isOn: $definition.isVisible)
+                    if context.descriptor.supportsColumnVisibility { Toggle("可见", isOn: $definition.isVisible) }
                 }
                 Section("生成列") {
                     Picker("存储", selection: $definition.generatedStorage) {
-                        Text("普通列").tag(WorkspaceDatabaseSchemaEditorState.GeneratedStorage.none)
-                        Text("VIRTUAL").tag(WorkspaceDatabaseSchemaEditorState.GeneratedStorage.virtual)
-                        Text("STORED").tag(WorkspaceDatabaseSchemaEditorState.GeneratedStorage.stored)
+                        ForEach(context.descriptor.generatedStorages, id: \.self) { value in Text(value == .none ? "普通列" : value.rawValue.uppercased()).tag(value) }
                     }
                     if definition.isGenerated { MobileSchemaTextField(title: "表达式", text: $definition.generationExpression) }
-                }
-                if definition.supportsCharacterSetAndCollation {
+                }.disabled(!selection.added && !context.descriptor.supportsAlteringGeneratedColumns)
+                if context.descriptor.includesColumn(.characterSet) && definition.supportsCharacterSetAndCollation {
                     Section("字符设置") {
                         MobileSchemaTextField(title: "字符集", text: Binding(get: { definition.characterSet }, set: { definition.applyCharacterSet($0, choices: context.state.schemaChoices) }), suggestions: [""] + context.state.schemaChoices.characterSets)
                         MobileSchemaTextField(title: "排序规则", text: Binding(get: { definition.collation }, set: { definition.applyCollation($0, choices: context.state.schemaChoices) }), suggestions: [""] + context.state.schemaChoices.collations.filter { definition.characterSet.isEmpty || $0.characterSet == definition.characterSet }.map(\.name))
@@ -119,10 +121,10 @@ struct MobileSchemaIndexEditor: View {
                 Section {
                     MobileSchemaTextField(title: "名称", text: $definition.name)
                     Picker("种类", selection: $definition.kind) {
-                        ForEach(WorkspaceDatabaseSchemaChoiceCatalog.indexKinds) { Text($0.title).tag(WorkspaceDatabaseSchemaEditorState.IndexKind(rawValue: $0.value)!) }
+                        ForEach(WorkspaceDatabaseSchemaChoiceCatalog.indexKinds.filter { context.descriptor.indexKinds.contains(.init(rawValue: $0.value)!) }) { Text($0.title).tag(WorkspaceDatabaseSchemaEditorState.IndexKind(rawValue: $0.value)!) }
                     }
-                    if definition.kind != .fulltext && definition.kind != .spatial { MobileSchemaTextField(title: "方法", text: $definition.method, suggestions: MySQLSchemaEditingProvider().descriptor.indexMethods) }
-                    Toggle("可见", isOn: $definition.isVisible)
+                    if definition.kind != .fulltext && definition.kind != .spatial { MobileSchemaTextField(title: "方法", text: $definition.method, suggestions: context.descriptor.indexMethods) }
+                    if context.descriptor.includesIndex(.visible) { Toggle("可见", isOn: $definition.isVisible) }
                     MobileSchemaTextField(title: "注释", text: $definition.comment)
                 }
                 Section {
@@ -134,10 +136,10 @@ struct MobileSchemaIndexEditor: View {
                                     Text("选择字段").tag("")
                                     ForEach(context.state.columns.filter { !$0.isDeleted }) { Text($0.definition.name).tag($0.definition.name) }
                                 }.onChange(of: column.name) { _, name in column.sourceColumnID = context.state.columns.first { $0.definition.name == name && !$0.isDeleted }?.id }
-                                MobileSchemaTextField(title: "前缀长度", text: $column.prefixLength)
+                                if context.descriptor.supportsIndexPrefixLength { MobileSchemaTextField(title: "前缀长度", text: $column.prefixLength) }
                             }
                             Toggle("表达式字段", isOn: $column.isExpression)
-                            Toggle("降序", isOn: $column.isDescending)
+                            if context.descriptor.supportsIndexDirection { Toggle("降序", isOn: $column.isDescending) }
                         }.padding(.vertical, 4)
                     }.onDelete { definition.columns.remove(atOffsets: $0) }
                         .onMove { definition.columns.move(fromOffsets: $0, toOffset: $1) }
@@ -183,15 +185,15 @@ struct MobileSchemaPendingView: View {
         NavigationStack {
             List {
                 Section {
-                    Text(draft.object.database + "." + draft.object.name).font(.subheadline)
+                    Text(draft.object.database + "." + draft.object.displayName).font(.subheadline)
                     ForEach(steps) { statement in
                         Text(statement.sql + ";").font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
                     }
-                } header: { Text("结构变更 SQL") } footer: { Text("按预览顺序执行。MySQL 结构语句分别提交，失败或取消不能撤销已完成的语句。") }
+                } header: { Text("结构变更 SQL") } footer: { Text(draft.driver == .postgresql ? "本批结构变更在同一事务中执行；提交回执不明时必须先核对服务器。" : "按预览顺序执行。MySQL 结构语句分别提交，失败或取消不能撤销已完成的语句。") }
                 Section {
                     HStack {
                         ProgressView().opacity(controller.isSubmitting ? 1 : 0)
-                        Text(draft.message ?? "确认后提交结构改动").font(.footnote).lineLimit(4)
+                        Text(draft.planError ?? draft.message ?? "确认后提交结构改动").font(.footnote).lineLimit(4)
                     }.frame(minHeight: 64)
                     if draft.needsVerification {
                         Text("请先核对服务器的实际结构。重新加载会结束此次操作并清除原草稿，不会重放 SQL。")
@@ -201,7 +203,7 @@ struct MobileSchemaPendingView: View {
                     } else {
                         Button("提交结构改动", role: .destructive) {
                             if controller.safetyLock.isEnabled { unlock = true } else { controller.submit(draft, expectedPlan: plan) }
-                        }.disabled(!draft.hasChanges || !controller.canEdit(draft) || draft.plan != plan)
+                        }.disabled(!draft.hasChanges || !controller.canEdit(draft) || draft.plan != plan || draft.planError != nil || plan.statements.isEmpty)
                         Button("撤销全部结构改动", role: .destructive) { discard = true }.disabled(controller.isSubmitting)
                     }
                 }

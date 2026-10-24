@@ -1,8 +1,15 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 import QueryCraftFeature
+#endif
 import Synchronization
 import Testing
+#if !os(iOS)
 @testable import QueryCraftElasticsearchDriver
+#endif
 
 @Suite("Elasticsearch document editing")
 struct ElasticsearchDocumentEditingTests {
@@ -480,17 +487,14 @@ struct ElasticsearchDocumentEditingTests {
     }
 
     private func makeSession(host: String) throws -> ElasticsearchWorkspaceSession {
-        let configuration = DatabaseConnectionConfiguration(
-            databaseType: .elasticsearch,
-            databaseProduct: .elasticsearch,
+        let configuration = ElasticsearchConnectionConfiguration(
             host: host,
             port: 9_200,
             authentication: .none,
-            database: nil,
             tlsMode: .disabled
         )
         return try ElasticsearchWorkspaceSession(
-            configuration: ElasticsearchConnectionConfiguration(configuration),
+            configuration: configuration,
             protocolClasses: [ElasticsearchURLProtocolStub.self]
         )
     }

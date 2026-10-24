@@ -1,8 +1,15 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 import QueryCraftFeature
+#endif
 import Synchronization
 import Testing
+#if !os(iOS)
 @testable import QueryCraftElasticsearchDriver
+#endif
 
 @Suite("Elasticsearch HTTP client")
 struct ElasticsearchHTTPClientTests {
@@ -160,17 +167,14 @@ struct ElasticsearchHTTPClientTests {
         host: String,
         authentication: DatabaseConnectionAuthentication
     ) throws -> ElasticsearchHTTPClient {
-        let configuration = DatabaseConnectionConfiguration(
-            databaseType: .elasticsearch,
-            databaseProduct: .elasticsearch,
+        let configuration = ElasticsearchConnectionConfiguration(
             host: host,
             port: 9_200,
             authentication: authentication,
-            database: nil,
             tlsMode: .disabled
         )
         return try ElasticsearchHTTPClient(
-            configuration: ElasticsearchConnectionConfiguration(configuration),
+            configuration: configuration,
             protocolClasses: [ElasticsearchURLProtocolStub.self]
         )
     }

@@ -71,7 +71,11 @@ struct MobilePostgreSQLService: MobileSQLServicing, MobileSQLMetadataProviding {
         guard let schema = object.schemaName else { throw MobileQueryError.invalidServerMetadata }
         let result = try await executor.execute(configuration: configuration.selecting(database: object.database), sql: PostgreSQLCatalog.columnsQuery(schema: schema, name: object.name))
         let columns = result.dictionaryRows.compactMap(PostgreSQLCatalog.column)
-        guard !columns.isEmpty, columns.count == result.rows.count else { throw MobileQueryError.invalidServerMetadata }
+        guard columns.count == result.rows.count else { throw MobileQueryError.invalidServerMetadata }
+        if columns.isEmpty {
+            let exists = try await executor.execute(configuration: configuration.selecting(database: object.database), sql: "SELECT c.relkind::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=" + PostgreSQLCatalog.literal(schema) + " AND c.relname=" + PostgreSQLCatalog.literal(object.name))
+            guard !(exists.rows.isEmpty) else { throw MobileQueryError.invalidServerMetadata }
+        }
         return columns.map(MobileTableColumn.init)
     }
     func page(configuration: MobileSQLConfiguration, object: MobileDatabaseObject, columns: [MobileTableColumn], offset: Int, size: Int, sortColumn: String?, ascending: Bool, filter: WorkspaceDatabaseDataFilter) async throws -> MobileTableSnapshot {

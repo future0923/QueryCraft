@@ -36,9 +36,9 @@ import QueryCraftMobileTransport
     @Test func postgresWorkspaceEnablesOwnSessionAndKeepsMySQLSchemaEditingDisabled() {
         let p = MobileConnectionProfile(id: UUID(), name: "PG", host: "127.0.0.1", port: 5432, username: "postgres", database: "db", tlsMode: .disabled, remembersPassword: false, requiresPassword: false, driver: .postgresql, schemaName: "audit")
         let workspace = MobileDatabaseWorkspace(profile: p, password: nil, service: MobileMySQLService())
-        #expect(workspace.browser.supportsSchemas); #expect(workspace.browser.supportsEditing); #expect(!workspace.browser.supportsSchemaEditing)
+        #expect(workspace.browser.supportsSchemas); #expect(workspace.browser.supportsEditing); #expect(workspace.browser.supportsSchemaEditing)
         #expect(workspace.query.schemaName == "audit"); #expect(workspace.query.supportsTransactions)
-        #expect(!workspace.query.allowsDataMutation()); #expect(workspace.query.allowsSQLExecution())
+        #expect(workspace.query.allowsDataMutation()); #expect(workspace.query.allowsSQLExecution())
     }
     @Test func historyKeepsSchemaAndDecodesLegacyItems() throws {
         let item = MobileQueryHistoryItem(id: UUID(), profileID: UUID(), database: "db", sql: "SELECT 1", date: Date(), schemaName: "audit")

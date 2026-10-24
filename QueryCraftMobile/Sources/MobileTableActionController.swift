@@ -9,6 +9,7 @@ import QueryCraftMobileTransport
     let action: WorkspaceTableAction
     let object: MobileDatabaseObject
     let contextID: UUID
+    let databaseType: DatabaseType
     var input: String
     var confirmation = ""
     private(set) var hasCompleted = false
@@ -16,12 +17,13 @@ import QueryCraftMobileTransport
     var message: String?
     var info: MobileTableActionInfo?
     var isInspecting = false
-    init(action: WorkspaceTableAction, object: MobileDatabaseObject, contextID: UUID) {
+    init(action: WorkspaceTableAction, object: MobileDatabaseObject, contextID: UUID, databaseType: DatabaseType = .mysql) {
+        self.databaseType = databaseType
         self.action = action; self.object = object; self.contextID = contextID
         input = action == .rename ? object.name : "1"
     }
     var statement: WorkspaceTableActionStatement? {
-        try? .make(action: action, selection: object.editingSelection, databaseType: .mysql, input: input)
+        try? .make(action: action, selection: object.editingSelection, databaseType: databaseType, input: input)
     }
     var isConfirmed: Bool { !action.isDestructive || confirmation == object.name }
     var canSubmit: Bool { !hasCompleted && !needsVerification && isConfirmed && statement != nil }
@@ -40,6 +42,7 @@ import QueryCraftMobileTransport
     private let service: any MobileTableActionServicing
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var inspection: Task<Void, Never>?
+    @ObservationIgnored var onImport: ((MobileDatabaseObject) -> Void)?
     @ObservationIgnored var contextID: () -> UUID = { UUID() }
     @ObservationIgnored var isCurrent: (MobileTableActionDraft) -> Bool = { _ in false }
     @ObservationIgnored var hasPendingChanges: (MobileDatabaseObject) -> Bool = { _ in true }
@@ -54,7 +57,7 @@ import QueryCraftMobileTransport
         guard !isSubmitting, object.kind == .table else { return }
         if let unverified { request = unverified; return }
         inspection?.cancel()
-        let draft = MobileTableActionDraft(action: action, object: object, contextID: contextID())
+        let draft = MobileTableActionDraft(action: action, object: object, contextID: contextID(), databaseType: configuration.driver == .postgresql ? .postgresql : .mysql)
         guard isCurrent(draft) else { return }
         request = draft
     }

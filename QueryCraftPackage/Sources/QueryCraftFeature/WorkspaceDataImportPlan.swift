@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 struct WorkspaceDataImportSchema: Equatable, Sendable {
     let columns: [WorkspaceDatabaseColumn]
@@ -100,6 +103,7 @@ struct WorkspaceDataImportPlan: Sendable {
     private func invalid(_ zh: String, _ en: String) -> WorkspaceDataImportError { .invalid(zh, en) }
 }
 
+#if !os(iOS)
 struct WorkspaceDataImportTarget: Sendable {
     let sessionFactory: any WorkspaceSessionFactory
     let configuration: DatabaseConnectionConfiguration
@@ -140,6 +144,8 @@ struct WorkspaceDataImportTarget: Sendable {
     }
 }
 
+#endif
+
 struct WorkspaceDataImportOutcome: Sendable {
     enum Status: Equatable, Sendable { case completed, cancelled, failed, uncertain }
     let status: Status
@@ -150,44 +156,44 @@ struct WorkspaceDataImportOutcome: Sendable {
 actor WorkspaceDataImporter {
     typealias Authorize = @MainActor @Sendable () throws -> Void
 
+    #if !os(iOS)
     func run(target: WorkspaceDataImportTarget, plan: WorkspaceDataImportPlan,
+             authorize: @escaping Authorize, progress: @escaping @Sendable (Int) async -> Void) async -> WorkspaceDataImportOutcome {
+        do { try plan.validate(); try await authorize(); try Task.checkCancellation() }
+        catch {
+            return .init(status: error is CancellationError ? .cancelled : .failed, committedRows: 0,
+                         message: error.localizedDescription + "\n" + AppCopy.current.text("未提交数据。", "No data was committed."))
+        }
+        let session = await target.sessionFactory.makeSession(configuration: target.configuration.selecting(database: target.selection.databaseName))
+        return await run(connection: WorkspaceSessionImportConnection(target: target, session: session), plan: plan, authorize: authorize, progress: progress)
+    }
+    #endif
+
+    func run(connection: any WorkspaceDataImportConnection, plan: WorkspaceDataImportPlan,
              authorize: @escaping Authorize,
              progress: @escaping @Sendable (Int) async -> Void) async -> WorkspaceDataImportOutcome {
-        var session: (any WorkspaceSession)?
+        var didConnect = false
         var transactionStarted = false, commitStarted = false
         do {
             try plan.validate()
             try await authorize()
             try Task.checkCancellation()
-            let connected = await target.sessionFactory.makeSession(configuration: target.configuration.selecting(database: target.selection.databaseName))
-            session = connected
-            try await connected.connect()
-            let current = try await target.schema(using: connected)
+            didConnect = true
+            try await connection.connect()
+            let current = try await connection.schema()
             guard current == plan.schema else { throw WorkspaceDataImportError.invalid("目标表结构已变化，请重新加载预览。", "Target schema changed. Reload the preview.") }
             try await authorize()
             try Task.checkCancellation()
-            if target.configuration.databaseType == .mysql {
-                do {
-                    _ = try await connected.executeStatement("SET SESSION sql_mode = CONCAT_WS(',', @@SESSION.sql_mode, 'STRICT_ALL_TABLES')", kind: .control, database: target.selection.databaseName) { _ in }
-                } catch WorkspaceSessionError.transactionStateUnavailable {
-                    // Older drivers execute SET successfully but cannot infer its transaction
-                    // state. Verify the actual mode before beginning our own transaction.
-                }
-                let mode = ImportSQLModeCheck()
-                _ = try await connected.executeStatement("SELECT @@SESSION.sql_mode", kind: .read, database: target.selection.databaseName) { await mode.receive($0) }
-                guard await mode.isStrict else {
-                    throw WorkspaceDataImportError.invalid("无法确认 MySQL 严格模式，已停止导入。", "Cannot verify MySQL strict mode. Import stopped.")
-                }
-            }
-            _ = try await connected.executeStatement("START TRANSACTION", kind: .transaction(.begin), database: target.selection.databaseName) { _ in }
+            try await connection.prepare()
+            _ = try await connection.execute("START TRANSACTION", kind: .transaction(.begin))
             transactionStarted = true
             var completed = 0
             while completed < plan.file.rowCount {
                 try Task.checkCancellation()
                 try await authorize()
                 let batch = try plan.statement(from: completed)
-                let result = try await connected.executeStatement(batch.sql, kind: .insert, database: target.selection.databaseName) { _ in }
-                guard result.rowCount == batch.count else {
+                let rows = try await connection.execute(batch.sql, kind: .insert)
+                guard rows == batch.count else {
                     throw WorkspaceDataImportError.invalid("实际写入行数与预期不符，已停止导入。", "The affected row count differs from the import batch. Import stopped.")
                 }
                 completed += batch.count
@@ -197,25 +203,23 @@ actor WorkspaceDataImporter {
             try await authorize()
             commitStarted = true
             // Commit/rollback must finish even if the UI requests cancellation while awaiting them.
-            let database = target.selection.databaseName
             _ = try await Task {
-                try await connected.executeStatement("COMMIT", kind: .transaction(.commit), database: database) { _ in }
+                try await connection.execute("COMMIT", kind: .transaction(.commit))
             }.value
-            await connected.close()
+            await connection.close()
             return .init(status: .completed, committedRows: completed, message: AppCopy.current.text("已导入 \(completed) 行。", "Imported \(completed) rows."))
         } catch {
             var rollbackConfirmed = !transactionStarted
-            if let session {
+            if didConnect {
                 if transactionStarted && !commitStarted {
-                    let database = target.selection.databaseName
                     rollbackConfirmed = await Task {
                         do {
-                            _ = try await session.executeStatement("ROLLBACK", kind: .transaction(.rollback), database: database) { _ in }
+                            _ = try await connection.execute("ROLLBACK", kind: .transaction(.rollback))
                             return true
                         } catch { return false }
                     }.value
                 }
-                await session.close()
+                await connection.close()
             }
             if commitStarted || !rollbackConfirmed {
                 return .init(status: .uncertain, committedRows: nil, message: AppCopy.current.text("无法确认事务结果，请核对目标表后再决定是否重试。", "The transaction outcome is unknown. Check the target table before retrying.") + "\n" + error.localizedDescription)
@@ -234,3 +238,39 @@ private actor ImportSQLModeCheck {
         isStrict = value.uppercased().split(separator: ",").contains("STRICT_ALL_TABLES")
     }
 }
+
+
+protocol WorkspaceDataImportConnection: Sendable {
+    func connect() async throws
+    func schema() async throws -> WorkspaceDataImportSchema
+    func prepare() async throws
+    func execute(_ sql: String, kind: SQLStatementKind) async throws -> Int
+    func close() async
+}
+#if !os(iOS)
+private struct WorkspaceSessionImportConnection: WorkspaceDataImportConnection {
+    let target: WorkspaceDataImportTarget
+    let session: any WorkspaceSession
+    func connect() async throws { try await session.connect() }
+    func schema() async throws -> WorkspaceDataImportSchema { try await target.schema(using: session) }
+    func execute(_ sql: String, kind: SQLStatementKind) async throws -> Int {
+        try await session.executeStatement(sql, kind: kind, database: target.selection.databaseName) { _ in }.rowCount
+    }
+    func close() async { await session.close() }
+    func prepare() async throws {
+            if target.configuration.databaseType == .mysql {
+                do {
+                    _ = try await session.executeStatement("SET SESSION sql_mode = CONCAT_WS(',', @@SESSION.sql_mode, 'STRICT_ALL_TABLES')", kind: .control, database: target.selection.databaseName) { _ in }
+                } catch WorkspaceSessionError.transactionStateUnavailable {
+                    // Older drivers execute SET successfully but cannot infer its transaction
+                    // state. Verify the actual mode before beginning our own transaction.
+                }
+                let mode = ImportSQLModeCheck()
+                _ = try await session.executeStatement("SELECT @@SESSION.sql_mode", kind: .read, database: target.selection.databaseName) { await mode.receive($0) }
+                guard await mode.isStrict else {
+                    throw WorkspaceDataImportError.invalid("无法确认 MySQL 严格模式，已停止导入。", "Cannot verify MySQL strict mode. Import stopped.")
+                }
+            }
+    }
+}
+#endif

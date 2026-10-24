@@ -1,5 +1,8 @@
 import Foundation
 import CoreFoundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 /// Import data is a frozen, validated snapshot. Execution never rereads a changed file.
 struct WorkspaceDataImportFile: Sendable {

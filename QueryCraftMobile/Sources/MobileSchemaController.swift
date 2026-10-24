@@ -20,10 +20,15 @@ import QueryCraftMobileTransport
     var isError = false
     enum Section: String, CaseIterable { case columns = "字段", indexes = "索引" }
     enum Presentation: String, CaseIterable { case table = "表格", list = "列表" }
-    init(object: MobileDatabaseObject) { self.object = object }
+    let driver: MobileDriver
+    init(object: MobileDatabaseObject, driver: MobileDriver = .mysql) { self.object = object; self.driver = driver }
+    var dialect: MobileSchemaDialect { .init(driver: driver, serverVersion: snapshot?.serverVersion ?? 0) }
     var hasChanges: Bool { state.hasChanges }
     var changeSet: WorkspaceDatabaseSchemaChangeSet { .init(selection: object.editingSelection, columns: state.columns, indexes: state.indexes, tableOptionsChange: state.tableOptionsChange) }
-    var plan: WorkspaceDatabaseSchemaExecutionPlan { MySQLSchemaEditingProvider().makeExecutionPlan(for: changeSet) }
+    var planError: String? { do { _ = try dialect.provider.makeExecutionPlan(for: changeSet); return nil } catch { return error.localizedDescription } }
+    var plan: WorkspaceDatabaseSchemaExecutionPlan {
+        (try? dialect.provider.makeExecutionPlan(for: changeSet)) ?? .init(dialectIdentifier: PostgreSQLSchemaEditingProvider.dialectIdentifier, source: .changes(changeSet), transactionMode: .transaction, statements: [])
+    }
     func receive(_ snapshot: MobileSchemaSnapshot) {
         let selectedName = section == .columns ? state.columns.first { $0.id == selectedID }?.original?.name : state.indexes.first { $0.id == selectedID }?.original?.name
         self.snapshot = snapshot; state.reset(columns: snapshot.columns, indexes: snapshot.indexes, schemaChoices: snapshot.choices, tableOptions: snapshot.options)
@@ -40,7 +45,7 @@ import QueryCraftMobileTransport
     }
     func updateIndex(_ id: UUID, definition: WorkspaceDatabaseSchemaEditorState.IndexDefinition) { state.updateIndex(id: id, definition: definition); revision = UUID() }
     func add() -> UUID {
-        let id = section == .columns ? state.addColumn(defaultType: MySQLSchemaEditingProvider().descriptor.defaultColumnType) : state.addIndex()
+        let id = section == .columns ? state.addColumn(defaultType: dialect.descriptor.defaultColumnType) : state.addIndex()
         revision = UUID(); selectedID = id; return id
     }
     func delete(_ id: UUID) {
@@ -84,7 +89,7 @@ import QueryCraftMobileTransport
     }
     func draft(for object: MobileDatabaseObject) -> MobileSchemaDraft {
         if let value = drafts[object.id] { return value }
-        let value = MobileSchemaDraft(object: object); drafts[object.id] = value; return value
+        let value = MobileSchemaDraft(object: object, driver: configuration.driver); drafts[object.id] = value; return value
     }
     func canEdit(_ draft: MobileSchemaDraft) -> Bool {
         draft.snapshot != nil && draft.object.kind == .table && isCurrent(draft.object) && !isSubmitting && !isLoading

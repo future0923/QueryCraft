@@ -54,6 +54,35 @@ actor MobileCachedQueryResult {
         preview.columnDetails = summary?.columnDetails ?? columnDetails
         return preview
     }
+    func apply(_ changes: WorkspaceDatabaseDataChangeSet, preview: MobileSQLPreview, offset: Int) async throws -> MobileSQLPreview {
+        let data = MobileGridData(preview: preview), columns = preview.workspaceColumns
+        var mutations: [WorkspaceQueryResultCellMutation] = []; var removed = IndexSet(); var extra = 0
+        let encoder = JSONEncoder()
+        for index in data.rows.indices {
+            let raw = data.cells[index]
+            func matches(_ conditions: [WorkspaceDatabaseDataCellUpdateCondition]) -> Bool {
+                !conditions.isEmpty && conditions.allSatisfy { key in
+                    guard let column = columns.first(where: { $0.origin?.columnName == key.columnName }) else { return false }
+                    return raw[column.id] == key.value
+                }
+            }
+            if changes.deletes.contains(where: { matches($0.conditions) }) { removed.insert(offset + index); continue }
+            var values = raw
+            for update in changes.updates where matches(update.primaryKey) {
+                for column in columns where column.origin?.columnName == update.columnName {
+                    values[column.id] = update.newValue
+                    mutations.append(.init(rowIndex: offset + index, dataColumnIndex: column.id, value: update.newValue))
+                }
+            }
+            let old = WorkspaceDatabaseDataRow(id: offset + index, values: raw), new = WorkspaceDatabaseDataRow(id: offset + index, values: values)
+            extra += max(0, try encoder.encode(new).count - encoder.encode(old).count)
+        }
+        try await budget.reserve(extra)
+        try await store.apply(mutations)
+        try await store.remove(rowsAt: removed)
+        return try await page(offset: min(offset, max(0, store.rowCount - 1)))
+    }
+
 }
 
 actor MobileSQLCacheBudget {

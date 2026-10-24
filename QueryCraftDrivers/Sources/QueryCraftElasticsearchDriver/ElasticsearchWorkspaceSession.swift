@@ -1,7 +1,11 @@
 import CoreFoundation
 import Foundation
 import OSLog
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 actor ElasticsearchWorkspaceSession: WorkspaceSession,
     WorkspaceSessionCapabilityProviding,
@@ -33,6 +37,7 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
         var cursors: [Int: Data]
     }
 
+    private let maximumResponseBytes: Int
     private let client: ElasticsearchHTTPClient
     private let logger = Logger(
         subsystem: "io.github.future0923.QueryCraft",
@@ -45,14 +50,16 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
     private var pageState: PageState?
     private var documentScores: [WorkspaceDocumentReference: Double] = [:]
 
-    init(configuration: ElasticsearchConnectionConfiguration) throws {
+    init(configuration: ElasticsearchConnectionConfiguration, maximumResponseBytes: Int = .max) throws {
+        self.maximumResponseBytes = maximumResponseBytes
         client = try ElasticsearchHTTPClient(configuration: configuration)
     }
 
     init(
         configuration: ElasticsearchConnectionConfiguration,
-        protocolClasses: [AnyClass]
+        protocolClasses: [AnyClass], maximumResponseBytes: Int = .max
     ) throws {
+        self.maximumResponseBytes = maximumResponseBytes
         client = try ElasticsearchHTTPClient(
             configuration: configuration,
             protocolClasses: protocolClasses
@@ -60,7 +67,9 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
     }
 
     func connect() async throws {
+        #if !os(iOS)
         try await LicenseAccessGate.shared.requireDatabaseAccess()
+        #endif
         guard !connected else { return }
         let response = try await client.perform(method: .get, path: "/")
         let version = try ElasticsearchServerIdentity.version(body: response.body, headers: response.headers)
@@ -291,7 +300,7 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
                 method: .post,
                 path: path,
                 body: try JSONSerialization.data(withJSONObject: body),
-                maximumResponseBytes: .max
+                maximumResponseBytes: maximumResponseBytes
             )
         } catch is CancellationError {
             if pageState?.id == pagingID { await resetPaging() }
@@ -329,6 +338,9 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
         else {
             throw ElasticsearchError.invalidResponse
         }
+        guard root["timed_out"] as? Bool != true,
+              ((root["_shards"] as? [String: Any])?["failed"] as? Int ?? 0) == 0
+        else { throw ElasticsearchError.invalidResponse }
         let hasNext = (state.pitID != nil || offset + boundedLimit < 10_000)
             && (hits.count > boundedLimit
                 || (!usesSearchAfter && hits.count == boundedLimit))
@@ -383,7 +395,8 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
         guard let root = try JSONSerialization.jsonObject(
             with: response.body
         ) as? [String: Any],
-        let count = Self.integer(root["count"])
+        let count = Self.integer(root["count"]),
+        ((root["_shards"] as? [String: Any])?["failed"] as? Int ?? 0) == 0
         else { throw ElasticsearchError.invalidResponse }
         return count
     }
@@ -405,7 +418,7 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
             body: request.body,
             // User-authored query responses are loaded in full, like DBX.
             // AsyncBytes still consumes cancellable chunks off the UI executor.
-            maximumResponseBytes: .max,
+            maximumResponseBytes: maximumResponseBytes,
             enforceReadOnlyPolicy: policy == .readOnly,
             preserveCompletedResponse: isWrite,
             acceptsHTTPError: true
@@ -421,6 +434,8 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
             throw error
         }
     }
+
+    func refreshReadState() async { await invalidateAfterRequestWrite() }
 
     private func invalidateAfterRequestWrite() async {
         mappingGeneration = UUID()
@@ -438,7 +453,7 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
         let root = try WorkspaceMappingCodec.object(resolved.body)
         let key = target.kind == .elasticsearchAlias ? "aliases" : target.kind == .elasticsearchDataStream ? "data_streams" : "indices"
         guard (root[key] as? [[String: Any]] ?? []).contains(where: { $0["name"] as? String == target.resource }) else { throw WorkspaceMappingError.conflict }
-        let response = try await client.perform(method: .get, path: "/\(encoded)/_mapping", maximumResponseBytes: .max)
+        let response = try await client.perform(method: .get, path: "/\(encoded)/_mapping", maximumResponseBytes: maximumResponseBytes)
         let caps = try await client.perform(method: .post, path: "/\(encoded)/_field_caps?fields=*", body: Data("{}".utf8))
         let catalog = try ElasticsearchMappingCatalog.parse(mappingData: response.body, fieldCapsData: caps.body)
         return try WorkspaceMappingCodec.snapshot(target: target, data: response.body, fieldCapabilities: catalog.fields)
@@ -770,7 +785,7 @@ actor ElasticsearchWorkspaceSession: WorkspaceSession,
             + mappedTopLevelNames
             + sourceNames.sorted()
         let columns = names.enumerated().map {
-            WorkspaceDatabaseDataColumn(id: $0.offset, name: $0.element)
+            WorkspaceDatabaseDataColumn(id: $0.offset, name: $0.element, type: mapping.byPath[$0.element].flatMap { $0.hasTypeConflict ? nil : $0.type })
         }
         var rows: [WorkspaceDatabaseDataRow] = []
         rows.reserveCapacity(hits.count)

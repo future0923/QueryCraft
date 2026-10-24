@@ -12,13 +12,19 @@ import QueryCraftMobileTransport
     var needsVerification = false
     var message: String?
     var choicesError: String?
-    init(database: String) {
-        definition = .init(databaseName: database, schemaEditingDescriptor: MySQLSchemaEditingProvider().descriptor)
+    let driver: MobileDriver
+    var serverVersion = 0
+    var dialect: MobileSchemaDialect { .init(driver: driver, serverVersion: serverVersion) }
+    init(database: String, schema: String? = nil, driver: MobileDriver = .mysql) {
+        self.driver = driver
+        definition = .init(databaseName: database, schemaName: driver == .postgresql ? (schema ?? "public") : schema, schemaEditingDescriptor: MobileSchemaDialect(driver: driver).descriptor)
     }
-    var plan: WorkspaceDatabaseSchemaExecutionPlan { MySQLSchemaEditingProvider().makeExecutionPlan(for: definition.mutation) }
+    var plan: WorkspaceDatabaseSchemaExecutionPlan {
+        driver == .postgresql ? PostgreSQLSchemaEditingProvider(capabilities: .init(serverVersion: serverVersion)).makeExecutionPlan(for: definition.mutation) : MySQLSchemaEditingProvider().makeExecutionPlan(for: definition.mutation)
+    }
     var isValid: Bool {
         !definition.tableName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !definition.tableName.contains("\0")
-            && definition.editor.columns.contains { !$0.isDeleted }
+            && (driver == .postgresql || definition.editor.columns.contains { !$0.isDeleted })
             && definition.editor.columns.filter { !$0.isDeleted }.allSatisfy { !$0.definition.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.definition.type.isEmpty }
     }
 }
@@ -31,6 +37,8 @@ import QueryCraftMobileTransport
     let safetyLock: WorkspaceSafetyLock
     var hasPendingChanges: Bool { isSubmitting || draft.map { !$0.hasCompleted || $0.needsVerification } == true }
     var blocksWrites: Bool { isSubmitting || draft?.needsVerification == true }
+    @ObservationIgnored var currentSchema: () -> String? = { nil }
+    @ObservationIgnored var isCurrentSchema: (String?) -> Bool = { _ in true }
     @ObservationIgnored var isCurrent: (String) -> Bool = { _ in false }
     @ObservationIgnored var contextID: () -> UUID = { UUID() }
     @ObservationIgnored var allowsWrites: () -> Bool = { false }
@@ -46,7 +54,7 @@ import QueryCraftMobileTransport
 
     func present(database: String) {
         guard !isSubmitting, isCurrent(database) else { return }
-        if draft == nil { draft = MobileNewTableDraft(database: database) }
+        if draft == nil { draft = MobileNewTableDraft(database: database, schema: configuration.driver == .postgresql ? (currentSchema() ?? configuration.schemaName ?? "public") : nil, driver: configuration.driver) }
         request = draft
     }
     func dismiss() { guard !isSubmitting else { return }; cancelRead(); request = nil; if draft?.hasCompleted == true { draft = nil } }
@@ -59,7 +67,7 @@ import QueryCraftMobileTransport
         safetyLock.enable(); request = nil; self.draft = nil
     }
     func canEdit(_ draft: MobileNewTableDraft) -> Bool {
-        self.draft === draft && !isSubmitting && !draft.hasCompleted && !draft.needsVerification && isCurrent(draft.definition.databaseName)
+        self.draft === draft && !isSubmitting && !draft.hasCompleted && !draft.needsVerification && isCurrent(draft.definition.databaseName) && isCurrentSchema(draft.definition.schemaName)
     }
     func editingContext(_ draft: MobileNewTableDraft) -> MobileSchemaEditingContext {
         .init(readState: { draft.definition.editor }, readEpoch: { draft.epoch }, allowsEditing: { [weak self] in self?.canEdit(draft) == true },
@@ -70,19 +78,22 @@ import QueryCraftMobileTransport
             delete: { id in
                 if draft.definition.editor.columns.contains(where: { $0.id == id }) { _ = draft.definition.editor.deleteColumn(id: id) }
                 else { _ = draft.definition.editor.deleteIndex(id: id) }
-            })
+            }, readDescriptor: { draft.dialect.descriptor })
     }
     @discardableResult func loadChoices(_ draft: MobileNewTableDraft) -> Task<Void, Never>? {
         guard canEdit(draft) else { return nil }
         cancelRead(); let id = UUID(), context = contextID(); loadID = id; isLoadingChoices = true; draft.choicesError = nil
         let task = Task { [weak self, service, configuration] in
             do {
-                let choices = try await service.choices(configuration: .init(host: configuration.host, port: configuration.port,
-                    username: configuration.username, password: configuration.password, database: draft.definition.databaseName, tlsMode: configuration.tlsMode))
+                let scoped = configuration.selecting(database: draft.definition.databaseName, schema: draft.definition.schemaName)
+                async let loadedChoices = service.choices(configuration: scoped)
+                async let loadedVersion = service.serverVersion(configuration: scoped)
+                let (choices, version) = try await (loadedChoices, loadedVersion)
                 try Task.checkCancellation()
                 guard let self, self.loadID == id else { return }
                 self.isLoadingChoices = false; self.readTask = nil
                 guard self.draft === draft, self.contextID() == context, self.canEdit(draft) else { return }
+                draft.serverVersion = version; draft.definition.updateDescriptor(draft.dialect.descriptor)
                 draft.definition.editor.updateSchemaChoices(choices)
             } catch {
                 guard let self, self.loadID == id else { return }
@@ -103,7 +114,7 @@ import QueryCraftMobileTransport
             do {
                 let selection = try await service.create(plan: plan, configuration: configuration) { [weak self] in
                     try await MainActor.run {
-                        guard let self, self.draft === draft, self.isCurrent(draft.definition.databaseName), self.contextID() == context,
+                        guard let self, self.draft === draft, self.isCurrent(draft.definition.databaseName), self.isCurrentSchema(draft.definition.schemaName), self.contextID() == context,
                               draft.plan == plan, self.allowsWrites() else { throw MobileSchemaError.stale }
                         guard !self.safetyLock.isEnabled else { throw WorkspaceDatabaseDataCellEditError.safetyLockEnabled }
                     }
@@ -113,7 +124,7 @@ import QueryCraftMobileTransport
                 if isCurrent(draft.definition.databaseName), contextID() == context {
                     let comment: String
                     if case .tableMutation(.create(_, _, _, _, let options)) = plan.source { comment = options.comment } else { comment = "" }
-                    let object = MobileDatabaseObject(database: selection.databaseName, name: selection.objectName, kind: .table, comment: comment)
+                    let object = MobileDatabaseObject(database: selection.databaseName, name: configuration.driver == .postgresql ? selection.object.nameWithinSchema : selection.objectName, kind: .table, comment: comment, schemaName: configuration.driver == .postgresql ? selection.object.schemaName : nil)
                     let warning = await didComplete(object)
                     draft.message = warning ?? "表已创建"
                     if warning == nil, request === draft { request = nil; self.draft = nil }

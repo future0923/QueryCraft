@@ -24,6 +24,7 @@ struct MobileSchemaContent: View {
     @State private var edit: MobileSchemaEditSelection?
     @State private var pending = false
     @State private var options = false
+    @State private var ddl: MobileStructureSQLSnapshot?
     @State private var viewport = MobileGridViewport()
     @State private var restorationID = UUID()
     @State private var listPosition: String?
@@ -63,7 +64,8 @@ struct MobileSchemaContent: View {
             }
             HStack(spacing: 12) {
                 Menu {
-                    if draft.object.kind == .table {
+                    if draft.driver == .postgresql { Button("查看已加载结构 SQL", systemImage: "chevron.left.forwardslash.chevron.right") { if let snapshot = draft.snapshot { ddl = .init(sql: snapshot.ddl) } }.disabled(draft.snapshot == nil) }
+                    if draft.object.kind == .table && draft.dialect.descriptor.supportsTableOptions {
                         Button("表选项", systemImage: "slider.horizontal.3") { options = true }
                             .disabled(draft.snapshot?.options == nil || !controller.canEdit(draft))
                     }
@@ -97,6 +99,7 @@ struct MobileSchemaContent: View {
             if selection.section == .columns { MobileSchemaColumnEditor(controller: controller, draft: draft, selection: selection) { edit = nil } }
             else { MobileSchemaIndexEditor(controller: controller, draft: draft, selection: selection) { edit = nil } }
         }
+        .sheet(item: $ddl) { MobileStructureSQLView(sql: $0.sql) }
         .sheet(isPresented: $options) { MobileExistingTableOptionsView(controller: controller, draft: draft) { options = false } }
         .sheet(isPresented: $pending) { MobileSchemaPendingView(controller: controller, draft: draft) { pending = false } }
     }
@@ -149,4 +152,22 @@ private extension WorkspaceDatabaseSchemaEditorState.ColumnItem {
 }
 private extension WorkspaceDatabaseSchemaEditorState.IndexItem {
     var schemaPresentationID: String { original.map { "index:" + $0.name } ?? "new:" + id.uuidString }
+}
+
+
+struct MobileStructureSQLSnapshot: Identifiable { let id = UUID(); let sql: String }
+struct MobileStructureSQLView: View {
+    let sql: String
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            ScrollView { Text(sql).font(.system(.footnote, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
+                .navigationTitle("结构 SQL").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+                    ToolbarItem(placement: .primaryAction) { ShareLink(item: sql) }
+                }
+                .safeAreaInset(edge: .bottom) { Text("字段定义由当前元数据快照生成；索引和其他约束请在对应项目查看。").font(.caption).foregroundStyle(.secondary).padding() }
+        }
+    }
 }

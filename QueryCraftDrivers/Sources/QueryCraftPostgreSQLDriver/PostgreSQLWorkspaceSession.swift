@@ -282,106 +282,16 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
             let body = (ddlRows.dictionaryRows.first?["view_definition"] ?? nil) ?? ""
             ddl = "CREATE VIEW \(Self.quotedQualified(identity)) AS\n\(body);"
         } else {
-            let definitions = columns.map { column in
-                var definition = "    \(Self.identifier(column.name)) \(column.type)"
-                if let defaultValue = column.defaultValue {
-                    definition += " DEFAULT \(defaultValue)"
-                }
-                if !column.isNullable { definition += " NOT NULL" }
-                return definition
-            }
-            ddl = "CREATE TABLE \(Self.quotedQualified(identity)) (\n"
-                + definitions.joined(separator: ",\n") + "\n);"
+            ddl = PostgreSQLSchemaMetadata.ddl(schema: identity.schema, name: identity.name, columns: columns)
         }
         return WorkspaceDatabaseObjectDetails(columns: columns, ddl: ddl)
     }
 
-    func fetchIndexes(
-        for object: WorkspaceDatabaseObject,
-        in database: String
-    ) async throws -> [WorkspaceDatabaseIndex] {
+    func fetchIndexes(for object: WorkspaceDatabaseObject, in database: String) async throws -> [WorkspaceDatabaseIndex] {
         try requireCurrentDatabase(database)
         let identity = identity(for: object.name)
-        let rows = try await requireClient().query(
-            """
-            SELECT
-                idx.relname::text AS index_name,
-                (ord.ordinality + 1)::text AS column_sequence,
-                CASE
-                    WHEN i.indkey[ord.ordinality] = 0
-                        THEN pg_get_indexdef(
-                            i.indexrelid,
-                            (ord.ordinality + 1)::int,
-                            true
-                        )
-                    ELSE attr.attname
-                END::text AS column_name,
-                i.indisunique::text AS is_unique,
-                i.indisprimary::text AS is_primary,
-                am.amname::text AS index_type,
-                COALESCE(obj_description(idx.oid, 'pg_class'), '')::text AS index_comment,
-                (i.indkey[ord.ordinality] = 0)::text AS is_expression,
-                ((i.indoption[ord.ordinality] & 1) = 1)::text AS is_descending
-            FROM pg_catalog.pg_index i
-            JOIN pg_catalog.pg_class tbl ON tbl.oid = i.indrelid
-            JOIN pg_catalog.pg_namespace ns ON ns.oid = tbl.relnamespace
-            JOIN pg_catalog.pg_class idx ON idx.oid = i.indexrelid
-            JOIN pg_catalog.pg_am am ON am.oid = idx.relam
-            CROSS JOIN LATERAL generate_subscripts(i.indkey, 1) ord(ordinality)
-            LEFT JOIN pg_catalog.pg_attribute attr
-              ON attr.attrelid = tbl.oid
-             AND attr.attnum = i.indkey[ord.ordinality]
-            WHERE ns.nspname = \(Self.literal(identity.schema))
-              AND tbl.relname = \(Self.literal(identity.name))
-            ORDER BY i.indisprimary DESC, idx.relname, ord.ordinality
-            """
-        ).dictionaryRows
-
-        var order: [String] = []
-        var columnsByIndex: [String: [WorkspaceDatabaseIndexColumn]] = [:]
-        var properties: [String: (isUnique: Bool, isPrimary: Bool, type: String, comment: String)] = [:]
-        for row in rows {
-            guard
-                let name = row["index_name"] ?? nil,
-                let sequenceText = row["column_sequence"] ?? nil,
-                let sequence = Int64(sequenceText),
-                let column = row["column_name"] ?? nil,
-                let uniqueText = row["is_unique"] ?? nil,
-                let primaryText = row["is_primary"] ?? nil,
-                let type = row["index_type"] ?? nil,
-                let expressionText = row["is_expression"] ?? nil,
-                let descendingText = row["is_descending"] ?? nil
-            else { continue }
-            if properties[name] == nil { order.append(name) }
-            properties[name] = (
-                Self.pgBool(uniqueText),
-                Self.pgBool(primaryText),
-                type,
-                (row["index_comment"] ?? nil) ?? ""
-            )
-            columnsByIndex[name, default: []].append(
-                WorkspaceDatabaseIndexColumn(
-                    sequence: sequence,
-                    name: column,
-                    prefixLength: nil,
-                    direction: Self.pgBool(descendingText) ? "D" : "A",
-                    isExpression: Self.pgBool(expressionText)
-                )
-            )
-        }
-        return order.compactMap { name in
-            guard let value = properties[name] else { return nil }
-            return WorkspaceDatabaseIndex(
-                name: name,
-                columns: columnsByIndex[name, default: []],
-                isUnique: value.isUnique,
-                isPrimary: value.isPrimary,
-                type: value.type.lowercased(),
-                cardinality: nil,
-                isVisible: true,
-                comment: value.comment
-            )
-        }
+        let rows = try await requireClient().query(PostgreSQLSchemaMetadata.indexesQuery(schema: identity.schema, name: identity.name))
+        return PostgreSQLSchemaMetadata.indexes(rows.dictionaryRows)
     }
 
     func fetchDataPage(
@@ -564,24 +474,8 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
         else {
             throw WorkspaceSessionError.queryUnavailable
         }
-        let usesTransaction = plan.transactionMode == .transaction
-        if usesTransaction {
-            _ = try await requireClient().query("BEGIN")
-        }
-        do {
-            for statement in plan.statements {
-                try Task.checkCancellation()
-                _ = try await requireClient().query(statement.sql)
-            }
-            if usesTransaction {
-                _ = try await requireClient().query("COMMIT")
-            }
-        } catch {
-            if usesTransaction {
-                _ = try? await requireClient().query("ROLLBACK")
-            }
-            throw error
-        }
+        let client = try requireClient()
+        try await PostgreSQLSchemaExecutor.apply(plan) { sql in _ = try await client.query(sql) }
     }
 
     func connectionID() async throws -> Int {
@@ -752,13 +646,8 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
 
     private func identity(for displayName: String) -> ObjectIdentity {
         if let identity = objectIdentities[displayName] { return identity }
-        guard let separator = displayName.firstIndex(of: ".") else {
-            return ObjectIdentity(schema: "public", name: displayName)
-        }
-        return ObjectIdentity(
-            schema: String(displayName[..<separator]),
-            name: String(displayName[displayName.index(after: separator)...])
-        )
+        let object = WorkspaceDatabaseObject(name: displayName, kind: .table)
+        return ObjectIdentity(schema: object.schemaName ?? "public", name: object.nameWithinSchema)
     }
 
     private static func makeColumn(_ row: [String: String?]) -> WorkspaceDatabaseColumn? { PostgreSQLCatalog.column(row) }

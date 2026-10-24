@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 public struct WorkspaceDatabaseObjectDetails: Equatable, Sendable {
     public let columns: [WorkspaceDatabaseColumn]
     public let ddl: String

@@ -1,8 +1,15 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 import QueryCraftFeature
+#endif
 import Synchronization
 import Testing
+#if !os(iOS)
 @testable import QueryCraftElasticsearchDriver
+#endif
 
 @Suite("Elasticsearch bounded streaming", .timeLimit(.minutes(1)))
 struct ElasticsearchStreamingResponseTests {
@@ -105,9 +112,7 @@ struct ElasticsearchStreamingResponseTests {
     }
 
     private func makeClient(host: String) throws -> ElasticsearchHTTPClient {
-        try ElasticsearchHTTPClient(configuration: ElasticsearchConnectionConfiguration(
-            DatabaseConnectionConfiguration(databaseType: .elasticsearch, databaseProduct: .elasticsearch,
-                host: host, port: 9200, authentication: .none, database: nil, tlsMode: .disabled)),
+        try ElasticsearchHTTPClient(configuration: ElasticsearchConnectionConfiguration(host: host, port: 9200, authentication: .none, tlsMode: .disabled),
             protocolClasses: [ElasticsearchURLProtocolStub.self])
     }
 

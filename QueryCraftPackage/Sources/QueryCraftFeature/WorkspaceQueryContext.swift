@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 public struct WorkspaceQueryContext: Equatable, Sendable {
     public let databaseName: String?
     public let schemaName: String?

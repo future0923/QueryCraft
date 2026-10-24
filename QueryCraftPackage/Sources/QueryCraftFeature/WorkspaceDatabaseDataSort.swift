@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 public enum WorkspaceDatabaseDataSort: Equatable, Hashable, Sendable {
     case none
     case ascending(columnName: String)

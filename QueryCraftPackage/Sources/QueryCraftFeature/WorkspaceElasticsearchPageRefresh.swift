@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 enum WorkspaceElasticsearchPageRefresh {
     static func offset(requested: Int, limit: Int, totalCount: Int?) -> Int {
         guard requested > 0, limit > 0, let totalCount, totalCount > 0 else {

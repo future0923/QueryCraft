@@ -1,4 +1,8 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#else
 import AppKit
+#endif
 import Foundation
 
 typealias WorkspaceGridPasteRowsAction = @MainActor (
@@ -11,6 +15,7 @@ struct WorkspaceGridPasteboardContent: Sendable {
     let internalPayload: Data?
     let tabSeparatedText: String?
 
+    #if !os(iOS)
     @MainActor
     static func read(from pasteboard: NSPasteboard) -> Self {
         Self(
@@ -22,12 +27,15 @@ struct WorkspaceGridPasteboardContent: Sendable {
             ) ?? pasteboard.string(forType: .string)
         )
     }
+    #endif
 }
 
 struct WorkspaceGridClipboardPayload: Codable, Equatable, Sendable {
+    #if !os(iOS)
     static let pasteboardType = NSPasteboard.PasteboardType(
         "com.querycraft.grid-rows-v1"
     )
+    #endif
 
     let version: Int
     let columnNames: [String]

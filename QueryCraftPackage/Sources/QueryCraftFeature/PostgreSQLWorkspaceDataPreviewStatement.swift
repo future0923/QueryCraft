@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 enum PostgreSQLWorkspaceDataPreviewStatement {
     static func make(
         rowUpdate: WorkspaceDatabaseDataRowUpdate
@@ -107,7 +110,7 @@ enum PostgreSQLWorkspaceDataPreviewStatement {
         selection: WorkspaceDatabaseObjectSelection,
         suffix: String
     ) -> [WorkspaceSQLPreviewToken] {
-        let name = splitObjectName(selection.objectName)
+        let name = (schema: selection.object.schemaName ?? "public", name: selection.object.nameWithinSchema)
         return [
             keyword(keywordText),
             punctuation(" "),

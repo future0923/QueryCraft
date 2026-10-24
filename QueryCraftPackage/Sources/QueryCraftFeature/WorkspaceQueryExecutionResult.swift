@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 public struct WorkspaceQueryExecutionResult: Equatable, Sendable {
     public let columns: [WorkspaceDatabaseDataColumn]
     public let rowCount: Int

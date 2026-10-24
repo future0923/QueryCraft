@@ -290,32 +290,25 @@ final class WorkspaceQueryResultStore: Sendable {
 
         guard let databaseQueue = databaseQueue() else { return }
         try await databaseQueue.write { database in
-            let payloads = try Data.fetchAll(
-                database,
-                sql: "SELECT payload FROM queryResultRow ORDER BY position"
-            )
-            let decoder = JSONDecoder()
-            let encoder = JSONEncoder()
-            let statement = try database.makeStatement(
-                sql: "INSERT INTO queryResultRow (position, payload) VALUES (?, ?)"
-            )
-            try database.execute(sql: "DELETE FROM queryResultRow")
-            var newIndex = 0
-            for (index, payload) in payloads.enumerated()
-            where !validIndexes.contains(index) {
-                let row = try decoder.decode(
-                    WorkspaceDatabaseDataRow.self,
-                    from: payload
-                )
-                let replacement = WorkspaceDatabaseDataRow(
-                    id: newIndex,
-                    values: row.values
-                )
-                try statement.execute(
-                    arguments: [newIndex, try encoder.encode(replacement)]
-                )
+            // Compact through a second SQLite table one payload at a time.
+            // Deleting a row from a large result must not materialize its whole cache.
+            try database.execute(sql: "CREATE TEMP TABLE queryResultRowCompaction (position INTEGER PRIMARY KEY, payload BLOB NOT NULL)")
+            let decoder = JSONDecoder(), encoder = JSONEncoder()
+            let statement = try database.makeStatement(sql: "INSERT INTO queryResultRowCompaction (position, payload) VALUES (?, ?)")
+            let cursor = try Data.fetchCursor(database, sql: "SELECT payload FROM queryResultRow ORDER BY position")
+            var oldIndex = 0, newIndex = 0
+            while let payload = try cursor.next() {
+                try Task.checkCancellation()
+                defer { oldIndex += 1 }
+                guard !validIndexes.contains(oldIndex) else { continue }
+                let row = try decoder.decode(WorkspaceDatabaseDataRow.self, from: payload)
+                let replacement = WorkspaceDatabaseDataRow(id: newIndex, values: row.values)
+                try statement.execute(arguments: [newIndex, try encoder.encode(replacement)])
                 newIndex += 1
             }
+            try database.execute(sql: "DELETE FROM queryResultRow")
+            try database.execute(sql: "INSERT INTO queryResultRow (position, payload) SELECT position, payload FROM queryResultRowCompaction ORDER BY position")
+            try database.execute(sql: "DROP TABLE queryResultRowCompaction")
             storedRowCount.withLock { $0 = newIndex }
         }
         cache.withLock {

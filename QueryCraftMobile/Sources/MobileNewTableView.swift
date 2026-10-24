@@ -18,11 +18,12 @@ struct MobileNewTableView: View {
             Form {
                 Section {
                     LabeledContent("数据库", value: definition.databaseName)
+                    if let schema = definition.schemaName { LabeledContent("Schema", value: schema) }
                     MobileSchemaTextField(title: "表名", text: $definition.tableName)
                     Picker("定义", selection: $definition.selectedTab) {
                         Text("字段").tag(WorkspaceDatabaseObjectDetailTab.structure)
                         Text("索引").tag(WorkspaceDatabaseObjectDetailTab.indexes)
-                        Text("选项").tag(WorkspaceDatabaseObjectDetailTab.options)
+                        if definition.availableTabs.contains(.options) { Text("选项").tag(WorkspaceDatabaseObjectDetailTab.options) }
                     }.pickerStyle(.segmented).accessibilityIdentifier("newTableSections")
                 }.disabled(!controller.canEdit(draft))
                 if definition.selectedTab == .options {
@@ -128,13 +129,14 @@ struct MobileNewTableConfirmation: View {
     var body: some View {
         NavigationStack {
             Form {
+                if draft.driver == .postgresql { Section("目标") { LabeledContent("数据库", value: draft.definition.databaseName); LabeledContent("Schema", value: draft.definition.schemaName ?? "public"); LabeledContent("表", value: draft.definition.tableName) } }
                 Section("将执行以下 SQL") {
                     Text(plan.statements.map(\.sql).joined(separator: "\n\n"))
                         .font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
                 }
                 Section {
                     Label(controller.safetyLock.isEnabled ? "安全锁已开启" : "安全锁已停用", systemImage: controller.safetyLock.isEnabled ? "lock" : "lock.open")
-                    Text(draft.message ?? "MySQL 建表会自动提交，不能通过取消撤销。失败或结果不明时不会自动重放。")
+                    Text(draft.message ?? (draft.driver == .postgresql ? "建表、字段注释和索引在同一事务中执行；结果不明时先核对，不自动重放。" : "MySQL 建表会自动提交，不能通过取消撤销。失败或结果不明时不会自动重放。"))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }

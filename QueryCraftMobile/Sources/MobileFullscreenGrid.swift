@@ -9,6 +9,7 @@ struct MobileFullscreenGridSelection: Identifiable {
     var timestampScope: String? = nil
     var pageContext: MobileGridPageContext? = nil
     var source: MobileResultSource? = nil
+    var elasticsearch: MobileElasticsearchWorkspace? = nil
 }
 
 /// No NavigationStack: no sidebar, toolbar, tab bar, editor or footer reserves space.
@@ -21,17 +22,23 @@ struct MobileFullscreenGrid: View {
     @State private var pendingChanges: MobileTableChanges?
     @State private var restorationID = UUID()
 
+    private func pendingAction(_ changes: MobileTableChanges?) -> (() -> Void)? {
+        if let es = selection.elasticsearch, es.cellChanges.hasChanges { return { es.beginFullscreenChanges() } }
+        return changes.map { captured in { pendingChanges = captured } }
+    }
+
     var body: some View {
         let data = selection.source?.data ?? selection.data
         let changes = selection.source?.snapshot.editing
         ZStack(alignment: .topTrailing) {
             MobileDataGrid(data: data, revision: selection.source?.revision ?? selection.revision, widthKey: selection.widthKey,
                            viewport: selection.viewport, restorationID: restorationID,
-                           tracksViewport: cellPresentation == nil && pendingChanges == nil, viewportOwner: selection.id,
+                           tracksViewport: cellPresentation == nil && pendingChanges == nil && selection.elasticsearch?.fullscreenAction == nil, viewportOwner: selection.id,
                            cellAccessibilityHint: "轻点查看或编辑；长按查看待提交改动", timestampScope: selection.timestampScope,
-                           pageContext: selection.pageContext, pendingChangeCount: changes?.changeCount ?? 0,
-                           onShowPendingChanges: changes.map { captured in { pendingChanges = captured } }) { row, column in
+                           pageContext: selection.pageContext, pendingChangeCount: selection.elasticsearch?.cellChanges.order.count ?? changes?.changeCount ?? 0,
+                           onShowPendingChanges: pendingAction(changes)) { row, column in
                 revealExit()
+                if let es = selection.elasticsearch { es.beginFullscreenDocument(row: row); return }
                 if let source = selection.source { cellPresentation = source.cell(row: row, column: column) }
                 else if data.rows.indices.contains(row), data.columns.indices.contains(column) {
                     cellPresentation = .init(content: .inspect(.init(row: row, column: column, name: data.columns[column], value: data.cell(row: row, column: column)), nil))
@@ -50,6 +57,7 @@ struct MobileFullscreenGrid: View {
             .background(Color(uiColor: .systemBackground).ignoresSafeArea())
             .ignoresSafeArea(.keyboard)
             .background(MobileFullscreenInputGuard(permitsPresentedInput: true))
+            .sheet(item: Binding(get: { selection.elasticsearch?.fullscreenAction }, set: { if $0 == nil { selection.elasticsearch?.fullscreenAction?.close() } })) { MobileElasticsearchActionView(action: $0) }
             .sheet(item: $cellPresentation, onDismiss: resumeGrid) { MobileResultCellSheet(presentation: $0) }
             .sheet(item: $pendingChanges, onDismiss: resumeGrid) { MobilePendingChangesView(changes: $0) }
             .onChange(of: selection.source?.isCurrent) { _, current in if current == false { dismiss() } }

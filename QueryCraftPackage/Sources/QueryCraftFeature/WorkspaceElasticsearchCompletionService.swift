@@ -2,21 +2,8 @@ import CodeEditSourceEditor
 import CodeEditTextView
 import SwiftUI
 
-struct WorkspaceElasticsearchCompletionResource: Equatable, Sendable {
-    let name: String
-    let kind: WorkspaceDatabaseObjectKind
-}
-
 private struct WorkspaceElasticsearchCompletionEntry: CodeSuggestionEntry {
-    enum Kind {
-        case method
-        case resource(WorkspaceDatabaseObjectKind)
-        case endpoint
-        case key
-        case queryClause
-        case field
-        case value
-    }
+    typealias Kind = WorkspaceElasticsearchRequestCompletion.Kind
 
     let label: String
     let insertionText: String
@@ -112,69 +99,6 @@ private struct WorkspaceElasticsearchCompletionEntry: CodeSuggestionEntry {
 
 @MainActor
 final class WorkspaceElasticsearchCompletionService: CodeSuggestionDelegate {
-    private struct Endpoint {
-        let path: String
-        let allowsGET: Bool
-        let allowsPOST: Bool
-        let supportsResource: Bool
-        var allowsPUT = false
-        var allowsDELETE = false
-    }
-
-    private enum RequestLineContext {
-        case method(prefix: String)
-        case path(method: WorkspaceRequestMethod)
-    }
-
-    private static let requestMethods: [WorkspaceRequestMethod] = [
-        .get, .post, .put, .delete, .head,
-    ]
-    private static let endpoints = [
-        Endpoint(path: "_doc/", allowsGET: true, allowsPOST: true, supportsResource: true, allowsPUT: true, allowsDELETE: true),
-        Endpoint(path: "_create/", allowsGET: false, allowsPOST: true, supportsResource: true, allowsPUT: true),
-        Endpoint(path: "_update/", allowsGET: false, allowsPOST: true, supportsResource: true),
-        Endpoint(path: "_mapping", allowsGET: true, allowsPOST: true, supportsResource: true, allowsPUT: true),
-        Endpoint(path: "_settings", allowsGET: true, allowsPOST: false, supportsResource: true, allowsPUT: true),
-        Endpoint(path: "_aliases", allowsGET: false, allowsPOST: true, supportsResource: false),
-        Endpoint(path: "_bulk", allowsGET: false, allowsPOST: true, supportsResource: true, allowsPUT: true),
-        Endpoint(path: "_update_by_query", allowsGET: false, allowsPOST: true, supportsResource: true),
-        Endpoint(path: "_delete_by_query", allowsGET: false, allowsPOST: true, supportsResource: true),
-        Endpoint(path: "_reindex", allowsGET: false, allowsPOST: true, supportsResource: false),
-        Endpoint(
-            path: "_cluster/health",
-            allowsGET: true,
-            allowsPOST: false,
-            supportsResource: false
-        ),
-        Endpoint(
-            path: "_cat/indices?format=json",
-            allowsGET: true,
-            allowsPOST: false,
-            supportsResource: false
-        ),
-        Endpoint(path: "_search", allowsGET: true, allowsPOST: true,
-                 supportsResource: true),
-        Endpoint(path: "_count", allowsGET: true, allowsPOST: true,
-                 supportsResource: true),
-        Endpoint(path: "_msearch", allowsGET: true, allowsPOST: true,
-                 supportsResource: true),
-        Endpoint(path: "_field_caps?fields=*", allowsGET: true,
-                 allowsPOST: true, supportsResource: true),
-        Endpoint(path: "_validate/query", allowsGET: true, allowsPOST: true,
-                 supportsResource: true),
-        Endpoint(path: "_analyze", allowsGET: true, allowsPOST: true,
-                 supportsResource: true),
-        Endpoint(path: "_explain", allowsGET: true, allowsPOST: true,
-                 supportsResource: true),
-        Endpoint(path: "_search/template", allowsGET: true, allowsPOST: true,
-                 supportsResource: true),
-        Endpoint(path: "_render/template", allowsGET: true, allowsPOST: true,
-                 supportsResource: false),
-        Endpoint(path: "_sql", allowsGET: true, allowsPOST: true,
-                 supportsResource: false),
-        Endpoint(path: "_eql/search", allowsGET: true, allowsPOST: true,
-                 supportsResource: true),
-    ]
     private let fields: @MainActor (String?) async -> [String]
     private let resources: @MainActor ()
         -> [WorkspaceElasticsearchCompletionResource]
@@ -324,7 +248,7 @@ final class WorkspaceElasticsearchCompletionService: CodeSuggestionDelegate {
                 length: cursor - lineRange.location
             )
         )
-        let tokenRange = Self.tokenRange(in: source, endingAt: cursor)
+        let tokenRange = WorkspaceElasticsearchRequestCompletion.tokenRange(in: source, endingAt: cursor)
         let prefix = source.substring(with: tokenRange)
         return CompletionSnapshot(
             source: source as String,
@@ -339,9 +263,9 @@ final class WorkspaceElasticsearchCompletionService: CodeSuggestionDelegate {
         snapshot: CompletionSnapshot
     ) -> [WorkspaceElasticsearchCompletionEntry]? {
         let entries: [WorkspaceElasticsearchCompletionEntry]
-        switch Self.requestLineContext(snapshot.beforeCursor) {
+        switch WorkspaceElasticsearchRequestCompletion.requestLineContext(snapshot.beforeCursor) {
         case .method(let methodPrefix):
-            entries = Self.requestMethods.compactMap { method in
+            entries = WorkspaceElasticsearchRequestCompletion.requestMethods.compactMap { method in
                 guard method.rawValue.hasPrefix(methodPrefix.uppercased())
                 else { return nil }
                 return WorkspaceElasticsearchCompletionEntry(
@@ -352,7 +276,7 @@ final class WorkspaceElasticsearchCompletionService: CodeSuggestionDelegate {
                 )
             }
         case .path(let method):
-            entries = Self.pathSuggestions(
+            entries = WorkspaceElasticsearchRequestCompletion.pathSuggestions(
                 forPathPrefix: snapshot.prefix,
                 method: method,
                 resources: resources()
@@ -397,234 +321,7 @@ final class WorkspaceElasticsearchCompletionService: CodeSuggestionDelegate {
         }
     }
 
-    private struct PathSuggestion {
-        let label: String
-        let insertionText: String
-        let kind: WorkspaceElasticsearchCompletionEntry.Kind
-        let selectedRangeInInsertion: NSRange?
-        let detail: String?
-
-        init(
-            label: String,
-            insertionText: String,
-            kind: WorkspaceElasticsearchCompletionEntry.Kind,
-            selectedRangeInInsertion: NSRange? = nil,
-            detail: String? = nil
-        ) {
-            self.label = label
-            self.insertionText = insertionText
-            self.kind = kind
-            self.selectedRangeInInsertion = selectedRangeInInsertion
-            self.detail = detail
-        }
-    }
-
-    private static func pathSuggestions(
-        forPathPrefix prefix: String,
-        method: WorkspaceRequestMethod,
-        resources: [WorkspaceElasticsearchCompletionResource]
-    ) -> [PathSuggestion] {
-        if method == .head {
-            return resourceSuggestions(
-                forPathPrefix: prefix,
-                method: method,
-                resources: resources
-            )
-        }
-
-        let lowercasePrefix = prefix.lowercased()
-        if lowercasePrefix.isEmpty || lowercasePrefix == "/" {
-            let resourceEntries = resourceSuggestions(
-                forPathPrefix: prefix,
-                method: method,
-                resources: resources
-            )
-            let endpointEntries = allowedEndpoints(for: method)
-                .map { endpoint in
-                    let value = "/\(endpoint.path)"
-                    return endpointSuggestion(
-                        label: value,
-                        path: value,
-                        endpoint: endpoint,
-                        hasResource: false
-                    )
-                }
-            return resourceEntries + endpointEntries
-        }
-        if lowercasePrefix.hasPrefix("/_") {
-            return allowedEndpoints(for: method).compactMap { endpoint in
-                let value = "/\(endpoint.path)"
-                guard value.lowercased().hasPrefix(lowercasePrefix) else {
-                    return nil
-                }
-                return endpointSuggestion(
-                    label: value,
-                    path: value,
-                    endpoint: endpoint,
-                    hasResource: false
-                )
-            }
-        }
-
-        if let endpointBoundary = prefix.range(
-            of: "/_",
-            options: .backwards
-        ), endpointBoundary.lowerBound > prefix.startIndex {
-            let resourcePrefix = String(prefix[..<endpointBoundary.lowerBound])
-            let endpointPrefix = String(prefix[endpointBoundary.upperBound...])
-                .lowercased()
-            return allowedEndpoints(for: method).compactMap { endpoint in
-                guard endpoint.supportsResource,
-                      endpoint.path.dropFirst().lowercased()
-                        .hasPrefix(endpointPrefix)
-                else { return nil }
-                let value = "\(resourcePrefix)/\(endpoint.path)"
-                return endpointSuggestion(
-                    label: value,
-                    path: value,
-                    endpoint: endpoint,
-                    hasResource: true
-                )
-            }
-        }
-
-        if prefix.hasSuffix("/") {
-            let resourcePrefix = String(prefix.dropLast())
-            return allowedEndpoints(for: method).compactMap { endpoint in
-                guard endpoint.supportsResource else { return nil }
-                let value = "\(resourcePrefix)/\(endpoint.path)"
-                return endpointSuggestion(
-                    label: value,
-                    path: value,
-                    endpoint: endpoint,
-                    hasResource: true
-                )
-            }
-        }
-
-        return resourceSuggestions(
-            forPathPrefix: prefix,
-            method: method,
-            resources: resources
-        )
-    }
-
-    static func pathSuggestionTexts(
-        forPathPrefix prefix: String,
-        method: WorkspaceRequestMethod,
-        resources: [WorkspaceElasticsearchCompletionResource]
-    ) -> [String] {
-        pathSuggestions(
-            forPathPrefix: prefix,
-            method: method,
-            resources: resources
-        ).map(\.insertionText)
-    }
-
-    private static func resourceSuggestions(
-        forPathPrefix prefix: String,
-        method: WorkspaceRequestMethod,
-        resources: [WorkspaceElasticsearchCompletionResource]
-    ) -> [PathSuggestion] {
-        let lowercasePrefix = prefix.lowercased()
-        return resources.compactMap { resource in
-            let label = "/\(resource.name)"
-            guard lowercasePrefix.isEmpty
-                    || label.lowercased().hasPrefix(lowercasePrefix)
-            else { return nil }
-            let insertionText = method == .head ? label : "\(label)/"
-            return PathSuggestion(
-                label: label,
-                insertionText: insertionText,
-                kind: .resource(resource.kind)
-            )
-        }
-    }
-
-    private static func endpointSuggestion(
-        label: String,
-        path: String,
-        endpoint: Endpoint,
-        hasResource: Bool
-    ) -> PathSuggestion {
-        guard endpoint.path == "_msearch" else {
-            return PathSuggestion(
-                label: label,
-                insertionText: path,
-                kind: .endpoint
-            )
-        }
-
-        let header = hasResource ? "{}" : "{\"index\": \"\"}"
-        let insertion = "\(path)\n\(header)\n"
-            + "{\"query\": {\"match_all\": {}}}\n"
-        let selectionLocation = hasResource
-            ? ("\(path)\n{}\n{\"query\": {\"" as NSString).length
-            : ("\(path)\n{\"index\": \"" as NSString).length
-        let selectionLength = hasResource ? ("match_all" as NSString).length : 0
-        return PathSuggestion(
-            label: label,
-            insertionText: insertion,
-            kind: .endpoint,
-            selectedRangeInInsertion: NSRange(
-                location: selectionLocation,
-                length: selectionLength
-            ),
-            detail: AppCopy.current.text(
-                "批量查询 · NDJSON",
-                "Multi search · NDJSON"
-            )
-        )
-    }
-
-    private static func allowedEndpoints(
-        for method: WorkspaceRequestMethod
-    ) -> [Endpoint] {
-        endpoints.filter { endpoint in
-            switch method {
-            case .get: endpoint.allowsGET
-            case .post: endpoint.allowsPOST
-            case .head: endpoint.allowsGET
-            case .put: endpoint.allowsPUT
-            case .delete: endpoint.allowsDELETE
-            }
-        }
-    }
-
-    private static func requestLineContext(
-        _ line: String
-    ) -> RequestLineContext? {
-        let trimmed = line.drop(while: { $0.isWhitespace })
-        guard let whitespaceIndex = trimmed.firstIndex(where: {
-            $0.isWhitespace
-        }) else {
-            let prefix = String(trimmed)
-            guard prefix.isEmpty || requestMethods.contains(where: {
-                $0.rawValue.hasPrefix(prefix.uppercased())
-            }) else { return nil }
-            return .method(prefix: prefix)
-        }
-
-        let methodText = String(trimmed[..<whitespaceIndex]).uppercased()
-        guard let method = WorkspaceRequestMethod(rawValue: methodText),
-              requestMethods.contains(where: { $0 == method })
-        else { return nil }
-        return .path(method: method)
-    }
-
-    private static func tokenRange(
-        in source: NSString,
-        endingAt cursor: Int
-    ) -> NSRange {
-        var start = cursor
-        let allowed = CharacterSet.alphanumerics.union(
-            CharacterSet(charactersIn: "_./-*?=,%:@+")
-        )
-        while start > 0 {
-            let scalar = UnicodeScalar(source.character(at: start - 1))
-            guard let scalar, allowed.contains(scalar) else { break }
-            start -= 1
-        }
-        return NSRange(location: start, length: cursor - start)
+    static func pathSuggestionTexts(forPathPrefix prefix: String, method: WorkspaceRequestMethod, resources: [WorkspaceElasticsearchCompletionResource]) -> [String] {
+        WorkspaceElasticsearchRequestCompletion.pathSuggestionTexts(forPathPrefix: prefix, method: method, resources: resources)
     }
 }

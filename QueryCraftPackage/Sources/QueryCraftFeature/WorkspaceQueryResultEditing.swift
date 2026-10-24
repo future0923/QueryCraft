@@ -47,7 +47,7 @@ enum WorkspaceQueryResultEditing {
               !databaseName.isEmpty else { return nil }
         return WorkspaceDatabaseObjectSelection(
             databaseName: databaseName,
-            objectName: origin.schemaName.map { "\($0).\(origin.tableName)" } ?? origin.tableName,
+            objectName: origin.schemaName.map { WorkspaceDatabaseObject.postgreSQLName(schema: $0, table: origin.tableName) } ?? origin.tableName,
             kind: .table
         )
     }
@@ -80,7 +80,7 @@ enum WorkspaceQueryResultEditing {
             return nil
         }
         let objectName = identity.schemaName.map {
-            "\($0).\(identity.tableName)"
+            WorkspaceDatabaseObject.postgreSQLName(schema: $0, table: identity.tableName)
         } ?? identity.tableName
         return WorkspaceDatabaseObjectSelection(
             databaseName: databaseName,
@@ -94,7 +94,13 @@ enum WorkspaceQueryResultEditing {
     static func validatedColumns(selection: WorkspaceDatabaseObjectSelection,
                                  columns: [WorkspaceDatabaseDataColumn], row: WorkspaceDatabaseDataRow,
                                  metadata: [WorkspaceDatabaseColumn]) throws -> [WorkspaceDatabaseDataColumn] {
-        guard self.selection(for: columns, currentDatabase: selection.databaseName) == selection else {
+        let source = self.selection(for: columns, currentDatabase: selection.databaseName)
+        let exact = source == selection
+        let physical = columns.first(where: { $0.origin != nil })?.origin
+        guard exact || (source != nil && physical?.schemaName != nil
+            && source?.databaseName == selection.databaseName
+            && physical?.schemaName == selection.object.schemaName
+            && physical?.tableName == selection.object.nameWithinSchema) else {
             throw WorkspaceDatabaseDataCellEditError.metadataUnavailable
         }
         for key in metadata where key.key.uppercased() == "PRI" {

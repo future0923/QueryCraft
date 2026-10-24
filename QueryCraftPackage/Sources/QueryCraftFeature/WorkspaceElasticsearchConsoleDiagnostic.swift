@@ -1,6 +1,9 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
-struct WorkspaceElasticsearchConsoleDiagnostic: Equatable, Sendable {
+struct WorkspaceElasticsearchConsoleDiagnostic: Hashable, Sendable {
     let message: String
     let line: Int?
     let column: Int?

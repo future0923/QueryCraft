@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 public struct WorkspaceDatabaseDataFetchResult: Sendable {
     public let columns: [WorkspaceDatabaseDataColumn]
     public let hasNextPage: Bool

@@ -297,3 +297,27 @@ User direction: finish Redis on both iOS and iPadOS before delivering; stop endi
 Implementation inventory complete: five common types create/rename/value/member CRUD; String ≤100MiB complete value editing with bounded touch segments/HEX/JSON/raw export; Hash field TTL; collection reader shared by primary grid/editor/search; selected/whole-key command exports; Stream shared read pages; standalone whole-key TTL/delete; same-session command console/history/completions/transactions; CAS/unknown-write/background safeguards. True desktop/protocol limitations documented. No remaining planned feature expansion; resolve regression findings before delivery.
 
 Final evidence: five-fixture full iPad567/0/0 and phone568/0/0 (Redis7.2); final current-source Redis7.4 each50/0/0; Mac shared29/0/0, driver11/0/0; latest arm64 build; independent signed Redis package + all-six real installer/registry/session factories and live Redis Stream/paging/CAS checks. No actionable implementation gap in current Mac Redis baseline remains; existing Mac/protocol and physical-device validation limits explicitly documented.
+
+
+## Elasticsearch complete iPhone / iPad parity — 2026-10-24 (COMPLETE)
+
+User requests complete Elasticsearch functionality in one delivery, using current macOS behavior as baseline. Work completed only in codex/ios-ipad-editor; main-checkout changes preserved. No commit/tag/release or user database mutations requested.
+
+1. Complete: actual Mac ES entry points, shared models/session capabilities and explicit acceptance matrix inventoried.
+2. Complete: original native ES session/model sources shared; PIT/search_after beyond10k, filter/sort, Mapping/Field Caps, object identity and independent complete-match export.
+3. Complete: REST current/selection/all with exact shared parser/completion/formatting/result conversion, multiple results/history, default lock, immutable preview and unknown-write protection.
+4. Complete: document inspect/create/replace/partial/delete, shared field staging/paste/batch deletion; Mapping, index create/delete/settings/Alias/template/simulation with native phone/tablet and fullscreen entry points.
+5. Complete: stable loading/refresh/empty/error, cancellation/stale/background and transport recreation, staged validation recovery, released-owner lifetime, source/export and cross-driver regression.
+6. Complete: full five-fixture iPad647/0/1 and phone647/0/1; latest ES phone79/0/1 plus original fullscreen4/0/0, iPad83/0/1; Mac feature163/0/0, driver45/0/2 and shared supplements26/15/12 all passing; actual signed new ES package/all-six loading plus live typedPIT/docCAS/Mapping; latest arm64 build. Native captures inspected; documentation records server/TLS/physical/generic-editor boundaries. Simulator-only delivery remains. No remaining planned ES-specific implementation work.
+
+
+## PostgreSQL complete mobile parity — 2026-10-24 (COMPLETE)
+
+User-authorized complete PG-specific follow-up delivered in codex/ios-ipad-editor. Prior ES changes preserved; main checkout, installed Dev, user databases and release identities untouched. Simulator delivery remains current scope.
+
+1. Complete: actual Mac PG query/schema/new-table/table-action/import/COPY sources and entry points inventoried; POSTGRESQL_PARITY records exact scope and generic-workspace/protocol boundaries.
+2. Complete: physical-origin/PK result editing, including completed auto-commit cache pages; shared store mutation/streaming row compaction, whole-cache export, old-page editor invalidation and asynchronous patch protection.
+3. Complete: original PG provider/descriptor/metadata/executor; field/index/identity/generated/new-table/zero-column/structure-SQL and table/owned-sequence operations, immutable native previews and transactional/unknown-outcome guards.
+4. Complete: original multi-format parsers, frozen disk snapshot, mapping/plan and shared transactional importer; Files UI, stale preview/loading/cancel/background protections; actual COPY FROM protocol verification with rollback.
+5. Complete: five-fixture full iPad694/0/1 and phone695/0/1; latest PG two-device80/0/0 each. Mac shared58/0/0, cache18/0/0 and PG13/0/0; independent dynamic build198.502s, new signed850f7b8725f6b4f7 package and actual six-driver/live PG load; latest arm6432.122s. Native final captures inspected.
+6. Complete: current scope/validation/README/history/release-impact docs updated; owned fixtures cleaned. Normal iPad and iPhone simulator relaunches succeeded without diagnostics. No commit/push/tag/release or physical installation; no further planned PG-specific implementation work.

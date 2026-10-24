@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
 /// Changes whitespace only. Numbers, key order and string escapes remain byte exact.

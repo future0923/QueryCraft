@@ -400,3 +400,28 @@ Remaining whole-Redis audit concerns to resolve before acceptance:
 - String async worker performs initial binary/HEX presentation, large draft decode and format off main; cached decoded bytes avoid re-parsing huge HEX in hasChanges/render. Separate generation token prevents cancelled old parse resetting newer busy state. Raw/command export validates current complete bytes asynchronously. Large prepare() returns a Task, small callers unchanged, tests await when needed.
 - Shared JSON pretty printer now streams UnicodeScalarView indices instead of creating 4-byte scalar arrays. Optional maxOutputBytes nil preserves Mac default; mobile uses100MiB output budget (same whole-value budget) to avoid indentation expansion bombs; original data remains available in text/HEX/export. No smaller mobile JSON input limit invented.
 - Console idle background teardown now gates canRun/canClose until close completes (stored close task/token); quick foreground cannot reuse an unclosed MULTI connection. Explicit close awaits pending teardown. In-flight commands still wait actual result then close if background, no fabricated cancellation/write rollback.
+
+
+## Elasticsearch full mobile parity inventory — 2026-10-24
+- Existing mobile ES uses standalone from/size match_all service, 100/page and 10k cap; only mapping/field caps browsing. Mac ElasticsearchWorkspaceSession already implements PIT/search_after, filters/sort, requests and document/mapping editing. Reuse exact session rather than duplicate pagination.
+- Desktop management extends beyond documents: index create/delete, index settings, aliases, index/component templates and template simulation; all must be assessed and given mobile entry points.
+- Existing feature branch clean at e867ab9; latest prior mobile validation recorded 567 iPad / 568 phone full and 50 Redis专项 per device. These are baseline only, not ES work verification.
+
+ES exact desktop session successfully compiled into mobile with original full WorkspaceSession protocols and same document/mapping codecs. Pure completion resource extracted from AppKit adapter; pasteboard read/type guarded only on iOS while parser/model shared. Mobile license gate follows existing direct-client convention; desktop gate unchanged. Driver API layout untouched.
+
+Implemented full current ES capability matrix in QueryCraftMobile/ELASTICSEARCH_PARITY.md, including fields/bulk/paste, index/settings/aliases/templates/simulation and REST. Real writes only target new disposable local fixture; no installed Dev driver replacement planned. Console selection changes now invalidate prepared requests, matching SQL confirmation capture rules. Fullscreen ES document editing has its own presenter but shares the same workspace safety/lifecycle state.
+
+Full iPad642 successes was interrupted by a genuine asynchronous unowned-owner lifetime crash after background test. Latest fix captures owner for each bounded action/console task, rejects background completions, and waits completion+read draining before HTTP shutdown. Weak-release regression awaits cancellation rather than timing sleeps. Latest scoped ES iPad run active; final full phone/tablet still required. Never present the crashed full run as passing.
+
+
+Final ES delivery evidence: the Mac ES-specific acceptance matrix is implemented using its actual shared session/workers, not a parallel simplified protocol. Both five-driver full suites647/0/1, latest phone79/0/1 + fullscreen4 and iPad83/0/1, Mac feature/driver/supplements, latest arm64 and actual fresh ES package loading all pass. Unknown-write fences and observed lifecycle regressions have real/state tests. Physical/server/TLS/generic-editor limits are explicitly retained in ELASTICSEARCH_PARITY and VALIDATION; no release identity/API bump or user Dev replacement.
+
+
+## PostgreSQL mobile follow-up — 2026-10-24
+Current PG already has persistent SQL writes/transactions, streamed disk cache and base-table data editing. Missing mobile query-result editing, graphical schema/new-table and file import. Mac actual PG session advertises schema provider and native COPY in/out; must distinguish generic data-transfer workbench from table file import and reuse existing logic. Existing uncommitted ES81 files preserved.
+
+PG native iPad captures inspected: actual descriptor removes MySQL-only charset/options/visibility/prefix controls, shows real schema/new-table defaults, and import retains physical target/format/mapping. Mac table file import uses INSERT batches, not native COPY; original LibPQ COPY is separately exercised under a real transaction. New full-value import test spills over4MiB and verifies all3001 rows/520 Unicode scalars on server; unknown commit is explicitly tested after a real commit.
+
+Mac shared regression58/0/0 and latest store/row-deletion/inspector18/0/0 passed; PG driver original13/0/0 passed. Local signed PG package a3be09df508c3b92 produced in isolated driver directory; actual load/live canonical quoted-name verification pending. Final native import/new-table confirmation captures inspected; labels were added after the current full iPad build, so current-source native supplements remain required.
+
+PG acceptance complete: latest phone/tablet80/0/0 each, full five-fixture694/695 with only one old ES environment skip each; Mac58/18/13 all pass; latest arm64 and truly rebuilt/signed dynamic PG package850f7b8725f6b4f7 actual six-driver/live special-name path pass. Final native phone/iPad confirmation/SQL/import renders inspected. Current scope/physical/server/TLS/generic workspace boundaries documented; no user databases/Dev install/release identities changed.

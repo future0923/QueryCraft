@@ -32,6 +32,8 @@ struct MobileResultsView: View {
     var exportName = "query-result"
     var exportScopeDescription = "当前查询结果"
     var exportDialect: WorkspaceSQLExportDialect? = .mysql
+    var onOpenElasticsearchDocument: ((Int) -> Void)? = nil
+    var elasticsearchPagination: MobileElasticsearchWorkspace? = nil
     var resourcePagination: MobileResourceModel? = nil
     var exportTableIdentifierParts: [String]? = nil
     var editing: MobileTableChanges? = nil
@@ -73,6 +75,7 @@ struct MobileResultsView: View {
             Group {
                 if usesRecords {
                     MobileRecordList(data: visible, revision: revision, scrollID: $recordScrollID) { row in
+                        if let onOpenElasticsearchDocument { onOpenElasticsearchDocument(row); return }
                         selectedEditRow = row
                         recordSelection = .init(row: row, source: currentSource())
                     }.id(widthKey).id(pageContext)
@@ -82,6 +85,7 @@ struct MobileResultsView: View {
                                    cellAccessibilityHint: editing == nil ? "轻点查看单元格" : "轻点查看或编辑单元格",
                                    searchController: find, revealsMatchOnResize: searchFocused,
                                    timestampScope: timestampScope, pageContext: pageContext) { row, column in
+                        if let onOpenElasticsearchDocument { onOpenElasticsearchDocument(row); return }
                         selectedEditRow = row; editMessage = nil
                         cellPresentation = currentSource().cell(row: row, column: column)
                     }
@@ -108,6 +112,10 @@ struct MobileResultsView: View {
                     }.accessibilityLabel("待提交改动，\(editing.changeCount) 行").accessibilityIdentifier("pendingChangesButton")
                 }
                 if let pagination { MobilePageNavigation(model: pagination) }
+                if let es = elasticsearchPagination {
+                    Button("上一页", systemImage: "chevron.left", action: es.previous).labelStyle(.iconOnly).disabled(!es.canNavigate || es.isLoadingPage || (es.page?.offset ?? 0) == 0)
+                    Button("下一页", systemImage: "chevron.right", action: es.next).labelStyle(.iconOnly).disabled(!es.canNavigate || es.isLoadingPage || es.page?.hasNextPage != true)
+                }
                 if let resourcePagination {
                     if resourcePagination.profile.driver == .redis {
                         Menu {
@@ -303,7 +311,7 @@ struct MobileResultsView: View {
         searchFocused = false
         onEndEditing?()
         let selection = MobileFullscreenGridSelection(data: visible, revision: revision, widthKey: widthKey, viewport: viewport,
-                                                     timestampScope: timestampScope, pageContext: pageContext, source: currentSource())
+                                                     timestampScope: timestampScope, pageContext: pageContext, source: currentSource(), elasticsearch: elasticsearchPagination)
         viewport.activeOwner = selection.id
         fullscreen = selection
     }

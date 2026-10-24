@@ -5,6 +5,7 @@ import QueryCraftMobileCore
 @MainActor @Observable final class MobileResourceModel {
     let profile: MobileConnectionProfile
     let password: String?
+    let elasticsearch: MobileElasticsearchWorkspace?
     private let service: any MobileResourceServicing
     private(set) var scopes: [String]?
     private(set) var scope: String?
@@ -24,7 +25,7 @@ import QueryCraftMobileCore
     private(set) var redisKeyAction: MobileRedisKeyAction?
     private(set) var redisConsole: MobileRedisConsole?
     private(set) var isRedisConsolePresented = false
-    var hasPendingChanges: Bool { redisEditor != nil || redisKeyAction != nil || isRedisConsolePresented }
+    var hasPendingChanges: Bool { elasticsearch?.hasPendingChanges == true || redisEditor != nil || redisKeyAction != nil || isRedisConsolePresented }
     var canManageRedisKeys: Bool { profile.driver == .redis && scope != nil && !isBackgrounded && !hasPendingChanges }
     var canEditRedis: Bool { profile.driver == .redis && selected != nil && selected?.binaryKeyData == nil && details != nil && (details?.redisType.map { [.string, .hash, .list, .set, .sortedSet].contains($0) } ?? false) && !isLoadingDetails && !isBackgrounded }
     var search = ""
@@ -39,16 +40,18 @@ import QueryCraftMobileCore
     @ObservationIgnored private var history: [(Int, UInt64)] = []
     @ObservationIgnored private var loadedSearch = ""
     var canGoBack: Bool { !history.isEmpty && !isLoadingDetails }
-    var isLoading: Bool { isLoadingCatalog || isLoadingDetails }
+    var isLoading: Bool { elasticsearch?.isLoading == true || isLoadingCatalog || isLoadingDetails }
     var visibleResources: [MobileResource] {
         guard profile.driver == .elasticsearch, !search.isEmpty else { return catalog ?? [] }
         return CompletionLabelMatcher.matching(catalog ?? [], query: search, label: \.name)
     }
     init(profile: MobileConnectionProfile, password: String?, service: (any MobileResourceServicing)? = nil) {
         self.profile = profile; self.password = password
+        self.elasticsearch = profile.driver == .elasticsearch && service == nil ? MobileElasticsearchWorkspace(profile: profile, password: password) : nil
         self.service = service ?? MobileResourceService(profile: profile, password: password)
     }
     @discardableResult func load() -> Task<Void, Never>? {
+        if let elasticsearch { return elasticsearch.loadCatalog() }
         guard !isBackgrounded else { return nil }
         catalogTask?.cancel(); catalogID = UUID()
         let token = catalogID, service = service
@@ -149,6 +152,7 @@ import QueryCraftMobileCore
     }
     func previous() { guard !isLoadingDetails, let page = history.last else { return }; loadDetails(offset: page.0, cursor: page.1, direction: -1) }
     func refresh() {
+        if let elasticsearch { elasticsearch.refresh(); return }
         if isRedisConsolePresented { return }
         if let redisKeyAction { redisKeyAction.verify(); return }
         if let redisEditor { redisEditor.reload(); return }
@@ -157,7 +161,7 @@ import QueryCraftMobileCore
         else { load() }
     }
     func cancelDetails() { detailID = UUID(); detailTask?.cancel(); detailTask = nil; isLoadingDetails = false }
-    func cancel() { catalogID = UUID(); catalogTask?.cancel(); catalogTask = nil; isLoadingCatalog = false; cancelDetails() }
+    func cancel() { elasticsearch?.cancel(); catalogID = UUID(); catalogTask?.cancel(); catalogTask = nil; isLoadingCatalog = false; cancelDetails() }
     func beginRedisEditing(service: (any MobileRedisMutating)? = nil) {
         guard canEditRedis, !hasPendingChanges, let selected, let scope, let database = Int(scope) else { return }
         let editor = MobileRedisEditor(key: selected.name, database: database, service: service ?? MobileRedisMutationService(profile: profile, password: password))
@@ -229,6 +233,7 @@ import QueryCraftMobileCore
         }
     }
     func setBackgrounded(_ value: Bool) {
+        elasticsearch?.setBackgrounded(value)
         isBackgrounded = value; redisEditor?.setBackgrounded(value); redisKeyAction?.setBackgrounded(value); redisConsole?.setBackgrounded(value)
         if value { cancel() }
     }

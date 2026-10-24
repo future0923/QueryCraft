@@ -533,3 +533,80 @@ Mac 主程序编译成功（74.154 s），`.build/options-mac-build.json`。MySQ
 
 
 最终补验：手机 SQL／缓存／原生页面／结构状态 24/0/0（44.315 s，`.build/sql-session-phone-focused.json`）；iPad 新的结构过期响应检查所在状态套件 10/0/0（21.250 s，`.build/sql-cache-ipad-schema-final.json`）。SQL 写入确认后会取消此前尚未完成的结构读取，避免旧回复解除刷新要求；新加闸门用例已覆盖。所有最终结构化报告均无编译或测试诊断。两端实际可见窗口截图均已核对，完整 SQL、库名、提示及确认按钮可见。
+
+
+## Elasticsearch 完整移动业务链路 — 2026-10-24
+
+在 `codex/ios-ipad-editor` 独立 worktree 完成当前 Mac Elasticsearch 专用业务入口的迁移。直接共用实际 Mac 会话、PIT/search_after、筛选/排序、Mapping/Field Caps、文档编辑/字段暂存/粘贴、索引/设置/Alias/模板 worker、REST 解析/格式化/补全/结果转换。详细范围见 [ES 功能矩阵](ELASTICSEARCH_PARITY.md)。桌面通用多文稿恢复、自定义主题、多光标不在本轮 ES 专用范围；不将模拟器验证冒称真机验收。
+
+### 全量回归与共享源码
+
+- iPad Pro 13 M5 / iOS 26.3：自有 MySQL、PostgreSQL、Doris、Redis、Elasticsearch 五库完整回归 **647 passed / 0 failed / 1 skipped**，295.434 s，`.build/ios-validation/es-final-full-ipad.json`。
+- iPhone 17 Pro / iOS 26.3：同一五库完整回归 **647/0/1**，329.766 s，`.build/ios-validation/es-final-full-iphone.json`。
+- 上述完整运行后仅补齐 ES 全屏待提交入口、模板名称/索引模式同源搜索及 ES 原生呈现细节；最终两端 ES 专项与 arm64 结果另列于本节末尾。SQL/Redis 共享网格的 ES 参数默认 nil，原有协议实现未改。
+- Mac 完整主程序构建成功，211.363 s，`es-mac-build.json`；原 ES 功能测试 **163/0/0**，133.455 s，`es-mac-feature.json`。最后共享调整分别补验 REST/响应诊断 **26/0/0**、字段暂存 **15/0/0**、模板 **12/0/0**，报告 `es-final-mac-console.json`、`es-final-mac-cells.json`、`es-final-mac-templates.json`。后者同时构建最新 Mac 主程序。
+- 原 ES 驱动测试 **45/0/2**，175.488 s，`es-mac-driver-tests.json`。跳过的是原测试依赖固定地址的 live 环境；当前自有容器的真实 Mapping、文档与 PIT 用例另行通过。未冒称完成所有 ES 版本或 TLS/认证组合的实库测试。
+
+### 真实协议与稳定状态
+
+所有真实写入只发生于脚本创建、结束销毁的自有临时 Elasticsearch 8.18.0 容器。覆盖超过 10k 的 PIT 顺序分页和独立完整匹配导出（10,250 篇）、原始整数 9007199254740993、真实 index/id/routing、版本/seq_no/primary_term、409 冲突、Mapping 写入、索引创建/删除、设置、Alias 高级选项、模板 CRUD/模拟、Data Stream 与物理 backing index。字段暂存复用 Mac 类型转换和 CAS；后台中断后保留原快照重新校验。批量创建/删除顺序发送，保留已确认部分成功回执，失败停止后续；未知回执不能重复发送。
+
+状态/原生检查覆盖慢首次加载、成功为空与失败分离、刷新保留内容、取消/过期响应、快速对象切换、共享模糊匹配、HTTP/分片失败、后台重建连接、补全与工作区释放、不可变请求预览、默认安全锁、ACL 核实失败继续封锁、诊断 sourceID 防错位、REST 当前/选区/整篇与多结果。统一顶部刷新只派发当前对象/页签或最后读取请求，不重新执行编辑器的新写入。全屏继续使用同一编辑/待提交模型。
+
+16 MiB 是单响应传输预算，32 MiB 是 REST 批次保留响应预算，1 MiB 是文稿/历史条目/可编辑单篇文档预算；并非全进程硬内存上限。超限文档明确只读和预览身份；当前页导出排除未提交草稿；全部匹配数据使用独立会话/PIT，500 行分批并可取消。刷新保留旧快照时会暂时并存。桌面未指定预算的原值保持。
+
+### 外置驱动与六类兼容
+
+ES 驱动独立构建成功，25.244 s，`es-driver-build.json`；隔离本地打包并严格签名通过，包为 `elasticsearch-driver-1.0.1-x86_64-e5a2f9c9fe3030a3.zip`。本轮不变更发行身份、不上传该验证包；正式发版须重新分配身份并完成双架构门槛。
+
+使用最新主程序框架的真实 DatabaseDriverPackageInstaller / registry / session factory 从隔离 `.build/ios-support-desktop-drivers` 加载。报告 `.build/ios-validation/es-packaged-load.txt`、`es-final-packaged-load.log`：MySQL、PostgreSQL、Doris、Redis、Elasticsearch、Kafka 六类签名/API/实际 bundle 路径/会话工厂通过；新 ES 包真实 typed PIT 列类型、文档/routing/CAS 和 Mapping 更新通过，验证实际加载新版包而非旧映像。Driver API 保持 5。Kafka 无移动传输新增；本轮只验证桌面包兼容，没有 Kafka 实库功能或移动功能完成的声明。用户正在使用的 Dev 驱动安装未替换。
+
+### 原生呈现、失败修复与边界
+
+实际 UIHostingController / UIKit 原生明暗画面导出到 `.build/ios-driver-previews/es-*-ipad.png` 和 `es-*-iphone.png`，检查工作区、文档/确认、Mapping、设置、Alias、模板/模拟、索引、批量操作、REST 单/多结果与筛选。没有移动真实鼠标或模拟桌面键盘，亦未安装物理设备。
+
+早期真实测试发现并修复两个生命周期问题：关闭后的 URLSession 不能重新 connect；异步补全在所属工作区释放后访问 unowned owner。现在刷新只失效读取上下文，真正关闭时排空取消任务并在前台创建新 actor；异步任务只在执行期间保持 owner。失败运行保留于 progress 记录，未作为通过证据。额外修复后台字段校验持有旧会话的问题，补入真实恢复回归。已有依赖/Keychain 构建警告及 SQL fixture 的 “there is no transaction in progress” 不掩盖为无警告；最终验收不包含任何测试失败。
+
+实体验证仍有明确边界：真实触控、外接键盘/输入法、多版本服务器/TLS/认证、真实弱网和系统挂起/杀进程尚未实测；当前程序化生命周期/HTTP 故障测试不能替代它们。索引设置/Alias/模板的发送前基线复核不是 ES 提供的原子 CAS；索引删除也没有原子 UUID 条件。保留 Mac 的真实协议限制。
+
+
+最终源码补验：iPhone ES 专项 **79/0/1**（95.607 s，`.build/ios-validation/es-delivery-scoped-iphone.json`）；iPad ES 专项及原共享全屏回归 **83/0/1**（68.644 s，`es-delivery-scoped-ipad.json`）。覆盖最后的全屏待提交入口、同源模板名称/模式搜索、固定高度多结果栏和最新原生页面；两端相同的一个跳过项为依赖专用环境的旧 driver live 测试，真实自有 Mapping/PIT 用例通过。iPad 无编译/测试诊断；iPhone 增量编译有一条测试中 weak 局部变量的无害建议，无错误/失败。最新 arm64 编译 **SUCCEEDED**（32.953 s，`es-delivery-arm64.json`），无诊断，未据此声明真机安装或触控通过。最终新包加载再次通过全部六类工厂及新 ES 真实读取/写入；最新原生模板和全屏截图已检查。
+
+
+共享网格手机补验 **4/0/0**（16.376 s，`es-delivery-grid-iphone.json`），无诊断；最后 ES 可选 sheet/待提交入口保持原 SQL 全屏选中/列宽/滚动/输入隔离行为。自有临时五库/ES/package-load 容器均已清理，仅保留此前的 `querycraft-ios-schema-experience`。
+
+两台最新版模拟器应用均已按正常环境重启（iPad PID22181 / iPhone PID22180），无启动诊断；保留原连接库。没有提交、推送、tag、发布或真实设备安装。
+
+
+## PostgreSQL 查询编辑／结构／导入 — 2026-10-24（已完成）
+
+在原分支工作区 `codex/ios-ipad-editor` 继续，保留已完成 ES 改动。直接共用 Mac PG provider/descriptor、查询编辑物理来源/主键规则、新表草稿、表操作、目录转换和文件导入 parser/plan/transaction engine。当前能力范围见 [POSTGRESQL_PARITY.md](POSTGRESQL_PARITY.md)。所有真实写入只针对脚本新建、结束销毁的自有 PostgreSQL17 容器。
+
+已完成证据：
+
+- 初始 PG iPad 专项75/0/0（140.601s），扩展专项78/0/0（137.038s）；均为阶段性证据，最终缓存页身份和零字段表/原生预览身份修正需后续当前源码验收。
+- 五库完整 iPad694/0/1（397.236s，`.build/ios-validation/pg-final-full-ipad.json`）。一个跳过为此前 ES 依赖固定环境的旧 live 用例，当前自有 ES 实库测试通过。此运行包含跨页缓存修改/删除/1500行完整导出，晚于它的缓存旧页编辑器守卫/零字段表等由最后专项补验。
+- Mac 原共享导入/解析/查询编辑/新表/表操作58/0/0（151.872s，`pg-mac-shared3.json`）；共享缓存/删除呈现/检查器18/0/0（228.411s，`pg-mac-cache.json`），覆盖50000行后磁盘分页、删除压缩和原有检查器。PG 原驱动13/0/0（169.271s，`pg-mac-driver-tests2.json`）。现有 Keychain/依赖编译警告如报告记录；无最终测试错误。
+- PG 动态产品独立构建198.502s成功（`pg-driver-build.json`）。测试 scheme 自身构建测试模块，并不会更新 PackageFrameworks 的可分发动态产品；首个包实际加载检查因此发现旧二进制。只有等待动态产品构建完成、重新打包并重测的新包才能作为验收，不能用测试通过替代打包输入核对。
+
+真实协议检查包含：带点号/双引号/Unicode 的 Schema和表名、别名/重复投影/原始大整数主键/表达式/视图/关联/空结果，跨页缓存编辑/删除并保留1500行完整CSV导出，字段/索引/注释/IDENTITY/生成列事务、新表、序列重置/截断保留/重命名/清空/删除，失效结构基线、失败批次回滚、真实已提交但丢失回执与后台取消。文件导入使用完整原值，4MiB以上自动磁盘快照3001行、每行520个Unicode字符，服务器核对完整数量/长度；CSV NULL/空串/大整数/GENERATED ALWAYS identity覆盖与部分批次失败整批回滚。原 LibPQ COPY FROM 在真实事务中写入再回滚，Mac 表文件导入实际是 INSERT 批次，不将通用跨连接迁移工作台冒称为已移植。
+
+原生 UIHostingController/UIKit 测试呈现真实结构页、字段/索引表单、新表/确认、导入选项/映射/滚动确认、查询待提交与表操作；明暗截图保存为 `.build/ios-driver-previews/pg-parity-*-ipad|iphone.png`。不使用真实桌面鼠标或键盘模拟，不代表真机触控通过。
+
+共享缓存删除现在逐个读取 SQLite payload 到临时表压缩位置，保留原行ID/顺序，避免删除一行就物化整份结果。PG缓存页提交后保留同一磁盘结果，异步发布期间阻止换连接/新写入，旧页编辑器身份失效。默认值/计算值不伪造新服务器结果；需要服务器重算时明确刷新。活动SQL事务、未完成缓存、临时表/复杂来源编辑保留明确限制。原数据编辑按主键定位，与Mac一样不提供原字段值CAS；并发修改可能覆盖。
+
+导入异步读取保留旧容器和固定底部加载/错误；文件及选项冻结，选项变化/重读失败不能提交旧快照。所有批次同一事务，COMMIT回执不明保留全工作区写保护，只能明确核对后结束。原导入器无新增人为文件上限，磁盘快照/临时SQLite/运行时和文件解析仍有内存、磁盘开销，不宣称全进程硬内存上限。零字段表支持沿Mac提供的CREATE TABLE()计划，加载需确认对象实际存在。
+
+六类影响：PG外置驱动必须新产品独立构建/签名/真实加载；共享对象只增计算逻辑，不改公开存储布局和API5；MySQL原默认表单、选项、分别提交DDL与导入严格模式保留，五库全量回归核对；Doris仍只读，Redis/ES专用协议不进入PG计划；Kafka只验证现有包兼容，无移动传输新增。正式发行的新PG包需要与新host配套的最低主程序版本和双架构门槛，当前本地包不发布、不覆盖用户Dev。
+
+真实设备触控、外接键盘/IME全矩阵、真实弱网/系统挂起和跨版本PG/TLS/证书尚未实测。通用跨连接迁移、多文稿持久工作区及完整编辑器设置仍是独立范围；未用缩减协议结果或虚构来源替代功能。
+
+
+最终阶段新增证据：五库完整 iPhone **695/0/1**（299.480s，`.build/ios-validation/pg-final-full-iphone.json`）；iPad 当前源码 PG 专项 **80/0/0**（83.424s，`pg-delivery-ipad.json`），包括旧缓存页编辑器失效、零字段表、稳定文件预览身份、结构 SQL 与所有最后原生确认页。最新 arm64 **SUCCEEDED**（32.122s，`pg-delivery-arm64.json`），无诊断。
+
+新 PG 动态产品构建完成后再次打包/严格签名：`postgresql-driver-1.0.7-x86_64-850f7b8725f6b4f7.zip`。`.build/ios-validation/pg-packaged-load2.log` / `pg-packaged-load.txt` 验证真实 installer/registry 从隔离包加载、六类 bundle 路径/签名/API/会话工厂；新 PG 实际执行含点号/双引号/Unicode 的 Schema 与表、事务建表、原共享字段/主键索引元数据，以及9007199254740993插入/查询/真实来源，全部通过。第一次旧二进制包的失败不计入验收；新包没有覆盖用户 Dev 安装，也没有上传。只验证本机x86_64动态驱动包，不能冒称ARM64驱动包已验证。
+
+
+最终 iPhone 当前源码专项 **80/0/0**（41.799s，`.build/ios-validation/pg-delivery-iphone.json`），与 iPad 最新80项一致。最后新建表/表操作目标、导入滚动确认、查询待提交、结构 SQL 原生画面已检查，手机完整请求可滚动/选择/分享，默认安全锁保持。没有应用源码改动发生在最后两端80项及arm64通过之后。自有测试容器均已移除，仅保留之前已有的 querycraft-ios-schema-experience。最终文件检查仅含源码/测试/脚本/自有SQL夹具/文档，无构建包或凭据文件进入Git；主 checkout 仅保留原来的 AGENTS/规划修改。未提交、推送、tag、发布或安装物理设备。
+
+两台模拟器已正常启动当前版本：iPad PID97821、iPhone PID97822；启动报告 pg-delivery-launch-ipad.json / pg-delivery-launch-iphone.json 均 SUCCEEDED，无警告或错误。最终交付验证完成。

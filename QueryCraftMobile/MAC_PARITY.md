@@ -28,9 +28,19 @@
 | 选区／当前语句执行 | 原解析、范围定位、预检与批量能力保留 | 同源 resolver/preflight，UIKit 实际选区／IME 校验和异步修订防护；选区／整篇文稿多语句，写入经确认，多结果独立状态；公共刷新仅重读读取语句 |
 | 自定义 SQL 配色、完整编辑等 | 原行为保留 | 尚未移植完整设置；当前支持 MySQL 查询、写入、事务与浏览 |
 
-Kafka 的移动链路仍未移植。PostgreSQL 支持 SQL 写入/事务、查询磁盘缓存与表数据编辑，Redis 支持键/成员编辑、搜索、Stream 浏览与命令事务控制台，Doris、Elasticsearch 提供只读浏览；范围、源码共享方式和未移植能力见 README 的“新增驱动范围”。MySQL 原编辑和事务行为保留；MariaDB 原 `query` 路径仍不施加预览限制。桌面页面保留原入口和状态。
+Kafka 的移动链路仍未移植。PostgreSQL 支持 SQL 写入/事务、查询磁盘缓存与表数据编辑，Redis 支持键/成员编辑、搜索、Stream 浏览与命令事务控制台，Doris 提供只读浏览，Elasticsearch 当前完整专用链路见下方新节；范围、源码共享方式和未移植能力见 README 的“新增驱动范围”。MySQL 原编辑和事务行为保留；MariaDB 原 `query` 路径仍不施加预览限制。桌面页面保留原入口和状态。
 
 加载验证覆盖：慢首次打开、成功为空、失败重试、保留内容刷新、重复请求、快速换表/库、页签切换、下一页失败和取消。程序化截图只确认真实渲染，不替代真机触摸、拖列宽、键盘/IME、旋转或后台恢复验收。
+
+## PostgreSQL 当前整体范围（2026-10-24）
+
+在原 SQL 事务/磁盘缓存/基础表编辑上，接通来源明确的查询结果编辑与跨页缓存更新、共享图形字段/索引、新表、表操作及多格式文件导入。provider/descriptor、索引目录转换、事务 executor 和导入 parser/plan/engine 与 Mac 同源；物理 Schema 与表名不按显示名称猜测。完整矩阵见 [POSTGRESQL_PARITY.md](POSTGRESQL_PARITY.md)，最终实测证据见 VALIDATION 最新节。下方历史 PG「尚未移植」只代表当轮状态。
+
+## Elasticsearch 当前整体范围（2026-10-24）
+
+本轮按 Mac 的真实入口完成专用工作区：目录/统计/同源模糊搜索，PIT 深分页、筛选/排序和全部匹配导出，Mapping 字段编辑，文档完整/局部/CAS/跨行暂存/粘贴/批量删除，索引新建/删除/设置、Alias、索引模板/模拟，以及 REST 解析/格式化/端点与DSL补全/多结果/历史/诊断/任务读取。对应源码和验收矩阵见 [ELASTICSEARCH_PARITY.md](ELASTICSEARCH_PARITY.md)，预算、协议边界和原生入口见 README 当前节。下文历史“ES只读/未迁移”说明仅代表当轮状态。
+
+移动直接编译原 driver session 与 worker；Mac HTTP 默认预算和入口保留。共享 session 新增可选响应预算、真实 Mapping 列类型，并拒绝超时/失败分片；移动刷新调用同一读上下文重建，后台真正关闭后创建新会话。外置包须独立验证，Driver API 不变。
 
 ## Redis 当前整体范围（2026-10-23，覆盖下方历次增量记录）
 

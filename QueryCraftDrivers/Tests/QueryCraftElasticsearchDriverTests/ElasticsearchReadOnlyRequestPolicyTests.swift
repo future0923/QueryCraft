@@ -1,6 +1,13 @@
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 import QueryCraftFeature
+#endif
 import Testing
+#if !os(iOS)
 @testable import QueryCraftElasticsearchDriver
+#endif
 
 @Suite("Elasticsearch read-only request policy")
 struct ElasticsearchReadOnlyRequestPolicyTests {

@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 struct WorkspaceSQLPreviewStatement: Equatable, Sendable {
     let tokens: [WorkspaceSQLPreviewToken]
 

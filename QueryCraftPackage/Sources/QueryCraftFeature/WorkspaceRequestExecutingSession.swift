@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 public protocol WorkspaceRequestExecutingSession: WorkspaceSession {
     func executeRequest(
         _ request: WorkspaceRequest

@@ -32,7 +32,9 @@ final class MobileQueryModel {
     private(set) var writeOutcomeUncertain = false
     private var sqlWriteInFlight = false
     @ObservationIgnored private let sqlSession: MobileSQLSession?
-    var blocksOtherWrites: Bool { sqlSession != nil && (isLoading || transactionState == .inTransaction || writeOutcomeUncertain) }
+    private(set) var isPatchingCache = false
+    @ObservationIgnored private var cachePatchTask: Task<Void, Never>?
+    var blocksOtherWrites: Bool { isPatchingCache || sqlSession != nil && (isLoading || transactionState == .inTransaction || writeOutcomeUncertain) }
     var transactionTitle: String {
         if writeOutcomeUncertain { return "写入结果待核实" }
         switch transactionState { case .disconnected: return "未连接"; case .autoCommit: return "自动提交"; case .inTransaction: return "事务进行中" }
@@ -40,9 +42,9 @@ final class MobileQueryModel {
     var cachedRowCount: Int { displayed.cache == nil ? (result?.rows.count ?? 0) : displayed.cachedRowCount }
     var cacheOffset: Int { displayed.cacheOffset }
     var hasCachePages: Bool { displayed.cache != nil && displayed.cachedRowCount > (result?.rows.count ?? 0) }
-    var canPageCache: Bool { !isLoading && !isLoadingEditing && !hasPendingRowChanges && !requiresResultReload }
+    var canPageCache: Bool { !isPatchingCache && !isLoading && !isLoadingEditing && !hasPendingRowChanges && !requiresResultReload }
     var queryExportSnapshot: MobileDataExportSnapshot? {
-        guard let preview else { return nil }
+        guard !isPatchingCache, let preview else { return nil }
         var snapshot = MobileDataExportSnapshot(data: .init(preview: preview, details: columnDetails), name: "query-result",
             scopeDescription: displayed.cache == nil ? "当前查询结果" : "当前缓存页（最多 500 行）")
         if let cache = displayed.cache, displayed.cachedRowCount > 0, !requiresResultReload {
@@ -68,8 +70,12 @@ final class MobileQueryModel {
                 guard let self, self.requestID == identity, self.displayed === record else { return }
                 if direction < 0 { _ = record.previousCacheOffsets.popLast() } else { record.previousCacheOffsets.append(record.cacheOffset) }
                 record.preview = page; record.result = page.result; record.cacheOffset = offset
-                record.resultRevision = UUID(); record.editing = nil; record.editingPage = nil
+                record.resultRevision = UUID(); record.resultID = UUID(); record.editing = nil; record.editingPage = nil
                 self.isLoadingEditing = false
+                if record.cacheComplete, let configuration = record.lastExecutedConfiguration, configuration.driver == .postgresql,
+                   self.transactionState != .inTransaction, let sql = record.lastExecutedSQL, record.statement?.kind == .read {
+                    await self.prepareEditing(preview: page, configuration: configuration, sql: sql, requestID: identity, record: record)
+                }
             } catch {
                 guard let self, self.requestID == identity else { return }
                 self.isLoadingEditing = false; self.errorMessage = error.localizedDescription
@@ -93,7 +99,7 @@ final class MobileQueryModel {
     }
     func acknowledgeUncertainOutcome() { guard !isLoading else { return }; writeOutcomeUncertain = false; safetyLock.enable() }
     func clearQueryResults() {
-        guard !isLoading, !isLoadingEditing, !hasPendingRowChanges else { return }
+        guard !isPatchingCache, !isLoading, !isLoadingEditing, !hasPendingRowChanges else { return }
         requestID = UUID(); retrySQL = nil; statementResults = []; displayed = MobileQueryResultState()
         status = "查询结果已清空"; errorMessage = nil
     }
@@ -113,6 +119,7 @@ final class MobileQueryModel {
     }
     private(set) var statementResults: [MobileQueryResultState] = []
     @ObservationIgnored var didExecute: ((String, String, String?) -> Void)?
+    @ObservationIgnored var didApplyDataChanges: ((MobileDatabaseObject) -> Void)?
     @ObservationIgnored var didExecuteWrite: (() -> Void)?
     @ObservationIgnored private var activeBatch: [MobileQueryResultState] = []
     @ObservationIgnored private var activeStatementIndex: Int?
@@ -216,7 +223,7 @@ final class MobileQueryModel {
     var metadataProvider: any MobileSQLMetadataProviding { (metadataService as? any MobileSQLMetadataProviding) ?? MobileMySQLService() }
 
     private var hasPendingRowChanges: Bool { allResults.contains { $0.editing.map { $0.hasChanges || $0.isSubmitting } ?? false } }
-    var hasPendingChanges: Bool { hasPendingRowChanges || sqlWriteInFlight || transactionState == .inTransaction || writeOutcomeUncertain }
+    var hasPendingChanges: Bool { isPatchingCache || hasPendingRowChanges || sqlWriteInFlight || transactionState == .inTransaction || writeOutcomeUncertain }
     var displayData: MobileGridData {
         guard let editing, let editingPage else { return .init(preview: preview) }
         return editing.displayData(page: editingPage, details: columnDetails)
@@ -272,7 +279,7 @@ final class MobileQueryModel {
     }
 
     @discardableResult func selectResult(_ id: UUID) -> Bool {
-        guard !isLoading, !isLoadingEditing, !hasSubmittingChanges,
+        guard !isPatchingCache, !isLoading, !isLoadingEditing, !hasSubmittingChanges,
               let result = statementResults.first(where: { $0.id == id }) else { return false }
         displayed = result
         retrySQL = result.statement?.sql
@@ -282,7 +289,7 @@ final class MobileQueryModel {
     }
 
     private func startExecution(capturedSQL: String?, wholeDocument: Bool = false, approved: [SQLExecutionStatement]? = nil, transactionCommand: Bool = false) -> Task<Void, Never>? {
-        guard !isBackgrounded else { return nil }
+        guard !isBackgrounded, !isPatchingCache else { return nil }
         guard !hasPendingRowChanges, (capturedSQL != nil || canExecute), let configuration = editorConfiguration else {
             if hasPendingRowChanges { blockedByPendingChanges = true }; return nil
         }
@@ -439,7 +446,7 @@ final class MobileQueryModel {
             record.status = summary.columns.isEmpty ? "完成 · 影响 \(summary.affectedRows) 行" + (configuration.driver == .mysql ? " · 插入 ID \(summary.insertID)" : "") : "完成 · \(summary.rowCount) 行 · \(summary.columns.count) 列（磁盘缓存）"
             transactionState = state; status = record.status
             if let sql = record.lastExecutedSQL { didExecute?(sql, database, configuration.schemaName) }
-            if record.statement?.kind == .read, summary.rowCount <= 500, state != .inTransaction, !Task.isCancelled {
+            if record.statement?.kind == .read, (summary.rowCount <= 500 || configuration.driver == .postgresql), state != .inTransaction, !Task.isCancelled {
                 await prepareEditing(preview: page, configuration: configuration, sql: record.lastExecutedSQL ?? "", requestID: id, record: record)
             } else { record.editingMessage = "缓存结果保持只读；请在表数据页修改。事务内请通过 SQL 提交或回滚。" }
             if record.statement?.kind.requiresWriteAccess == true {
@@ -597,7 +604,12 @@ final class MobileQueryModel {
                 record.editingMessage = "只读结果：当前仅支持来源明确的单表查询编辑，关联或嵌套查询请在表数据页修改。"; return
             }
             let catalog = try await metadataService.objects(configuration: configuration, database: selection.databaseName, search: "", kind: .table)
-            guard !catalog.hasMore, let object = catalog.objects.first(where: { $0.kind == .table && $0.name == selection.objectName }) else {
+            let origin = preview.workspaceColumns.compactMap(\.origin).first
+            guard !catalog.hasMore, let object = catalog.objects.first(where: {
+                $0.kind == .table && (configuration.driver == .postgresql
+                    ? $0.name == origin?.tableName && $0.schemaName == origin?.schemaName
+                    : $0.name == selection.objectName)
+            }) else {
                 throw WorkspaceDatabaseDataCellEditError.tableRequired
             }
             try Task.checkCancellation()
@@ -609,8 +621,8 @@ final class MobileQueryModel {
             let changes = MobileTableChanges(object: object, metadata: columns, configuration: configuration,
                 safetyLock: safetyLock, service: mutationService, isQueryResult: true)
             changes.isContextCurrent = { [weak self] in
-                self?.resultID == identity && self?.lastExecutedConfiguration == configuration && self?.isLoading == false
-                    && self?.requiresResultReload == false && self?.isBackgrounded == false && self?.allowsDataMutation() == true
+                self?.resultID == identity && self?.lastExecutedConfiguration == configuration && self?.isLoading == false && self?.isLoadingEditing == false
+                    && self?.isPatchingCache == false && self?.requiresResultReload == false && self?.isBackgrounded == false && self?.allowsDataMutation() == true
                     && self?.blocksOtherWrites == false
             }
             changes.didApply = { [weak self] committed in self?.applyCommitted(committed, resultID: identity) }
@@ -629,19 +641,45 @@ final class MobileQueryModel {
         }
     }
 
+    func waitForCachePatch() async { await cachePatchTask?.value }
+
     private func applyCommitted(_ changes: WorkspaceDatabaseDataChangeSet, resultID: UUID) {
         guard self.resultID == resultID, let preview, let page = editingPage else { return }
+        didApplyDataChanges?(page.object)
+        if driver == .postgresql, let cache = displayed.cache {
+            let record = displayed, offset = record.cacheOffset
+            isPatchingCache = true; isLoadingEditing = true; record.requiresResultReload = true
+            cachePatchTask = Task { [self, cache, record] in
+                defer { isPatchingCache = false; isLoadingEditing = false; cachePatchTask = nil }
+                do {
+                    let patched = try await cache.apply(changes, preview: preview, offset: offset)
+                    guard displayed === record, record.resultID == resultID else { return }
+                    record.cachedRowCount = cache.store.rowCount; record.requiresResultReload = false
+                    record.cacheOffset = min(offset, max(0, record.cachedRowCount - 1))
+                    record.previousCacheOffsets = record.previousCacheOffsets.filter { $0 < record.cacheOffset }
+                    publishCommitted(changes, page: page, patched: patched)
+                } catch {
+                    record.requiresResultReload = true; record.editing?.requireSuccessfulReload()
+                    record.editingMessage = "修改已提交，本地缓存更新失败。请刷新结果，无需重新提交。\n" + error.localizedDescription
+                    record.resultRevision = UUID()
+                }
+            }
+            return
+        }
         displayed.cache = nil; displayed.cachedRowCount = 0
-        let patched = MobileQueryResultPatch.apply(changes, to: preview)
+        publishCommitted(changes, page: page, patched: MobileQueryResultPatch.apply(changes, to: preview))
+    }
+
+    private func publishCommitted(_ changes: WorkspaceDatabaseDataChangeSet, page: MobileTableSnapshot, patched: MobileSQLPreview) {
         self.preview = patched; result = patched.result; errorMessage = nil
         editingPage = .init(object: page.object, preview: patched, columns: page.columns, offset: 0,
             pageSize: page.pageSize, hasNextPage: page.hasNextPage, hasStableOrder: false)
         resultRevision = UUID()
-        status = "已保存 · \(patched.result.rows.count) 行 · 计算列与默认值可重新执行查询更新"
+        status = "已保存 · \(cachedRowCount) 行 · 计算列与默认值可重新执行查询更新"
         displayed.status = status; displayed.errorMessage = nil; displayed.phase = .completed
         for record in allResults where record !== displayed {
-            let sameTable = record.result?.workspaceColumns.contains { column in
-                column.origin?.tableName == page.object.name && column.origin?.databaseName == page.object.database
+            let sameTable = record.preview?.workspaceColumns.contains { column in
+                column.origin?.tableName == page.object.name && column.origin?.databaseName == page.object.database && column.origin?.schemaName == page.object.schemaName
             } == true
             if sameTable {
                 record.requiresResultReload = true; record.editing?.requireSuccessfulReload()

@@ -5,6 +5,7 @@ struct MobileTableActionMenu: View {
     let controller: MobileTableActionController
     let object: MobileDatabaseObject
     var body: some View {
+        if controller.onImport != nil { Button("导入数据…", systemImage: "square.and.arrow.down") { controller.onImport?(object) }.disabled(controller.blocksWrites) }
         ForEach(WorkspaceTableAction.allCases) { action in
             Button(action.title, role: action.isDestructive ? .destructive : nil) { controller.prepare(action, object: object) }
                 .disabled(controller.isSubmitting)
@@ -25,8 +26,9 @@ struct MobileTableActionView: View {
             Form {
                 Section {
                     LabeledContent("数据库", value: draft.object.database)
+                    if let schema = draft.object.schemaName { LabeledContent("Schema", value: schema) }
                     LabeledContent("表", value: draft.object.name)
-                } footer: { Text(draft.action.explanation(for: .mysql)) }
+                } footer: { Text(draft.action.explanation(for: draft.databaseType)) }
                 if draft.action == .rename || draft.action == .setAutoIncrement {
                     Section {
                         LabeledContent(draft.action == .rename ? "新表名" : "下一自增值") {
@@ -40,8 +42,8 @@ struct MobileTableActionView: View {
                 if draft.action == .setAutoIncrement || draft.action == .resetAutoIncrement {
                     Section {
                         HStack {
-                            LabeledContent("当前下一自增值") {
-                                Text(draft.info?.nextAutoIncrement ?? "—").font(.footnote.monospacedDigit()).lineLimit(1).textSelection(.enabled)
+                            LabeledContent(draft.databaseType == .postgresql ? "所属 serial / identity 序列" : "当前下一自增值") {
+                                Text(draft.databaseType == .postgresql ? (draft.info?.hasAutoIncrement == true ? "有（执行时重新解析）" : "—") : (draft.info?.nextAutoIncrement ?? "—")).font(.footnote.monospacedDigit()).lineLimit(1).textSelection(.enabled)
                             }
                             ProgressView().controlSize(.small).opacity(draft.isInspecting ? 1 : 0)
                         }

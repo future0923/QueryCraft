@@ -1,7 +1,14 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 import QueryCraftFeature
+#endif
 import Testing
+#if !os(iOS)
 @testable import QueryCraftElasticsearchDriver
+#endif
 
 @Suite("Elasticsearch mapping and filters")
 struct ElasticsearchMappingAndFilterTests {

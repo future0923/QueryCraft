@@ -27,6 +27,12 @@ struct MobileGridData: Sendable {
         metadata = columns.enumerated().map { .init(id: $0.offset, name: $0.element) }
     }
 
+    init(esColumns columns: [WorkspaceDatabaseDataColumn], rows: [WorkspaceDatabaseDataRow]) {
+        self.columns = columns.map(\.name); details = columns.map { $0.type ?? "" }; metadata = columns
+        cells = rows.map(\.values)
+        self.rows = rows.map { $0.values.map { value in if case .text(let text) = value { return text }; return nil } }
+    }
+
     func cell(row: Int, column: Int) -> WorkspaceDatabaseDataCell {
         guard rows.indices.contains(row) else { return .null }
         if cells.indices.contains(row), cells[row].indices.contains(column) { return cells[row][column] }

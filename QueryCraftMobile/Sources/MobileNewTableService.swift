@@ -3,10 +3,13 @@ import QueryCraftMobileCore
 import QueryCraftMobileTransport
 
 protocol MobileNewTableServicing: Sendable {
+    func serverVersion(configuration: MobileSQLConfiguration) async throws -> Int
     func choices(configuration: MobileSQLConfiguration) async throws -> WorkspaceDatabaseSchemaChoices
     func create(plan: WorkspaceDatabaseSchemaExecutionPlan, configuration: MobileSQLConfiguration,
                 authorize: @escaping @Sendable () async throws -> Void) async throws -> WorkspaceDatabaseObjectSelection
 }
+
+extension MobileNewTableServicing { func serverVersion(configuration: MobileSQLConfiguration) async throws -> Int { 0 } }
 
 enum MobileNewTableError: LocalizedError {
     case invalidDefinition, outcomeUnknown(String)

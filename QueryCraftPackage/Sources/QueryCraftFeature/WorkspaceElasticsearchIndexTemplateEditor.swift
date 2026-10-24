@@ -40,12 +40,7 @@ final class WorkspaceElasticsearchIndexTemplateEditor {
     var canDelete: Bool { !isBusy && baseline != nil && preparedDeletion != nil && !hasChanges }
     var visibleTemplates: [WorkspaceElasticsearchIndexTemplateSnapshot] {
         guard !searchText.isEmpty else { return templates }
-        return templates.filter {
-            CompletionLabelMatcher.match(label: $0.name, query: searchText) != nil
-                || $0.indexPatterns.contains {
-                    CompletionLabelMatcher.match(label: $0, query: searchText) != nil
-                }
-        }
+        return templates.filter { $0.matchesSearch(searchText) }
     }
 
     func load(

@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 public protocol WorkspaceSession: AnyObject, Sendable {
     func connect() async throws
     func isConnected() async -> Bool
@@ -293,6 +296,7 @@ public extension WorkspaceSession {
     }
 }
 
+#if !os(iOS)
 protocol WorkspaceSessionFactory: Sendable {
     func makeSession(
         configuration: DatabaseConnectionConfiguration
@@ -309,3 +313,5 @@ extension WorkspaceSessionFactory {
         nil
     }
 }
+
+#endif

@@ -1,6 +1,11 @@
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
 @testable import QueryCraftPostgreSQLDriver
+#endif
 
 struct PostgreSQLSchemaEditingProviderTests {
     private let provider = PostgreSQLSchemaEditingProvider(

@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 struct PostgreSQLSchemaEditingProvider: DatabaseSchemaEditingProvider {
     static let dialectIdentifier = "postgresql"
@@ -475,13 +479,7 @@ private enum PostgreSQLSchemaStatement {
     private static func tableIdentity(
         _ selection: WorkspaceDatabaseObjectSelection
     ) -> (schema: String, table: String) {
-        guard let separator = selection.objectName.firstIndex(of: ".") else {
-            return ("public", selection.objectName)
-        }
-        return (
-            String(selection.objectName[..<separator]),
-            String(selection.objectName[selection.objectName.index(after: separator)...])
-        )
+        (selection.object.schemaName ?? "public", selection.object.nameWithinSchema)
     }
 
     private static func statement(
@@ -538,6 +536,26 @@ private enum PostgreSQLSchemaEditingError: LocalizedError {
         switch self {
         case .generatedColumnAlterationUnavailable:
             "PostgreSQL 17 cannot directly change the storage or expression of an existing generated column."
+        }
+    }
+}
+
+
+/// Shared transactional execution order. Preparation runs under the same transaction
+/// so mobile can lock and verify the captured baseline before any DDL is sent.
+enum PostgreSQLSchemaExecutor {
+    static func apply(_ plan: WorkspaceDatabaseSchemaExecutionPlan,
+                      prepare: @Sendable () async throws -> Void = {},
+                      execute: @escaping @Sendable (String) async throws -> Void) async throws {
+        let transaction = plan.transactionMode == .transaction
+        if transaction { try await execute("BEGIN") }
+        do {
+            try await prepare()
+            for statement in plan.statements { try Task.checkCancellation(); try await execute(statement.sql) }
+            if transaction { try await execute("COMMIT") }
+        } catch {
+            if transaction { _ = try? await Task { try await execute("ROLLBACK") }.value }
+            throw error
         }
     }
 }

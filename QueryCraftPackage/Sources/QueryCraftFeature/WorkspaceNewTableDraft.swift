@@ -10,7 +10,7 @@ final class WorkspaceNewTableDraft: Identifiable {
     let id: UUID
     let databaseName: String
     let schemaName: String?
-    let schemaEditingDescriptor: WorkspaceDatabaseSchemaEditingDescriptor
+    private(set) var schemaEditingDescriptor: WorkspaceDatabaseSchemaEditingDescriptor
     var tableName = ""
     var editor: WorkspaceDatabaseSchemaEditorState
     var options = WorkspaceDatabaseTableOptions()
@@ -58,12 +58,14 @@ final class WorkspaceNewTableDraft: Identifiable {
     var mutation: WorkspaceDatabaseTableMutation {
         .create(
             databaseName: databaseName,
-            tableName: schemaName.map { "\($0).\(tableName)" } ?? tableName,
+            tableName: schemaName.map { WorkspaceDatabaseObject.postgreSQLName(schema: $0, table: tableName) } ?? tableName,
             columns: editor.columns,
             indexes: editor.indexes,
             options: options
         )
     }
+
+    func updateDescriptor(_ descriptor: WorkspaceDatabaseSchemaEditingDescriptor) { schemaEditingDescriptor = descriptor }
 
     var availableTabs: [WorkspaceDatabaseObjectDetailTab] {
         schemaEditingDescriptor == .unavailable

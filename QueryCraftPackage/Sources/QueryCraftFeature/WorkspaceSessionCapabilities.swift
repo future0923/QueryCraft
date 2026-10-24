@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 public struct WorkspaceSessionCapabilities: Equatable, Sendable {
     public enum ReadOnlyExecution: Equatable, Sendable {
         case serverEnforced

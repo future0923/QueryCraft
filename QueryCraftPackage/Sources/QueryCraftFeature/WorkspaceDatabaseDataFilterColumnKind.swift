@@ -68,7 +68,7 @@ public enum WorkspaceDatabaseDataFilterColumnKind: String, Hashable, Sendable {
         }
     }
 
-    init?(elasticsearchType: String, hasKeywordSubfield: Bool) {
+    public init?(elasticsearchType: String, hasKeywordSubfield: Bool) {
         switch elasticsearchType.lowercased() {
         case "keyword", "constant_keyword", "wildcard", "version":
             self = .elasticsearchKeyword

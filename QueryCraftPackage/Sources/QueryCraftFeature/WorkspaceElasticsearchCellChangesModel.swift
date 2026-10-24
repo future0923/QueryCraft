@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 import Observation
 
@@ -38,12 +41,13 @@ final class WorkspaceElasticsearchCellChangesModel {
     func stage(
         snapshot: WorkspaceDocumentSnapshot,
         edits: [String: WorkspaceDatabaseDataCell],
+        forceValidation: Bool = false,
         prepare: @escaping @MainActor @Sendable (WorkspaceDocumentPartialUpdateDraft) async throws
             -> WorkspacePreparedDocumentPartialUpdate
     ) throws {
         guard !isCommitting, !isBlocked else { throw WorkspaceDocumentEditingError.unavailable }
         let reference = snapshot.reference
-        if let entry = entries[reference], entry.edits == edits { return }
+        if !forceValidation, let entry = entries[reference], entry.edits == edits { return }
         let original = entries[reference]?.snapshot ?? snapshot
         guard !original.isTruncated,
               let sequenceNumber = original.sequenceNumber,

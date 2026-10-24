@@ -1,6 +1,11 @@
 import Foundation
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 struct WorkspaceDataImportParserTests {
     @Test("CSV preserves quoting, multiline values, NULL and empty strings")
@@ -152,7 +157,12 @@ struct WorkspaceDataImportParserTests {
 
     @Test("Excel handles compressed shared strings, sparse cells, dates and sheet selection")
     func excelFixture() throws {
-        let url = try #require(Bundle.module.url(forResource: "import-workbook", withExtension: "xlsx", subdirectory: "Fixtures"))
+        #if os(iOS)
+        let resourceBundle = Bundle(for: MobileImportFixtureMarker.self)
+        #else
+        let resourceBundle = Bundle.module
+        #endif
+        let url = try #require(resourceBundle.url(forResource: "import-workbook", withExtension: "xlsx", subdirectory: "Fixtures"))
         let data = try Data(contentsOf: url)
         var options = WorkspaceDataImportOptions(); options.format = .excel
         let file = try WorkspaceXLSXImporter.read(data, options: options)
@@ -217,3 +227,7 @@ private actor ImportRoundTripSource: WorkspaceDataExportRowSource {
     func nextBatch() -> [WorkspaceDatabaseDataRow]? { defer { rows = nil }; return rows }
     func finish() { rows = nil }
 }
+
+#if os(iOS)
+private final class MobileImportFixtureMarker: NSObject {}
+#endif

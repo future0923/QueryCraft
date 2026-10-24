@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
 struct WorkspaceElasticsearchIndexTemplateSnapshot: Equatable, Identifiable, Sendable {
@@ -9,6 +12,11 @@ struct WorkspaceElasticsearchIndexTemplateSnapshot: Equatable, Identifiable, Sen
     let isDataStream: Bool
 
     var id: String { name }
+
+    func matchesSearch(_ query: String) -> Bool {
+        query.isEmpty || CompletionLabelMatcher.match(label: name, query: query) != nil
+            || indexPatterns.contains { CompletionLabelMatcher.match(label: $0, query: query) != nil }
+    }
 }
 
 struct WorkspaceElasticsearchIndexTemplateInput: Equatable, Sendable {

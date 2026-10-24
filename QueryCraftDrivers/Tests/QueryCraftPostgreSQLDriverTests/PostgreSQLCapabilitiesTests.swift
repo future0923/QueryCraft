@@ -1,5 +1,10 @@
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftPostgreSQLDriver
+#endif
 
 struct PostgreSQLCapabilitiesTests {
     @Test func distinguishesPostgreSQL17DatabaseLocaleCatalog() {
