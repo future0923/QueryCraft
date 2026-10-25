@@ -213,6 +213,8 @@ prepare_release_app() {
             --output "$mcp_staging/QueryCraft MCP.app"
         python3 "$project_root/scripts/test-mcp-protocol.py" \
             "$mcp_staging/QueryCraft MCP.app/Contents/MacOS/querycraft-mcp"
+        python3 "$project_root/scripts/test-shell-scripts-mcp.py" \
+            "$mcp_staging/QueryCraft MCP.app/Contents/MacOS/querycraft-mcp"
         cp "$mcp_staging/"*.zip "$mcp_staging/"*.package.json "$output_directory/"
         local component_sign_tool
         component_sign_tool="$(find "$derived_data_root" -name sign_update -type f -perm -111 -print -quit)"

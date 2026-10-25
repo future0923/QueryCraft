@@ -81,6 +81,7 @@ actor MCPRuntime {
         guard policy.enabled else { return [] }
         return MCPToolCatalog.definitions.filter {
             guard !policy.disabledTools.contains($0.name) else { return false }
+            if MCPToolCatalog.shellTools.contains($0.name) { return true }
             if MCPToolCatalog.sshTools.contains($0.name) { return availableSSHTools.contains($0.name) }
             switch policy.tuning.discovery {
             case .both: return true
@@ -145,6 +146,7 @@ actor MCPRuntime {
         policy = try store.load()
         if tool.hasPrefix("ssh_") { await reconcileSSHConnections(); policy = try store.load() }
         try policy.authorize(tool: tool)
+        if MCPToolCatalog.shellTools.contains(tool) { return try callShellScript(tool, args: args, policy: policy) }
         if MCPToolCatalog.sshTools.contains(tool) { return try await callSSH(tool, args: args, policy: policy) }
         if tool == "runtime_info" { return runtimeInfo.value(ssh: sshTransport?.runtimeInfo) }
         if tool == "list_connections" {
@@ -162,7 +164,21 @@ actor MCPRuntime {
                 .object(["id": .string($0.rawValue), "name": .string($0.title), "tools": .array(MCPToolCatalog.driverTools($0).subtracting(policy.disabledTools).sorted().map(MCPJSONValue.string))])
             }
             if sshTransport != nil { plugins.append(.object(["id": "ssh", "name": "SSH", "runtime": sshTransport?.runtimeInfo?.value ?? .null, "tools": .array(availableSSHTools.subtracting(policy.disabledTools).sorted().map(MCPJSONValue.string))])) }
+            plugins.append(.object(["id": "shell", "name": "Saved Shell scripts", "tools": .array(MCPToolCatalog.shellTools.subtracting(policy.disabledTools).sorted().map(MCPJSONValue.string))]))
             return .array(plugins)
+        }
+        if ["plugin_tools", "plugin_call"].contains(tool), args.string("plugin_id") == "shell" {
+            let names = MCPToolCatalog.shellTools.subtracting(policy.disabledTools)
+            if tool == "plugin_tools" {
+                return .array(MCPToolCatalog.definitions.filter { names.contains($0.name) }.map {
+                    .object(["name": .string($0.name), "description": .string($0.description), "inputSchema": $0.tool.inputSchema])
+                })
+            }
+            let target = try args.requiredString("tool")
+            guard names.contains(target), let arguments = args["arguments"]?.objectValue else {
+                throw MCPFailure("Shell script tool is unavailable.", code: .accessDenied)
+            }
+            return try await dispatch("querycraft_" + target, arguments: arguments)
         }
         if ["plugin_tools", "plugin_call"].contains(tool), args.string("plugin_id") == "ssh" {
             guard sshTransport != nil else { throw MCPFailure("Install the SSH plugin first.", code: .unsupported) }

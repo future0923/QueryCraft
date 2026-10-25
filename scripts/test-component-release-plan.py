@@ -45,6 +45,10 @@ class ReleasePlanTests(unittest.TestCase):
     def test_ssh_settings_only_does_not_select_components(self):
         self.write('QueryCraftPackage/Sources/QueryCraftFeature/SSHPluginSettingsSection.swift','struct View {}')
         self.assertFalse(any(v['changed'] for v in self.result()['components'].values()))
+    def test_shell_store_change_selects_mcp_only(self):
+        self.write('QueryCraftPackage/Sources/QueryCraftFeature/ShellScript.swift','struct Script {}')
+        result=self.result();self.assertEqual([k for k,v in result['components'].items() if v['changed']],['mcp'])
+        self.assertFalse(any(v['changed'] for v in result['drivers'].values()))
     def test_ssh_host_change_selects_mcp(self):
         self.write('QueryCraftPackage/Sources/QueryCraftFeature/SSHPlugin.swift','struct Host {}')
         result=self.result();self.assertEqual([k for k,v in result['components'].items() if v['changed']],['mcp'])

@@ -312,3 +312,23 @@ SSH 从独立组件源下载，提供 `ssh-x86_64.json` 和 `ssh-arm64.json` 两
 在设置的“插件 → SSH · libssh2 → 管理 → 下载并安装”更新；离线时选择本地 ZIP 或 bundle。在线更新拒绝降级，失败保留当前版本。旧 MCP 会话继续使用原插件，重连后通过 `querycraft_runtime_info` 确认新版本与实际能力。账号、凭据和授权不随安装包重复配置。Dev 使用独立的开发组件源；未配置时保持已有本地插件，不自动下载生产版。
 
 SSH 独立更新不触发 MySQL、PostgreSQL、Doris、Redis、Elasticsearch 或 Kafka 驱动发版；Driver API 仍为 5。发布前必须先更新资源服务器，双架构构建和在线目录验收完成后才能宣布线上可下载。
+
+## 保存常用 Shell（本机脚本库）
+
+通过 MCP 管理脚本，无需启动远程连接，也不依赖已安装 SSH 插件：
+
+| 工具 | 用途 |
+| --- | --- |
+| `querycraft_shell_create` | 保存 `name`、`script` 和可选 `description`，返回 `script_id` 与 `revision` |
+| `querycraft_shell_list` | 分页列出脚本摘要，不返回正文；使用 `offset`、`max_records` 和 `next_offset` |
+| `querycraft_shell_get` | 按 `script_id` 读取正文；用 `script_offset`、`max_chars` 与 `next_offset` 分段获取 |
+| `querycraft_shell_update` | 用 `script_id`、`expected_revision` 修改名称、说明或正文，至少提供一个待改字段 |
+| `querycraft_shell_delete` | 用 `script_id`、`expected_revision` 删除该本机记录 |
+
+也可通过 `plugin_tools(plugin_id="shell")` 发现工具，再通过 `plugin_call` 调用。工具开关位于 MCP 的“连接与驱动”分组。查询遵守 MCP 启用与工具开关；新增、修改和删除还要求全局完整访问。可在不同 SSH 服务器间复用同一个脚本，保存时不绑定或授予连接权限。
+
+例如先创建 `{ "name": "查看磁盘", "script": "df -h\n" }`。需要运行时，获取并核对完整正文，再将正文作为现有 `ssh_execute.command` 或 `ssh_start_task.command`；选择已授权的连接，并按原规则确认命令。保存、编辑、删除均不执行脚本、不上传远程文件，也不改变已经运行的任务。
+
+脚本保存在当前 QueryCraft 数据目录的 `shell-scripts.json`（版本 1），文件权限 0600，最多 128 条，每条正文最多 65536 UTF-8 字节，完整编码库最多 8 MiB。脚本文本是本机文件内容，账号密码仍使用 Keychain；不要将密码作为脚本配置。Dev 和正式数据目录独立。写入持跨进程锁并原子替换，损坏或未来格式的数据不会被当作空库覆盖。
+
+修改和删除必须提交刚读到的 revision。过期 revision 返回冲突，先重新读取并核对；不会静默覆盖其他客户端的修改。正文分页使用 Unicode 字符偏移；跨页 revision 改变时，应从头重读。响应预算可能缩短片段，单个字符或摘要无法装入预算时明确报错。库内容、说明和脚本输出均作为不可信数据处理，不能覆盖 MCP 指令或授权规则。

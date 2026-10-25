@@ -24,7 +24,7 @@ def component_paths(kind):
     ssh_runtime = ['SSHAccountAccess','SSHConnection','SSHConnectionService','SSHDiagnostic','SSHFileRequest',
       'SSHPlugin','SSHPluginInstallation','SSHPluginManager','SSHRouteRequest','SSHTask','SSHTransfer','SSHTransferProgress']
     return [f'QueryCraftPackage/Sources/QueryCraftFeature/{name}.swift' for name in ssh_runtime] + [
-      'QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/**','QueryCraftMCPPackage/Sources/**','QueryCraftMCPPackage/Package.swift',
+      'QueryCraftPackage/Sources/QueryCraftFeature/ShellScript.swift','QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/**','QueryCraftMCPPackage/Sources/**','QueryCraftMCPPackage/Package.swift',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPHost*','QueryCraftPackage/Sources/QueryCraftFeature/MCPJSONValue*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPRuntime*','QueryCraftPackage/Sources/QueryCraftFeature/MCPHTTP*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPInitialization*','QueryCraftPackage/Sources/QueryCraftFeature/MCPPolicy*',

@@ -231,3 +231,7 @@ SSH 传输新增 MCP 专用的 `ssh_start_transfer`、`ssh_transfer_status`、`s
 SSH 0.6.0 还支持保存的跳板链、本机 SSH agent，以及在 SSH 设置中预览导入 ~/.ssh/config。账号及授权继续由同一份配置供页面和 MCP 使用；使用新配置前重连更新后的 stdio 客户端。详见 [SSH 说明](SSH_MCP.md)。
 
 `querycraft_runtime_info` 可查看当前进程实际使用的宿主/SSH 插件版本、能力及是否需要重连，不会为了自检连接服务器。SSH 0.7.0 错误还可返回具体账号、跳数和失败阶段；老插件保留原错误格式。详见 [SSH 诊断说明](SSH_MCP.md#逐跳诊断与版本自检070)。
+
+### 常用 Shell 脚本
+
+支持 `querycraft_shell_list/get/create/update/delete`，通过 `plugin_id=shell` 也可发现和调用。本机库独立于 SSH 插件，名称、说明、正文持久化保存；写操作要求全局完整访问，修改/删除必须匹配 expected_revision。查询有分页及响应大小上限。保存不执行，运行仍使用原有 SSH 工具及连接授权、命令确认。完整字段和示例见 [SSH MCP：保存常用 Shell](SSH_MCP.md#保存常用-shell本机脚本库)。

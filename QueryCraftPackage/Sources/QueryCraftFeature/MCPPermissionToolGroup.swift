@@ -22,7 +22,7 @@ enum MCPPermissionToolGroup: String, CaseIterable, Identifiable, Sendable {
             .schema: MCPToolCatalog.metadataTools.union(["execute_query", "execute_batch"]),
             .sessions: ["open_session", "close_session", "begin_transaction", "commit_transaction", "rollback_transaction"],
             .drivers: ["execute_redis_command", "execute_request", "peek_messages", "send_message", "consumer_groups"],
-            .connections: Set(["runtime_info", "list_connections", "add_connection", "duplicate_connection", "remove_connection", "plugin_list", "plugin_tools", "plugin_call"]).union(MCPToolCatalog.sshTools),
+            .connections: Set(["runtime_info", "list_connections", "add_connection", "duplicate_connection", "remove_connection", "plugin_list", "plugin_tools", "plugin_call"]).union(MCPToolCatalog.sshTools).union(MCPToolCatalog.shellTools),
             .desktop: ["open_table", "execute_and_show"]
         ]
         return names.mapValues { group in MCPToolCatalog.definitions.filter { group.contains($0.name) } }
