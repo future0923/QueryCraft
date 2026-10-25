@@ -1,6 +1,11 @@
 import Foundation
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 struct DataTransferRunnerTests {
     private func fixture(strategy: TransferStrategy = .append, failInsert: Int? = nil, failCommit: Bool = false, native: Bool = false, streaming: Bool = false) async throws -> (DataTransferPlan, DataTransferCatalog, TransferTestFactory) {

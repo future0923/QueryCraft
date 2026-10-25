@@ -14,6 +14,13 @@ struct MobileSQLEditor: UIViewRepresentable {
     var snippets: [SQLSnippetCompletionSource] = []
     var snippetContext: MobileSQLSnippetContext? = nil
     var formattingContext: MobileSQLFormattingContext? = nil
+    var preferences: MobileEditorPreferences = .shared
+    var highlightConnection: MobileSQLConfiguration? = nil
+    var effectiveHighlightContext: SQLHighlightContext {
+        var context = schema.context
+        if let highlightConnection, preferences.ansiQuoteConnections.contains(SQLHighlightContext.connectionKey(highlightConnection.sharedConfiguration)) { context.ansiQuotes = true }
+        return context
+    }
     var executeAll: (() -> Void)? = nil
     let execute: () -> Void
     @Environment(\.colorScheme) private var colorScheme
@@ -29,8 +36,9 @@ struct MobileSQLEditor: UIViewRepresentable {
         view.autocapitalizationType = .none; view.autocorrectionType = .no
         view.spellCheckingType = .no; view.smartQuotesType = .no; view.smartDashesType = .no
         view.smartInsertDeleteType = .no
-        view.textContainerInset = .init(top: 8, left: 6, bottom: 8, right: 6)
+        view.textContainerInset = .init(top: 8, left: 38, bottom: 8, right: 6)
         view.keyboardDismissMode = .onDrag
+        view.isFindInteractionEnabled = true
         view.accessibilityIdentifier = "sqlEditor"; view.accessibilityLabel = "SQL 编辑器"
         coordinator.attach(view)
         return view
@@ -58,6 +66,7 @@ struct MobileSQLEditor: UIViewRepresentable {
         private var token = UUID()
         private var applying = false
         private var mode = EditorColorMode.light
+        private var appearanceRevision = ""
         private var pendingEdit: SQLSourceEdit?
         private var publishedText = ""
         private var catalogRevision: UInt64 = 0
@@ -120,7 +129,12 @@ struct MobileSQLEditor: UIViewRepresentable {
         func update(_ view: MobileSQLTextView, mode: EditorColorMode) {
             parent.executionInput?.attach(view)
             parent.snippetContext?.attach(view)
-            let themeChanged = self.mode != mode
+            let preferences = parent.preferences
+            let appearance = String(describing: preferences.colors) + preferences.fontFamily + String(preferences.fontSize)
+            let themeChanged = self.mode != mode || appearanceRevision != appearance
+            appearanceRevision = appearance
+            view.indentationUnit = preferences.indentationUnit
+            view.completionKey = preferences.completionKey
             self.mode = mode
             let incoming = parent.text
             var changed = false
@@ -134,10 +148,14 @@ struct MobileSQLEditor: UIViewRepresentable {
             if !view.isFirstResponder, view.markedTextRange == nil {
                 view.selectedRange = clamped(parent.selection, length: (view.text as NSString).length)
             }
-            let metadataChanged = catalogRevision != parent.schema.snapshot.revision || context != parent.schema.context || snippetSources != parent.snippets
+            let highlightContext = parent.effectiveHighlightContext
+            let metadataChanged = catalogRevision != parent.schema.snapshot.revision || context != highlightContext || snippetSources != parent.snippets
             if snippetSources != parent.snippets { clearItems() }
             snippetSources = parent.snippets
-            catalogRevision = parent.schema.snapshot.revision; context = parent.schema.context
+            catalogRevision = parent.schema.snapshot.revision; context = parent.effectiveHighlightContext
+            // Surfaces and visible text must use the current appearance before
+            // asynchronous metadata/highlighting finishes on a first open.
+            if (changed || themeChanged), view.markedTextRange == nil { apply([], range: highlightRange(view), to: view) }
             if changed || parsed == nil || themeChanged || metadataChanged { schedule(view) }
             if view.isFirstResponder != parent.isFocused {
                 focusTask?.cancel()
@@ -163,9 +181,11 @@ struct MobileSQLEditor: UIViewRepresentable {
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard !applying, let view = textView as? MobileSQLTextView else { return }
             parent.selection = view.selectedRange
+            view.decorations.update(view)
             schedule(view)
         }
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            if let view = scrollView as? MobileSQLTextView { view.decorations.update(view) }
             popup?.setNeedsLayout()
             guard !applying, let view = scrollView as? MobileSQLTextView,
                   source.text.utf16.count > 16_384, view.markedTextRange == nil,
@@ -183,7 +203,7 @@ struct MobileSQLEditor: UIViewRepresentable {
         }
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
             guard !applying else { return true }
-            if text == "\n", textView.markedTextRange == nil, acceptSelected() { return false }
+            if text == "\n", EditorPreferenceRules.acceptsReturn(parent.preferences.completionKey), textView.markedTextRange == nil, acceptSelected() { return false }
             pendingEdit = .init(baseRevision: source.revision, replacedRange: .init(range), replacement: text)
             return true
         }
@@ -230,7 +250,7 @@ struct MobileSQLEditor: UIViewRepresentable {
                 parsed = Task { try await parser.parse(source, applying: edit) }
                 pendingEdit = nil
             }
-            let source = source, selection = view.selectedRange, token = token, context = parent.schema.context, range = highlightRange(view), snippets = parent.snippets
+            let source = source, selection = view.selectedRange, token = token, context = parent.effectiveHighlightContext, range = highlightRange(view), snippets = parent.snippets
             guard let parsed else { return }
             analysis = Task { [weak self, weak view] in
                 do {
@@ -404,7 +424,9 @@ struct MobileSQLEditor: UIViewRepresentable {
             let source = SQLSourceSnapshot(revision: .init(revision), text: view.text)
             let selection = view.selectedRange
             clearItems()
-            let edit = try await formatter.edit(for: request, source: source, selection: selection)
+            let options = parent.preferences.formattingOptions
+            let currentFormatter: any MobileSQLFormatting = formatter is MobileSQLFormatter ? MobileSQLFormatter(options: options) : formatter
+            let edit = try await currentFormatter.edit(for: request, source: source, selection: selection)
             try Task.checkCancellation()
             guard self.view === view, formattingRevision == revision, view.text == source.text,
                   view.selectedRange == selection, view.markedTextRange == nil else { throw SQLFormattingError.sourceChanged }
@@ -441,13 +463,15 @@ struct MobileSQLEditor: UIViewRepresentable {
 
         private func apply(_ highlights: [SQLSyntaxHighlight], range: NSRange, to view: UITextView) {
             guard view.markedTextRange == nil else { return }
-            let palette = EditorColorSettings()[mode]
-            let font = UIFont.monospacedSystemFont(ofSize: 15, weight: .regular)
+            let palette = parent.preferences.colors[mode]
+            let font = parent.preferences.font
             let selection = view.selectedRange, offset = view.contentOffset
             let undo = view.undoManager, registersUndo = view.undoManager?.isUndoRegistrationEnabled == true
             if registersUndo { undo?.disableUndoRegistration() }
             defer { if registersUndo { undo?.enableUndoRegistration() } }
             applying = true
+            view.backgroundColor = EditorHexColor.color(palette.hex(for: .background, mode: mode))
+            view.tintColor = EditorHexColor.color(palette.hex(for: .cursor, mode: mode))
             view.textStorage.beginEditing()
             view.textStorage.setAttributes([.font: font, .foregroundColor: EditorHexColor.color(palette.hex(for: .text, mode: mode))], range: range)
             for highlight in highlights where highlight.range.upperBound <= view.textStorage.length {
@@ -463,8 +487,25 @@ struct MobileSQLEditor: UIViewRepresentable {
                 if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) { selectedFont = .init(descriptor: descriptor, size: font.pointSize) }
                 view.textStorage.addAttributes([.font: selectedFont, .foregroundColor: EditorHexColor.color(palette.hex(for: role, mode: mode))], range: highlight.range.nsRange)
             }
+            // Explicitly retain the system color-emoji fallback for composed
+            // emoji runs. Monospaced font descriptors can otherwise leave a
+            // missing-glyph box after UIKit attribute replacement.
+            let emojiFontNames = ["AppleColorEmoji", "AppleColorEmojiUI", ".AppleColorEmojiUI"] + UIFont.familyNames.filter { $0.localizedCaseInsensitiveContains("emoji") }.flatMap { UIFont.fontNames(forFamilyName: $0) }
+            if let emojiFont = emojiFontNames.lazy.compactMap({ UIFont(name: $0, size: font.pointSize) }).first {
+                var cursor = range.location
+                for character in (view.text as NSString).substring(with: range) {
+                    let length = String(character).utf16.count
+                    if character.unicodeScalars.contains(where: { $0.properties.isEmojiPresentation || $0.value == 0xFE0F }) {
+                        view.textStorage.addAttribute(.font, value: emojiFont, range: NSRange(location: cursor, length: length))
+                    }
+                    cursor += length
+                }
+            }
             view.textStorage.endEditing(); view.selectedRange = selection; view.setContentOffset(offset, animated: false)
             view.typingAttributes = [.font: font, .foregroundColor: EditorHexColor.color(palette.hex(for: .text, mode: mode))]
+            if let editor = view as? MobileSQLTextView {
+                editor.decorations.isConfigured = true; editor.decorations.palette = palette; editor.decorations.mode = mode; editor.decorations.update(editor)
+            }
             applying = false
         }
 
@@ -476,6 +517,7 @@ struct MobileSQLEditor: UIViewRepresentable {
 }
 
 @MainActor final class MobileSQLTextView: UITextView {
+    let decorations = MobileEditorDecorations()
     var navigateSnippet: ((Int) -> Bool)?
     var endSnippet: (() -> Bool)?
     var hasSnippetSession = false
@@ -491,10 +533,13 @@ struct MobileSQLEditor: UIViewRepresentable {
     var executeDocument: (() -> Void)?
     var formatSQL: ((SQLFormattingRequest) async throws -> Bool)?
     var requestFormatting: (() -> Void)?
+    var indentationUnit = "    "
+    var completionKey = EditorCompletionKey.returnOrTab
     var hasCompletions = false
     var completionLayoutChanged: (() -> Void)?
     override func layoutSubviews() {
         super.layoutSubviews()
+        decorations.update(self)
         completionLayoutChanged?()
         updateSnippetDecorations()
     }
@@ -543,7 +588,7 @@ struct MobileSQLEditor: UIViewRepresentable {
     @objc private func complete() { requestCompletion?() }
     @objc private func runDocument() { if markedTextRange != nil { unmarkText() } else { executeDocument?() } }
     @objc private func run() { if markedTextRange != nil { unmarkText() } else { executeQuery?() } }
-    @objc private func tab() { if navigateSnippet?(1) != true, acceptCompletion?() != true { insertText("    ") } }
+    @objc private func tab() { if navigateSnippet?(1) != true { if !EditorPreferenceRules.acceptsTab(completionKey) || acceptCompletion?() != true { insertText(indentationUnit) } } }
     @objc private func backtab() { _ = navigateSnippet?(-1) }
     @objc private func escape() { if hasCompletions { dismissCompletion?() } else if endSnippet?() != true { resignFirstResponder() } }
     @objc private func selectPreviousCompletion() { moveCompletion?(-1) }

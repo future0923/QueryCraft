@@ -1,4 +1,4 @@
-public enum WorkspaceDatabaseDataFilterOperator: String, CaseIterable, Hashable, Sendable {
+public enum WorkspaceDatabaseDataFilterOperator: String, Codable, CaseIterable, Hashable, Sendable {
     case equal
     case notEqual
     case contains

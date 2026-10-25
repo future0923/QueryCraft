@@ -321,3 +321,15 @@ User-authorized complete PG-specific follow-up delivered in codex/ios-ipad-edito
 4. Complete: original multi-format parsers, frozen disk snapshot, mapping/plan and shared transactional importer; Files UI, stale preview/loading/cancel/background protections; actual COPY FROM protocol verification with rollback.
 5. Complete: five-fixture full iPad694/0/1 and phone695/0/1; latest PG two-device80/0/0 each. Mac shared58/0/0, cache18/0/0 and PG13/0/0; independent dynamic build198.502s, new signed850f7b8725f6b4f7 package and actual six-driver/live PG load; latest arm6432.122s. Native final captures inspected.
 6. Complete: current scope/validation/README/history/release-impact docs updated; owned fixtures cleaned. Normal iPad and iPhone simulator relaunches succeeded without diagnostics. No commit/push/tag/release or physical installation; no further planned PG-specific implementation work.
+
+
+## Mobile remaining workspace completion — 2026-10-25 (COMPLETE)
+
+Completed all four user-authorized areas after3e2a2df: Doris parity, persistent independent SQL documents, original generic migration engine and editor settings. Work remains on codex/ios-ipad-editor; Kafka is excluded from mobile work.
+
+1. Complete: traced actual Mac entry points and shared restoration/metadata/transfer/theme rules and models; preserved desktop UI/storage behavior.
+2. Complete: Doris original MariaDB backpressure stream/disk cache and true DDL/index metadata; no transaction/write support invented.
+3. Complete: independent documents/saved queries/SQL sessions/schema catalogs, exact close snapshots and protected atomic recovery without credentials/results/server transactions. Unresolved SQL markers persist; cross-document writes stay fenced until verification.
+4. Complete: original Mac catalog/planner/runner/manager/library and three driver sessions, native configuration/preview/folders/tasks/history/cancel/verification; six real transfer directions and complete data fidelity.
+5. Complete: shared editor/theme/archive/history/keys/format/indent/completion; native UIKit selection/IME/undo/find, visible line decorations and long-draft scrolling; fixed error/footer/confirmation presentation.
+6. Complete: both full five-fixture752/0/9, final80/0/0 each; Mac65/0/0 and driver5/0/0; changed three driver builds/signed packages/all-six real loading/liveDoris; final unsignedarm64; native captures/normal launches; fixture cleanup and docs. True-device/network/TLS and missing Simulator Emoji font limits are recorded explicitly. No commit/push/tag/release, installed Dev changes or user database operations.

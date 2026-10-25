@@ -296,7 +296,6 @@ public extension WorkspaceSession {
     }
 }
 
-#if !os(iOS)
 protocol WorkspaceSessionFactory: Sendable {
     func makeSession(
         configuration: DatabaseConnectionConfiguration
@@ -313,5 +312,3 @@ extension WorkspaceSessionFactory {
         nil
     }
 }
-
-#endif

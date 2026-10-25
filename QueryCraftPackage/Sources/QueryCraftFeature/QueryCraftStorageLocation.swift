@@ -13,8 +13,12 @@ enum QueryCraftStorageLocation {
     }
 
     private static var directoryName: String {
+        #if os(iOS)
+        return "QueryCraftMobile"
+        #else
         ["io.github.future0923.QueryCraft.Dev", "io.github.future0923.QueryCraft.MCP.Dev"].contains(Bundle.main.bundleIdentifier ?? "")
             ? "QueryCraftDev"
             : "QueryCraft"
+        #endif
     }
 }

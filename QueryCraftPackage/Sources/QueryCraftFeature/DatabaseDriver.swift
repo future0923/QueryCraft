@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 public protocol DatabaseDriver: Sendable {
     var databaseType: DatabaseType { get }

@@ -1,4 +1,4 @@
-public enum WorkspaceDatabaseDataFilterLogic: String, CaseIterable, Hashable, Sendable {
+public enum WorkspaceDatabaseDataFilterLogic: String, Codable, CaseIterable, Hashable, Sendable {
     case matchAll
     case matchAny
 }

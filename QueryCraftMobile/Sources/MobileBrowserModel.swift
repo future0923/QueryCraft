@@ -15,12 +15,14 @@ final class MobileBrowserModel {
     private(set) var schemas: [String]?
     private(set) var selectedSchema: String?
     @ObservationIgnored private var schemaWasExplicitlySelected = false
+    var supportsReadOnlyStructure: Bool { configuration.driver == .doris }
     var supportsSchemas: Bool { configuration.driver == .postgresql }
     private(set) var catalog: MobileObjectCatalog?
     private(set) var catalogKind: MobileDatabaseObject.Kind = .table
     private(set) var selectedObject: MobileDatabaseObject?
     private(set) var snapshot: MobileTableSnapshot?
     private(set) var columns: [MobileTableColumn]?
+    private(set) var readOnlyStructure: MobileReadOnlyStructure?
     private(set) var isLoadingCatalog = false
     private(set) var isLoadingTable = false
     private(set) var catalogError: String?
@@ -40,6 +42,8 @@ final class MobileBrowserModel {
     var visibleObjects: [MobileDatabaseObject] {
         MobileCatalogSearch.objects(objectsInSelectedSchema, matching: search)
     }
+    @ObservationIgnored var didRestoreSelection: ((MobileDatabaseObject) -> Void)?
+    @ObservationIgnored private var pendingRestoration: MobileBrowserRestoration?
     var tab: Tab = .data
     var pageSize = 100
     private(set) var sortColumn: String?
@@ -86,6 +90,7 @@ final class MobileBrowserModel {
                 let preferred = (configuration.database ?? (configuration.driver == .postgresql ? "postgres" : nil)).flatMap { databases.contains($0) ? $0 : nil }
                 if self.selectedDatabase == nil { self.selectDatabase(preferred ?? databases.first) }
                 else if let selected = self.selectedDatabase, !databases.contains(selected) { self.selectDatabase(nil) }
+                else if self.catalog == nil { self.loadObjects() }
             } catch {
                 guard let self, self.catalogID == id else { return }
                 self.isLoadingCatalog = false; self.catalogTask = nil
@@ -94,6 +99,24 @@ final class MobileBrowserModel {
         }
         catalogTask = task
         return task
+    }
+
+    func restore(_ state: MobileBrowserRestoration) {
+        guard databases == nil else { return }
+        restoreDatabaseContext(database: state.database ?? "", schema: state.schema)
+        catalogKind = state.kind; pendingRestoration = state
+        schemaWasExplicitlySelected = state.schemaWasExplicitlySelected ?? (state.schema != nil)
+    }
+    var restoration: MobileBrowserRestoration {
+        .init(database: selectedDatabase, schema: selectedSchema, kind: catalogKind, object: selectedObject,
+            section: tab.rawValue, search: search, pageSize: pageSize, offset: snapshot?.offset ?? 0,
+            sortColumn: sortColumn, ascending: ascending, filter: dataFilter, schemaWasExplicitlySelected: schemaWasExplicitlySelected)
+    }
+
+    func restoreDatabaseContext(database: String, schema: String?) {
+        guard databases == nil else { return }
+        selectedDatabase = database.isEmpty ? nil : database
+        selectedSchema = schema; schemaWasExplicitlySelected = true
     }
 
     func selectDatabase(_ name: String?) {
@@ -105,7 +128,7 @@ final class MobileBrowserModel {
         revision = UUID()
         contextID = UUID()
         selectedDatabase = name; schemaWasExplicitlySelected = false; schemas = nil; selectedSchema = configuration.schemaName; catalog = nil; search = ""; catalogError = nil
-        selectedObject = nil; snapshot = nil; columns = nil; tableError = nil
+        selectedObject = nil; snapshot = nil; columns = nil; readOnlyStructure = nil; tableError = nil
         sortColumn = nil; dataFilter = .empty
         if name != nil { loadObjects() }
     }
@@ -114,7 +137,7 @@ final class MobileBrowserModel {
         guard allowsDatabaseChange() else { return }
         schemaWasExplicitlySelected = true
         guard name != selectedSchema else { return }
-        cancelAll(); selectedSchema = name; selectedObject = nil; snapshot = nil; columns = nil
+        cancelAll(); selectedSchema = name; selectedObject = nil; snapshot = nil; columns = nil; readOnlyStructure = nil
         sortColumn = nil; dataFilter = .empty; tableError = nil; search = ""
         revision = UUID(); contextID = UUID()
         if catalog == nil { loadObjects() }
@@ -125,7 +148,7 @@ final class MobileBrowserModel {
         cancelAll()
         contextID = UUID()
         catalogKind = kind; catalog = nil; search = ""; catalogError = nil
-        selectedObject = nil; snapshot = nil; columns = nil; tableError = nil; sortColumn = nil
+        selectedObject = nil; snapshot = nil; columns = nil; readOnlyStructure = nil; tableError = nil; sortColumn = nil
         revision = UUID()
         dataFilter = .empty
         loadObjects()
@@ -153,13 +176,25 @@ final class MobileBrowserModel {
                         ?? (schemas.contains("public") ? "public" : schemas.first)
                 }
                 self.catalog = catalog
+                if let state = self.pendingRestoration {
+                    self.pendingRestoration = nil
+                    self.search = state.search
+                    if let saved = state.object, let object = catalog.objects.first(where: { $0.id == saved.id }) {
+                        self.selectedObject = object
+                        self.tab = Tab(rawValue: state.section) ?? .data
+                        self.pageSize = min(500, max(1, state.pageSize))
+                        self.sortColumn = state.sortColumn; self.ascending = state.ascending; self.dataFilter = state.filter
+                        self.didRestoreSelection?(object)
+                        self.loadTable(offset: min(max(0, state.offset), Int.max - 500))
+                    }
+                }
                 self.isLoadingCatalog = false; self.catalogTask = nil
                 // Search filters only presentation; refresh always checks the complete catalog.
                 if !catalog.hasMore, let object = self.selectedObject,
                    !catalog.objects.contains(where: { $0.id == object.id }) {
                     self.cancelTable()
                     self.revision = UUID()
-                    self.selectedObject = nil; self.snapshot = nil; self.columns = nil
+                    self.selectedObject = nil; self.snapshot = nil; self.columns = nil; self.readOnlyStructure = nil
                 }
             } catch {
                 guard let self, self.catalogID == id else { return }
@@ -178,7 +213,7 @@ final class MobileBrowserModel {
         if selectedObject?.id != object.id {
             cancelTable()
             revision = UUID()
-            selectedObject = object; snapshot = nil; columns = nil
+            selectedObject = object; snapshot = nil; columns = nil; readOnlyStructure = nil
             tableError = nil; sortColumn = nil; ascending = true; tab = .data
             dataFilter = .empty
         } else if snapshot != nil && columns != nil { return nil }
@@ -209,6 +244,10 @@ final class MobileBrowserModel {
                 else { columns = try await service.columns(configuration: configuration, object: object) }
                 fetchedColumns = columns
                 try Task.checkCancellation()
+                let structure: MobileReadOnlyStructure?
+                if tab == .structure, let doris = service as? MobileDorisService {
+                    structure = try await doris.structure(configuration: configuration, object: object)
+                } else { structure = nil }
                 let page: MobileTableSnapshot?
                 if tab == .data {
                     page = try await service.page(configuration: configuration, object: object, columns: columns,
@@ -217,6 +256,7 @@ final class MobileBrowserModel {
                 try Task.checkCancellation()
                 guard let self, self.tableID == id, self.selectedObject?.id == object.id else { return }
                 self.columns = columns
+                if tab == .structure { self.readOnlyStructure = structure }
                 self.revision = UUID()
                 if var page {
                     page.filter = filter; page.sortColumn = sort; page.ascending = ascending; self.snapshot = page
@@ -279,7 +319,7 @@ final class MobileBrowserModel {
             changesByObject.removeValue(forKey: object.id)
             if affected {
                 selectedObject = statement.resultingSelection.map { .init(database: $0.databaseName, name: object.schemaName == nil ? $0.objectName : $0.object.nameWithinSchema, kind: .table, comment: object.comment, schemaName: object.schemaName == nil ? nil : $0.object.schemaName) }
-                snapshot = nil; columns = nil; dataFilter = .empty; sortColumn = nil
+                snapshot = nil; columns = nil; readOnlyStructure = nil; dataFilter = .empty; sortColumn = nil
             }
         } else if affected { currentChanges?.requireSuccessfulReload() }
         if affected { tableError = nil; revision = UUID() }
@@ -322,7 +362,7 @@ final class MobileBrowserModel {
     func schemaDidChange(_ object: MobileDatabaseObject) {
         changesByObject[object.id]?.requireSuccessfulReload()
         guard selectedObject?.editingSelection == object.editingSelection else { return }
-        cancelTable(); columns = nil; dataFilter = .empty; sortColumn = nil; revision = UUID()
+        cancelTable(); columns = nil; readOnlyStructure = nil; dataFilter = .empty; sortColumn = nil; revision = UUID()
         tableError = "结构已变化，使用顶部刷新读取最新数据。"
     }
 

@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
 /// COPY text / LOCAL TSV share the same escaped byte framing. Binary fields use

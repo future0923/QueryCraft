@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
 
 actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding, WorkspaceNativeBulkTransferSession, WorkspaceNativeCopySourceSession, WorkspaceNativeRowSourceSession {
     private struct ObjectIdentity: Sendable {
@@ -21,7 +25,9 @@ actor PostgreSQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewPr
     }
 
     func connect() async throws {
+        #if !os(iOS)
         try await LicenseAccessGate.shared.requireDatabaseAccess()
+        #endif
         if await client?.isConnected() == true { return }
 
         let newClient = LibPQClient(configuration: configuration)

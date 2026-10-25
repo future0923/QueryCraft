@@ -341,12 +341,7 @@ final class WorkspaceSQLLanguageService: HighlightProviding, @preconcurrency Tex
         let preferences = ApplicationPreferences.shared
         let options = SQLFormattingOptions(
             keywordCase: preferences.sqlKeywordCase,
-            indentationUnit: preferences.editorIndentationStyle == .spaces
-                ? String(
-                    repeating: " ",
-                    count: preferences.editorIndentationWidth
-                )
-                : "\t"
+            indentationUnit: EditorPreferenceRules.indentationUnit(style: preferences.editorIndentationStyle, width: preferences.editorIndentationWidth)
         )
         let edit = try await formattingWorker.formattingEdit(
             for: request,

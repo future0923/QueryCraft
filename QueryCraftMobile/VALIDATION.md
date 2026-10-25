@@ -1,5 +1,33 @@
 # iOS / iPadOS 验证记录
 
+## 剩余工作区整体验收（2026-10-25，完成）
+
+本轮完成 Doris、持久多 SQL 文稿、通用迁移和编辑器设置，以3e2a2df为基线；功能矩阵见 [WORKSPACE_PARITY.md](WORKSPACE_PARITY.md)。属于模拟器交付，Kafka继续排除移动移植。2026-10-25 用户授权将本轮功能和验证记录提交至 `codex/ios-ipad-editor`；不推送、打 tag 或发布。
+
+| 验证 | 最终结果（成功/失败/跳过） | 证据（`.build/ios-validation/`） |
+| --- | --- | --- |
+| iPad五库完整回归 | 752/0/9，322.023s | `workspace-full-ipad.json` |
+| iPhone五库完整回归 | 752/0/9，275.267s | `workspace-full-iphone.json` |
+| 最新iPad工作区/编辑器/安全专项 | 80/0/0，69.403s | `workspace-final-ipad.json` |
+| 最新iPhone工作区/编辑器/安全专项 | 80/0/0，53.209s | `workspace-final-iphone.json` |
+| Mac共享逻辑/主工程测试构建 | 65/0/0，287.794s | `workspace-mac-final.json` |
+| 独立Doris驱动回归 | 5/0/0，27.684s | `workspace-doris-tests-final.json` |
+| 最新iPhoneOS arm64编译/链接 | 通过，33.001s，unsigned | `workspace-arm64-final.json` |
+
+完整回归使用自有隔离 MySQL8.4、PG17、Doris4.1.3、ES8.18和本地临时Redis。每端9个跳过项中，迁移3个函数、文稿/凭据/切库4个函数及原生迁移入口1项需要另一个专用数据夹具，已在每端80项专项全部执行；另1项是原ES双端口服务器测试（QUERYCRAFT_ES_LIVE_TESTS，19280/19290），本轮未启用。原生ES8.18真实写入/Mapping/REST等既有路径在完整回归执行。两端完整回归各有1条夹具回滚提示 `there is no transaction in progress`，无测试失败；Mac保留既存Keychain废弃、测试及Swift Collections依赖扫描提示。
+
+最终专项包含完整原迁移SQL/runner/library/bulk及实际原生入口。MySQL/PG各1001行长值、NULL/空字符串、原二进制和超2^53主键；Doris迁移源2行，Doris查询另验10k流式缓存/分页/导出。六个迁移方向、COPY/LOCAL INFILE、Upsert/覆盖及取消回滚均实连。文稿保存/重启恢复、损坏保留/备份导出、落盘失败禁止丢弃、历史打开新文稿、独立SQL事务和PG数据库/Schema列表、迟到响应/失败保留/重试、凭据队列和任务草稿均验证。最后补充跨文稿未知写入保护：另一篇文稿仍可读取和回滚，写SQL/提交/结果编辑须先核实。此增量及最终行号/错误栏样式由最新80项覆盖；完整回归保留其实际源码阶段，不将早期失败计为通过。
+
+MySQL、PG、Doris独立构建通过（199.354/20.818/44.441s），分别见 `workspace-driver-*.json`。新本地ad-hoc签名包hash：MySQL `502c895d51974ba5`、PG `894c4daa80fc32e1`、Doris `58451f7d6121bedd`，位于 `.build/ios-support-desktop-drivers/`。真实installer/registry核对六类包签名/API/实际bundle路径和session工厂；新Doris包实连10k多批流、7行上限、注释/SHOW CREATE/真实索引目录通过（`workspace-packaged-load.txt`）。没有覆盖用户Dev安装。Intel包不是双架构发布验收，正式身份/最低host版本门槛见 [pending记录](../docs/releases/pending-ios-ipad-workspace.md)。
+
+两端原生UIHostingController挂载并查看文稿、深色SQL编辑器、主题设置、迁移配置/长错误/底部确认及任务库，截图 `.build/ios-driver-previews/workspace-*.png`。可见行号/当前行/选区不切换TextKit模式；长文稿滚动、高亮、源文/光标保持、原生Tab/Return/IME及主题即时应用验证通过。迁移错误区域预留固定尺寸；确认按钮位于安全区底部。过程中修复了长文稿滚动与PG历史Schema回归，保留原断言重跑。
+
+已确认本机iOS26.3 Simulator缺失 `Fonts/Core/AppleColorEmoji.ttc`，日志明确回退LastResort；原生SQL与普通系统UILabel对照均缺字（`workspace-editor-font-runtime-iphone.png`）。SQL Unicode原文、UTF16选区、字体属性和实库迁移值均通过；未改写系统运行时或用替代字符改SQL，未声称Emoji像素验收通过。
+
+边界：系统查找匹配颜色由UIKit绘制，主题交换仍保留对应值；Mac CodeEdit控件/多光标不复刻。物理设备检查时均离线，未安装；真实触控、完整硬件键盘/IME、真实弱网/系统挂起及更广服务器/TLS/证书矩阵仍待验收。原有协议/权限限制保持。所有自有夹具退出清理；两端最新版无PROOF环境正常启动通过，见 `workspace-normal-*.json`。未操作真实桌面鼠标/键盘或用户数据库。
+
+复现：`python3 scripts/test-ios-driver-support.py <simulator> --full`；`python3 scripts/test-ios-workspace.py <iPad simulator> <iPhone simulator>`。脚本不拉镜像、只使用loopback自有夹具，Doris就绪检查实际tablet分配，finally清理本次资源。
+
 ## Redis 整体验收（2026-10-23，当前范围）
 
 本轮按完整 Redis iPhone/iPad 功能链路验收，当前范围以 README / MAC_PARITY 最新节为准；下方逐轮记录保留当时的限制，不代表当前缺失。

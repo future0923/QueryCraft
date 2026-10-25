@@ -1,6 +1,6 @@
 import Foundation
 
-public enum WorkspaceDatabaseDataFilterColumnKind: String, Hashable, Sendable {
+public enum WorkspaceDatabaseDataFilterColumnKind: String, Hashable, Codable, Sendable {
     case text
     case number
     case date

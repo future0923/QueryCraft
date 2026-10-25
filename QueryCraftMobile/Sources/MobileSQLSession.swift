@@ -106,6 +106,7 @@ actor MobileSQLSession {
     init(makeConnection: @escaping @Sendable (MobileSQLConfiguration) throws -> any MobileSQLSessionConnection = { configuration in
         switch configuration.driver {
         case .mysql: return MobileMySQLSessionConnection(configuration: configuration)
+        case .doris: return MobileDorisSessionConnection(configuration: configuration)
         case .postgresql: return MobilePostgreSQLSessionConnection(configuration: configuration)
         default: throw MobileQueryError.readOnlySQLRequired
         }
@@ -135,6 +136,15 @@ actor MobileSQLSession {
         busy = true
         defer { busy = false }
         guard !statements.isEmpty, statements.count <= MobileQueryBatchLimits.maximumStatements else { throw MobileQueryBatchError.tooManyStatements }
+        // Validate Doris before opening any wire session: it has no MySQL
+        // transaction guard, and must never send a write or transaction command.
+        if configuration.driver == .doris {
+            try MobileQueryBatchLimits.validate(statements)
+            for statement in statements {
+                try MobileSQLReadPolicy.validate(statement.sql, backslashEscapes: true)
+                try MobileSQLReadPolicy.validate(statement.sql, backslashEscapes: false)
+            }
+        }
         var sentKind: SQLStatementKind?
         let budget = MobileSQLCacheBudget()
         do {
@@ -158,7 +168,7 @@ actor MobileSQLSession {
                 guard !closing, self.generation == generation else { throw CancellationError() }
                 try await receive(.started(statement.index))
                 let cache = try MobileCachedQueryResult(budget: budget)
-                let guardedRead = statement.kind == .read && state == .autoCommit
+                let guardedRead = configuration.driver != .doris && statement.kind == .read && state == .autoCommit
                 if guardedRead { try await client.query("START TRANSACTION READ ONLY") }
                 try await authorize(statement.kind)
                 try Task.checkCancellation()

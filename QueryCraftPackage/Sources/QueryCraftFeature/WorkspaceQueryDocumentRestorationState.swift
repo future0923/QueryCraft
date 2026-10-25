@@ -25,3 +25,11 @@ struct WorkspaceQueryDocumentRestorationState:
         self.resultRowLimit = resultRowLimit
     }
 }
+
+
+enum WorkspaceQuerySchemaSelection {
+    static func resolved(current: String?, schemas: [String]) -> String? {
+        if let current, schemas.contains(current) { return current }
+        return schemas.contains("public") ? "public" : schemas.first
+    }
+}

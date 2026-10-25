@@ -32,6 +32,8 @@ targets:
     platform: iOS
     sources:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/DatabaseConnectionAuthentication.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DatabaseConnectionConfiguration.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DatabaseProduct.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyDetails.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyValueSnapshot.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisCommandInvocation.swift
@@ -60,6 +62,7 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/AppCopy.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseObjectKind.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/DatabaseType.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DatabaseTypeName.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseObjectSelection.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseObject.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseColumn.swift
@@ -129,6 +132,37 @@ targets:
     sources:
       - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchFilterTranslator.swift
       - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchWorkspaceSession.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/SavedQuery.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RecoverableDraft.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryDocumentRestorationState.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryDocumentCloseSnapshot.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/QueryResultRowLimit.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorCompletionKey.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorIndentationStyle.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorThemeArchive.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorColorChangeHistory.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorPreferenceRules.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSQLObjectOverview.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DatabaseDriver.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceNativeTransferCapabilities.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/UnavailableDatabaseWorkspaceSession.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DataTransferConfiguration.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DataTransferCatalog.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DataTransferPlanner.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DataTransferRunner.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DataTransferManager.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/DataTransferLibrary.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/TransferTaskTreeRows.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/TransferObjectSelection.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/TransferSQL.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/TransferBulkEncoder.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/TransferBulkStaging.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/QueryCraftStorageLocation.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMySQLDriver/MySQLWorkspaceSession.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMySQLDriver/MySQLConnectionConfiguration.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftDorisDriver/DorisWorkspaceSession.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftDorisDriver/DorisConnectionConfiguration.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftPostgreSQLDriver/PostgreSQLWorkspaceSession.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/ElasticsearchConsoleParser.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/ElasticsearchConsoleResponseConverter.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/ElasticsearchJSONWhitespaceFormatter.swift
@@ -229,6 +263,7 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceReadOnlyQueryValidator.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLExecutionPolicy.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryResultEditing.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryResultColumnMetadata.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSafetyLock.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceTableAction.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDatabaseIndex.swift
@@ -341,6 +376,10 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/DataTransferSQLTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/DataTransferRunnerTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/DataTransferLibraryTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/TransferBulkEncoderTests.swift
       - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchURLProtocolStub.swift
       - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchPaginationTests.swift
       - ../QueryCraftDrivers/Tests/QueryCraftElasticsearchDriverTests/ElasticsearchMappingAndFilterTests.swift

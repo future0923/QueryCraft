@@ -1,6 +1,11 @@
 import Foundation
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 func consumeNativeStream(_ stream: WorkspaceNativeBulkStream, readSize: Int = 7) async throws -> Data {
     try await withCheckedThrowingContinuation { continuation in

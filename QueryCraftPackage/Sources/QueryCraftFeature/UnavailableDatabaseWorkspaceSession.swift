@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 actor UnavailableDatabaseWorkspaceSession: WorkspaceSession {
     private let error: any Error
 

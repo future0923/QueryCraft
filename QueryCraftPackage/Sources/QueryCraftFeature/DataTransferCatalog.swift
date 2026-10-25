@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
 struct TransferConnection: Sendable {

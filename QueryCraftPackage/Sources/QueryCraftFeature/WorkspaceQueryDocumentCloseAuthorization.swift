@@ -1,10 +1,5 @@
 import Foundation
 
-struct WorkspaceQueryDocumentCloseSnapshot: Equatable, Sendable {
-    let sql: String
-    let databaseName: String?
-}
-
 enum WorkspaceQueryDocumentCloseAuthorization: Equatable, Sendable {
     case preservingChanges
     case discardingChanges(WorkspaceQueryDocumentCloseSnapshot)

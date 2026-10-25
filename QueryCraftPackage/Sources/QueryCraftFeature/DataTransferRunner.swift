@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
 enum TransferRunStatus: String, Codable, Sendable {
@@ -38,6 +41,7 @@ struct TransferRunRecord: Codable, Identifiable, Sendable {
     var items: [TransferItemProgress]
     var message = ""
     var backupTables: [String] = []
+    var verifiedAt: Date? = nil
     var committedRows: Int { items.reduce(0) { $0 + $1.committedRows } }
 }
 

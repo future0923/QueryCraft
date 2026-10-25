@@ -4,6 +4,7 @@ struct MobileWorkspaceView: View {
     @Bindable var model: MobileQueryModel
     let widthKey: String
     var browser: MobileBrowserModel? = nil
+    var documentWorkspace: MobileDatabaseWorkspace? = nil
     var history: [MobileQueryHistoryItem] = []
     var restoreHistory: ((MobileQueryHistoryItem) -> Void)?
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -16,9 +17,11 @@ struct MobileWorkspaceView: View {
     @State private var snippets = SQLSnippetStore.shared
     @State private var snippetContext = MobileSQLSnippetContext()
     @State private var showingSnippets = false
+    @State private var showingSettings = false
+    @State private var editorPreferences = MobileEditorPreferences.shared
     @State private var formatting = MobileSQLFormattingContext()
-    init(model: MobileQueryModel, widthKey: String, browser: MobileBrowserModel? = nil, history: [MobileQueryHistoryItem] = [], restoreHistory: ((MobileQueryHistoryItem) -> Void)? = nil) {
-        self.model = model; self.widthKey = widthKey; self.browser = browser; self.history = history; self.restoreHistory = restoreHistory
+    init(model: MobileQueryModel, widthKey: String, browser: MobileBrowserModel? = nil, documentWorkspace: MobileDatabaseWorkspace? = nil, history: [MobileQueryHistoryItem] = [], restoreHistory: ((MobileQueryHistoryItem) -> Void)? = nil) {
+        self.model = model; self.widthKey = widthKey; self.browser = browser; self.documentWorkspace = documentWorkspace; self.history = history; self.restoreHistory = restoreHistory
         _editorSchema = State(initialValue: MobileSQLSchemaCatalog(service: model.metadataProvider))
     }
     var body: some View {
@@ -28,15 +31,21 @@ struct MobileWorkspaceView: View {
                     if let browser {
                         Menu {
                             if browser.supportsSchemas {
-                                Picker("Schema", selection: Binding(get: { browser.selectedSchema ?? "" }, set: { browser.selectSchema($0.isEmpty ? nil : $0) })) {
+                                Picker("Schema", selection: Binding(get: { model.schemaName ?? "" }, set: { value in
+                                    model.schemaName = value.isEmpty ? nil : value
+
+                                })) {
                                     Text("默认 search_path").tag("")
-                                    ForEach(browser.schemas ?? [], id: \.self) { Text($0).tag($0) }
+                                    if let schema = model.schemaName, !schemaNames(browser).contains(schema) { Text(schema + "（当前不可用）").tag(schema) }
+                                    ForEach(schemaNames(browser), id: \.self) { Text($0).tag($0) }
                                 }
                             }
                             Picker("数据库", selection: Binding(get: { model.database }, set: {
                                 model.database = $0
-                                if model.database == $0 { browser.selectDatabase($0) }
+
                             })) {
+                                if !model.database.isEmpty, !(browser.databases ?? []).contains(model.database) { Text(model.database + "（当前不可用）").tag(model.database) }
+                                Text("未选择数据库").tag("")
                                 ForEach(browser.databases ?? [], id: \.self) { Text($0).tag($0) }
                             }
                         } label: {
@@ -69,10 +78,22 @@ struct MobileWorkspaceView: View {
                 }.padding(.horizontal, 4)
                 VStack(spacing: 0) {
                     HStack {
-                        Text("SQL").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        if let documentWorkspace {
+                            Menu {
+                                ForEach(documentWorkspace.documents) { document in
+                                    Button(document.title + (document.isDirty ? " •" : "")) { documentWorkspace.selectDocument(document.id) }
+                                }
+                                Divider()
+                                Button("新建文稿", systemImage: "plus") { documentWorkspace.newDocument() }
+                                Button("保存文稿", systemImage: "square.and.arrow.down") {
+                                    if let id = documentWorkspace.activeDocument?.id { documentWorkspace.saveDocument(id) }
+                                }
+                                Button("管理文稿与已保存查询…", systemImage: "doc.on.doc") { documentWorkspace.showingDocuments = true }
+                            } label: { Label(documentWorkspace.activeDocument?.title ?? "SQL", systemImage: "doc.text").lineLimit(1) }
+                        } else { Text("SQL").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
                         ProgressView().controlSize(.mini).frame(width: 16, height: 16)
-                            .opacity(editorSchema.isLoading ? 1 : 0).accessibilityHidden(!editorSchema.isLoading)
-                        if let message = editorSchema.errorMessage {
+                            .opacity(editorSchema.isLoading || model.isLoadingSchemas ? 1 : 0).accessibilityHidden(!editorSchema.isLoading && !model.isLoadingSchemas)
+                        if let message = model.schemaError ?? editorSchema.errorMessage {
                             Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
                                 .accessibilityLabel("补全元数据暂不可用：" + message)
                         }
@@ -80,6 +101,7 @@ struct MobileWorkspaceView: View {
                         Menu {
                             Button("格式化选区或当前语句") { formatting.format(.selectionOrCurrentStatement) }
                             Button("格式化整个文稿") { formatting.format(.document) }
+                            Button("编辑器设置…", systemImage: "slider.horizontal.3") { showingSettings = true }
                         } label: {
                             Image(systemName: "text.alignleft").frame(width: 32, height: 44).contentShape(.rect)
                         }.accessibilityLabel("格式化 SQL").accessibilityIdentifier("sqlFormatting")
@@ -95,7 +117,7 @@ struct MobileWorkspaceView: View {
                     }.frame(height: 44).padding(.horizontal, 14).padding(.top, 12)
                     MobileSQLEditor(text: $model.sql, selection: Binding(get: { model.executionInput.selection }, set: { model.executionInput.selection = $0 }), isFocused: $editorFocused,
                                     schema: editorSchema, defaultDatabase: model.database, executionInput: model.executionInput,
-                                    snippets: snippets.completionSources, snippetContext: snippetContext, formattingContext: formatting, executeAll: { model.executeAll() }) { model.execute() }
+                                    snippets: snippets.completionSources, snippetContext: snippetContext, formattingContext: formatting, preferences: editorPreferences, highlightConnection: model.editorConfiguration, executeAll: { model.executeAll() }) { model.execute() }
                         .frame(height: verticalSizeClass == .compact ? 60 : 130).padding(.horizontal, 8).padding(.bottom, 8)
                         .accessibilityLabel("SQL 编辑器").accessibilityIdentifier("sqlEditor")
                 }.background(Color(uiColor: .systemBackground), in: .rect(cornerRadius: 14))
@@ -108,7 +130,7 @@ struct MobileWorkspaceView: View {
                     }.disabled(model.isLoading || model.isLoadingEditing).accessibilityIdentifier("queryResultSelector")
                 } else { Text("查询结果").font(.subheadline.weight(.semibold)) }
                 Spacer()
-                Text(model.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(documentWorkspace?.documentMessage ?? model.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }.padding(.horizontal, 18).frame(height: 48) } }
             MobileResultsView(data: model.displayData, revision: model.resultRevision.uuidString + (model.editing?.revision.uuidString ?? ""),
                 widthKey: widthKey + ".query", hasLoaded: model.result != nil,
@@ -129,6 +151,10 @@ struct MobileWorkspaceView: View {
         .navigationTitle("SQL 查询").navigationBarTitleDisplayMode(.inline)
         .alert("无法格式化 SQL", isPresented: Binding(get: { formatting.errorMessage != nil }, set: { if !$0 { formatting.errorMessage = nil } })) {
         } message: { Text(formatting.errorMessage ?? "") }
+        .sheet(isPresented: Binding(get: { documentWorkspace?.showingDocuments == true }, set: { documentWorkspace?.showingDocuments = $0 })) {
+            if let documentWorkspace { MobileSQLDocumentsView(workspace: documentWorkspace) }
+        }
+        .sheet(isPresented: $showingSettings) { MobileEditorSettingsView(preferences: editorPreferences, connection: model.editorConfiguration) }
         .sheet(isPresented: $showingSnippets) { MobileSQLSnippetsView(store: snippets) }
         .sheet(item: $model.sqlConfirmation) { confirmation in
             NavigationStack {
@@ -146,7 +172,7 @@ struct MobileWorkspaceView: View {
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { model.sqlConfirmation = nil } } }
             }
         }
-        .onChange(of: model.editorConfiguration, initial: true) { _, configuration in formatting.cancel(); editorSchema.configure(configuration) }
+        .onChange(of: model.editorConfiguration, initial: true) { _, configuration in formatting.cancel(); editorSchema.configure(configuration); model.refreshSchemas() }
         .onChange(of: model.resultID) { _, _ in
             editorSchema.invalidate()
             #if DEBUG
@@ -160,10 +186,11 @@ struct MobileWorkspaceView: View {
             }
             #endif
         }
-        .onChange(of: model.schemaRevision) { _, _ in editorSchema.invalidate() }
+        .onChange(of: model.schemaRevision) { _, _ in editorSchema.invalidate(); model.refreshSchemas(force: true) }
         .onDisappear { formatting.cancel(); editorSchema.invalidate() }
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase != .inactive { editorSchema.setBackgrounded(phase == .background) }
+            if phase == .active { model.refreshSchemas() }
             if phase == .background { formatting.cancel() }
         }
         .toolbarTitleMenu { if model.statementResults.count > 1 { resultChoices } }
@@ -177,6 +204,9 @@ struct MobileWorkspaceView: View {
                     .disabled(!model.canExecute || model.isLoading).accessibilityIdentifier("executeQuery")
             }
         }
+    }
+    private func schemaNames(_ browser: MobileBrowserModel) -> [String] {
+        model.availableSchemas ?? (model.database == browser.selectedDatabase ? browser.schemas ?? [] : [])
     }
     @ViewBuilder private var resultChoices: some View {
         Picker("查询结果", selection: Binding(get: { model.selectedResultID }, set: { _ = model.selectResult($0) })) {

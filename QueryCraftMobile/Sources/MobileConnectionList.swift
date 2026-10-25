@@ -40,6 +40,7 @@ struct MobileConnectionList: View {
         .navigationTitle("连接")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) { Button("数据迁移", systemImage: "arrow.left.arrow.right") { app.openTransfer() } }
             if !app.library.profiles.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
                     Button("添加连接", systemImage: "plus") { app.edit(nil) }

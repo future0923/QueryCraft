@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
 enum TransferContent: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -98,6 +101,18 @@ struct DataTransferConfiguration: Codable, Equatable, Sendable {
     var operationTimeoutSeconds: Int? = nil
     var tableFilters: [String: String] = [:]
 
+    mutating func swapEndpoints() {
+        let previous = source; source = target; target = previous
+        objects = []; tableFilters = [:]
+    }
+
+    mutating func pruneSelection(sourceType: DatabaseType?, targetType: DatabaseType?) {
+        let selected = objects.filter { TransferCapabilities.objectEnabled($0, content: content, source: sourceType, target: targetType) }
+        objects = selected
+        if content == .dataOnly && strategy == .rebuild { strategy = .append }
+        if content == .structureOnly && (strategy == .upsert || strategy == .overwrite && !(sourceType == .mysql && targetType == .mysql && selected.contains { $0.kind != .table })) { strategy = .append }
+    }
+
     func validate(sourceType: DatabaseType, targetType: DatabaseType) throws {
         guard TransferCapabilities.canRead(sourceType), TransferCapabilities.canWrite(targetType) else {
             throw TransferFailure("源或目标驱动不支持关系对象传输。", "The source or target driver does not support relational transfers.")
@@ -133,6 +148,12 @@ struct DataTransferConfiguration: Codable, Equatable, Sendable {
 }
 
 enum TransferCapabilities {
+    static func objectEnabled(_ object: TransferObject, content: TransferContent, source: DatabaseType?, target: DatabaseType?) -> Bool {
+        guard let source else { return false }
+        if content == .dataOnly && object.kind != .table { return false }
+        guard let target else { return object.kind == .table }
+        return supports(object.kind, source: source, target: target)
+    }
     static func canRead(_ type: DatabaseType) -> Bool { [.mysql, .postgresql, .doris].contains(type) }
     static func canWrite(_ type: DatabaseType) -> Bool { [.mysql, .postgresql].contains(type) }
     static func supports(_ kind: TransferObjectKind, source: DatabaseType, target: DatabaseType) -> Bool {

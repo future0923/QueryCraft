@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 /// Optional, additive API for bulk SQL metadata. Existing drivers can still
 /// supply an object list without claiming to support these statistics.
 public protocol WorkspaceSQLObjectOverviewProviding: Sendable {

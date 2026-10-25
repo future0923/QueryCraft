@@ -27,7 +27,7 @@ struct MobilePostgreSQLExecutor: MobileQueryExecuting {
             let result = try await client.queryPreview(sql, maximumRows: maximumRows, maximumBytes: maximumBytes)
             var preview = MobileSQLPreview(postgreSQL: result, database: configuration.database ?? "postgres")
             if includeComments, !result.isTruncated {
-                preview.columnDetails = try await MobilePostgreSQLColumnDetails.resolve(preview.workspaceColumns, client: client)
+                preview.columnDetails = try await MobilePostgreSQLColumnDetails.resolve(preview.workspaceColumns, client: client, currentDatabase: configuration.database)
             }
             await client.close(); try Task.checkCancellation()
             return preview
@@ -120,21 +120,20 @@ struct MobilePostgreSQLService: MobileSQLServicing, MobileSQLMetadataProviding {
 
 /// Both previews and cached session results resolve comments from protocol origins.
 enum MobilePostgreSQLColumnDetails {
-    static func resolve(_ fields: [WorkspaceDatabaseDataColumn], client: LibPQClient) async throws -> [String] {
-        var comments: [String: [WorkspaceDatabaseColumn]] = [:]
-        for field in fields {
-            guard let origin = field.origin, let schema = origin.schemaName else { continue }
-            let key = schema + "\0" + origin.tableName
-            guard comments[key] == nil else { continue }
-            if let columns = try? await client.query(PostgreSQLCatalog.columnsQuery(schema: schema, name: origin.tableName)) {
-                comments[key] = columns.dictionaryRows.compactMap(PostgreSQLCatalog.column)
+    static func resolve(_ fields: [WorkspaceDatabaseDataColumn], client: LibPQClient, currentDatabase: String? = nil) async throws -> [String] {
+        var details: [WorkspaceDatabaseObjectSelection: [WorkspaceDatabaseColumn]] = [:]
+        for selection in WorkspaceQueryResultColumnMetadata.selections(columns: fields, currentDatabase: currentDatabase) {
+            let object = selection.object
+            guard let schema = object.schemaName else { continue }
+            if let rows = try? await client.query(PostgreSQLCatalog.columnsQuery(schema: schema, name: object.nameWithinSchema)) {
+                details[selection] = rows.dictionaryRows.compactMap(PostgreSQLCatalog.column)
             }
             try Task.checkCancellation()
         }
+        let metadata = WorkspaceQueryResultColumnMetadata.resolve(columns: fields, currentDatabase: currentDatabase, details: details)
         return fields.map { field in
-            guard let origin = field.origin, let schema = origin.schemaName,
-                  let column = comments[schema + "\0" + origin.tableName]?.first(where: { $0.name == origin.columnName }) else { return field.type ?? "" }
-            return (field.type ?? column.type) + (column.comment.isEmpty ? "" : " · " + column.comment)
+            let detail = metadata[field.id]
+            return [detail?.type ?? field.type ?? "", detail?.comment ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
         }
     }
 }

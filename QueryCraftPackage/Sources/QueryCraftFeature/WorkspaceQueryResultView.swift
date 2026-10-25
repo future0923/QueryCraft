@@ -807,32 +807,20 @@ struct WorkspaceQueryResultView: View {
         guard databaseType == .mysql || databaseType == .postgresql || databaseType == .doris else {
             return nil
         }
-        let details = page.columns.compactMap { column -> (Int, WorkspaceDatabaseColumn)? in
-            guard let origin = column.origin,
-                  let selection = WorkspaceQueryResultEditing.selection(
-                    for: origin, currentDatabase: currentDatabase
-                  ),
-                  let detail = detailsBySelection[selection]?.columns.first(where: {
-                      $0.name == origin.columnName
-                  }) else { return nil }
-            return (column.id, detail)
-        }
+        let details = WorkspaceQueryResultColumnMetadata.resolve(columns: page.columns, currentDatabase: currentDatabase,
+            details: detailsBySelection.mapValues(\.columns))
         return WorkspaceSQLGridHeaderConfiguration(
             showsComments: preferences.showsSQLColumnComments,
             showsTypes: preferences.showsSQLColumnTypes,
-            columnDetails: Dictionary(uniqueKeysWithValues: details)
+            columnDetails: details
         )
     }
 
     private func preloadEditableDetails() async {
         guard let page = displayedState.page else { return }
         // Resolve each source separately so aliases and joins show the correct comment.
-        let selections = Set(page.columns.compactMap { column in
-            column.origin.flatMap {
-                WorkspaceQueryResultEditing.selection(for: $0, currentDatabase: currentDatabase)
-            }
-        })
-        for selection in selections.sorted(by: { $0.id < $1.id }) {
+        let selections = WorkspaceQueryResultColumnMetadata.selections(columns: page.columns, currentDatabase: currentDatabase)
+        for selection in selections {
             guard !Task.isCancelled else { return }
             guard detailsBySelection[selection] == nil else { continue }
             do {

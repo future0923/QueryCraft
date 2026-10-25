@@ -16,6 +16,7 @@ final class MobileQueryModel {
     var sql = "SELECT VERSION() AS server_version, '你好 iPad' AS greeting, NULL AS nullable_value;" {
         didSet {
             if oldValue != sql {
+                recoverableContentDidChange()
                 sourceRevision &+= 1
                 let length = sql.utf16.count, range = executionInput.selection
                 let location = range.location == NSNotFound ? 0 : max(0, min(range.location, length))
@@ -23,6 +24,14 @@ final class MobileQueryModel {
             }
         }
     }
+    @ObservationIgnored var recoverableContentDidChange: () -> Void = {}
+    private(set) var availableSchemas: [String]?
+    private(set) var isLoadingSchemas = false
+    private(set) var schemaError: String?
+    @ObservationIgnored private var schemaTask: Task<Void, Never>?
+    @ObservationIgnored private var schemaRequestID = UUID()
+    @ObservationIgnored private var schemaConfiguration: MobileSQLConfiguration?
+    @ObservationIgnored private var schemasLoaded = false
     let executionInput = MobileSQLExecutionInput()
     @ObservationIgnored private var sourceRevision: UInt64 = 0
     @ObservationIgnored private var retrySQL: String?
@@ -34,6 +43,7 @@ final class MobileQueryModel {
     @ObservationIgnored private let sqlSession: MobileSQLSession?
     private(set) var isPatchingCache = false
     @ObservationIgnored private var cachePatchTask: Task<Void, Never>?
+    var hasUnverifiedWrites: Bool { writeOutcomeUncertain || allResults.contains { $0.editing?.needsVerification == true } }
     var blocksOtherWrites: Bool { isPatchingCache || sqlSession != nil && (isLoading || transactionState == .inTransaction || writeOutcomeUncertain) }
     var transactionTitle: String {
         if writeOutcomeUncertain { return "写入结果待核实" }
@@ -93,11 +103,21 @@ final class MobileQueryModel {
         return startExecution(capturedSQL: nil, approved: confirmation.statements)
     }
     @discardableResult func transaction(_ command: WorkspaceQueryTransactionCommand) -> Task<Void, Never>? {
-        guard sqlSession != nil, !isLoading, !writeOutcomeUncertain else { return nil }
+        guard supportsTransactions, !isLoading, !writeOutcomeUncertain else { return nil }
         if command == .begin, transactionState == .inTransaction { return nil }
         return startExecution(capturedSQL: command.sql, transactionCommand: true)
     }
-    func acknowledgeUncertainOutcome() { guard !isLoading else { return }; writeOutcomeUncertain = false; safetyLock.enable() }
+    func restoreUnverifiedOutcome() {
+        writeOutcomeUncertain = true; safetyLock.enable()
+        status = "上次写入执行期间退出，请先核对服务器结果。"
+    }
+    func acknowledgeUncertainOutcome() {
+        guard !isLoading else { return }
+        let previous = writeOutcomeUncertain
+        writeOutcomeUncertain = false
+        if !persistWriteBoundary(false) { writeOutcomeUncertain = previous }
+        safetyLock.enable()
+    }
     func clearQueryResults() {
         guard !isPatchingCache, !isLoading, !isLoadingEditing, !hasPendingRowChanges else { return }
         requestID = UUID(); retrySQL = nil; statementResults = []; displayed = MobileQueryResultState()
@@ -199,6 +219,8 @@ final class MobileQueryModel {
     }
     private(set) var isBackgrounded = false
     @ObservationIgnored var allowsDataMutation: () -> Bool = { true }
+    @ObservationIgnored var persistWriteBoundary: (Bool) -> Bool = { _ in true }
+    @ObservationIgnored var allowsSQLStatement: (SQLStatementKind) -> Bool = { _ in true }
     @ObservationIgnored var allowsSQLExecution: () -> Bool = { true }
     let safetyLock: WorkspaceSafetyLock
     @ObservationIgnored private var restoringConfiguration = false
@@ -214,12 +236,42 @@ final class MobileQueryModel {
          mutationService: any MobileDataMutating = MobileDataMutationService(), safetyLock: WorkspaceSafetyLock = WorkspaceSafetyLock(),
          session: MobileSQLSession? = nil) {
         self.executor = executor; self.executionPlanner = executionPlanner
-        self.sqlSession = session ?? (executor is MobileMariaDBExecutor || executor is MobilePostgreSQLExecutor ? MobileSQLSession() : nil)
+        self.sqlSession = session ?? (executor is MobileMariaDBExecutor || executor is MobilePostgreSQLExecutor || executor is MobileDorisExecutor ? MobileSQLSession() : nil)
         self.metadataService = metadataService; self.mutationService = mutationService; self.safetyLock = safetyLock
     }
 
+    func cancelSchemaRead() {
+        schemaRequestID = UUID(); schemaTask?.cancel(); schemaTask = nil; isLoadingSchemas = false
+    }
+    @discardableResult
+    func refreshSchemas(force: Bool = false) -> Task<Void, Never>? {
+        guard driver == .postgresql, !isBackgrounded, !database.isEmpty, let configuration = editorConfiguration?.selecting(database: database) else { return nil }
+        if !force, schemaConfiguration == configuration, schemasLoaded || isLoadingSchemas { return schemaTask }
+        cancelSchemaRead()
+        if schemaConfiguration != configuration { availableSchemas = nil }
+        schemaConfiguration = configuration; schemasLoaded = false; isLoadingSchemas = true; schemaError = nil
+        let id = schemaRequestID, service = metadataService
+        let task = Task { [weak self] in
+            do {
+                let schemas = try await service.schemas(configuration: configuration, database: configuration.database ?? "")
+                try Task.checkCancellation()
+                guard let self, self.schemaRequestID == id, self.editorConfiguration?.selecting(database: self.database) == configuration else { return }
+                self.availableSchemas = schemas; self.schemasLoaded = true; self.isLoadingSchemas = false; self.schemaTask = nil
+                if !self.isLoading, !self.hasPendingChanges {
+                    self.schemaName = WorkspaceQuerySchemaSelection.resolved(current: self.schemaName, schemas: schemas)
+                }
+            } catch {
+                guard let self, self.schemaRequestID == id else { return }
+                self.isLoadingSchemas = false; self.schemaTask = nil
+                if !(error is CancellationError) { self.schemaError = error.localizedDescription }
+            }
+        }
+        schemaTask = task
+        return task
+    }
+
     var exportDialect: WorkspaceSQLExportDialect = .mysql
-    var supportsTransactions: Bool { sqlSession != nil }
+    var supportsTransactions: Bool { sqlSession != nil && driver != .doris }
     var metadataProvider: any MobileSQLMetadataProviding { (metadataService as? any MobileSQLMetadataProviding) ?? MobileMySQLService() }
 
     private var hasPendingRowChanges: Bool { allResults.contains { $0.editing.map { $0.hasChanges || $0.isSubmitting } ?? false } }
@@ -329,6 +381,8 @@ final class MobileQueryModel {
                     statements = plan.statements
                 }
                 guard let self, self.requestID == id else { return }
+                guard statements.allSatisfy({ self.allowsSQLStatement($0.kind) }) else { throw MobileDataMutationError.pendingChanges }
+                if configuration.driver == .doris { try MobileQueryBatchLimits.validate(statements) }
                 if self.sqlSession != nil {
                     guard !statements.isEmpty, statements.count <= MobileQueryBatchLimits.maximumStatements else { throw MobileQueryBatchError.tooManyStatements }
                     if approved == nil, statements.contains(where: { ($0.kind.requiresWriteAccess && self.safetyLock.isEnabled) || $0.kind.requiresDangerousSQLConfirmation }) {
@@ -381,6 +435,7 @@ final class MobileQueryModel {
                 guard self.requestID == id else { return }
                 self.activeBatch = []; self.activeStatementIndex = nil
                 self.sqlWriteInFlight = false
+                _ = self.persistWriteBoundary(false)
                 self.isLoading = false; self.isLoadingEditing = false; self.task = nil
                 self.errorMessage = self.displayed.errorMessage
                 self.status = self.displayed.status
@@ -391,6 +446,7 @@ final class MobileQueryModel {
                 if let session = self.sqlSession { self.transactionState = await session.state }
                 guard self.requestID == id else { return }
                 if case MobileSQLSessionError.uncertain = error { self.writeOutcomeUncertain = true; self.safetyLock.enable() }
+                _ = self.persistWriteBoundary(self.writeOutcomeUncertain)
                 if !started { self.retrySQL = nil }
                 let message = error is CancellationError ? "已取消" : MobileConnectionFeedback.reading(error)
                 self.finishBatch(error: error, message: message)
@@ -404,8 +460,12 @@ final class MobileQueryModel {
 
     private func authorizeSQL(_ kind: SQLStatementKind, id: UUID, configuration: MobileSQLConfiguration) throws {
         guard requestID == id, editorConfiguration == configuration, !isBackgrounded, !Task.isCancelled,
-              allowsSQLExecution(), !hasPendingRowChanges else { throw CancellationError() }
+              allowsSQLExecution(), allowsSQLStatement(kind), !hasPendingRowChanges else { throw CancellationError() }
+        if configuration.driver == .doris, kind != .read { throw MobileQueryError.readOnlySQLRequired }
         if kind.requiresWriteAccess && safetyLock.isEnabled { throw MobileSQLSessionError.locked }
+        if kind.requiresWriteAccess || kind == .transaction(.commit) {
+            guard persistWriteBoundary(true) else { throw MobileWorkspaceRepository.Failure.invalidArchive }
+        }
     }
 
     private func acceptStream(_ event: MobileSQLSessionEvent, records: [MobileQueryResultState], id: UUID,
@@ -536,6 +596,7 @@ final class MobileQueryModel {
     func setBackgrounded(_ backgrounded: Bool) {
         guard isBackgrounded != backgrounded else { return }
         isBackgrounded = backgrounded
+        if backgrounded { cancelSchemaRead() }
         guard backgrounded else { return }
         let wasReading = isLoading, wasLoadingEditing = isLoadingEditing
         if sqlSession != nil { _ = disconnectSQL() }
@@ -562,6 +623,9 @@ final class MobileQueryModel {
     }
 
     private func configurationChanged() {
+        if schemaConfiguration != editorConfiguration?.selecting(database: database.isEmpty ? nil : database) {
+            cancelSchemaRead(); schemaConfiguration = nil; schemasLoaded = false; availableSchemas = nil; schemaError = nil
+        }
         let shouldClose = transactionState != .disconnected || isLoading
         cancel()
         requestID = UUID(); task?.cancel(); task = nil; isLoading = false; isLoadingEditing = false
@@ -580,11 +644,12 @@ final class MobileQueryModel {
         resultRevision = UUID()
         errorMessage = nil
         status = "连接已变更 · 执行 SQL 以加载"
+        recoverableContentDidChange()
     }
 
     private func prepareEditing(preview: MobileSQLPreview, configuration: MobileSQLConfiguration,
                                 sql: String, requestID: UUID, record: MobileQueryResultState) async {
-        guard allowsDataMutation() else { record.editingMessage = "当前驱动仅支持只读浏览。"; return }
+        guard configuration.driver != .doris, allowsDataMutation() else { record.editingMessage = "当前驱动仅支持只读浏览。"; return }
         guard let selection = WorkspaceQueryResultEditing.selection(for: preview.workspaceColumns, currentDatabase: configuration.database) else {
             record.editingMessage = "只读结果：无法确定唯一基础表。"; return
         }

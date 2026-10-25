@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 import Observation
 
@@ -35,7 +38,7 @@ final class DataTransferManager {
         for task in current.values { await task.value }
     }
 
-    func start(_ plan: DataTransferPlan, name: String, sourceLabel: String, targetLabel: String) throws {
+    func start(_ plan: DataTransferPlan, name: String, sourceLabel: String, targetLabel: String, authorize: @escaping DataTransferRunner.Authorize = {}) throws {
         guard persistenceError.isEmpty else { throw TransferFailure("传输历史无法保存，请检查存储目录：\(persistenceError)", "Transfer history cannot be saved. Check the storage directory: \(persistenceError)") }
         guard tasks[plan.id] == nil, !runs.contains(where: { $0.id == plan.id }) else { throw TransferFailure("该执行计划已启动，请重新生成预览。", "This plan already started. Generate a new preview.") }
         let endpoint = plan.target.endpoint, server = plan.target.configuration
@@ -53,7 +56,7 @@ final class DataTransferManager {
         }
         let runner = runner
         tasks[plan.id] = Task { [weak self] in
-            let result = await runner.run(plan, authorize: {}, progress: { [weak self] item in await self?.receive(item, id: plan.id) }, backups: { [weak self] names in await self?.receiveBackups(names, id: plan.id) })
+            let result = await runner.run(plan, authorize: authorize, progress: { [weak self] item in await self?.receive(item, id: plan.id) }, backups: { [weak self] names in await self?.receiveBackups(names, id: plan.id) })
             guard let self else { return }
             if let index = self.runs.firstIndex(where: { $0.id == plan.id }) {
                 self.runs[index].status = result.0; self.runs[index].message = result.1; self.runs[index].finishedAt = Date()
@@ -66,6 +69,14 @@ final class DataTransferManager {
     func cancel(_ id: UUID) {
         guard let task = tasks[id], let index = runs.firstIndex(where: { $0.id == id }) else { return }
         runs[index].status = .cancelling; task.cancel(); persist()
+    }
+
+    func acknowledgeOutcome(_ id: UUID) {
+        guard let index = runs.firstIndex(where: { $0.id == id }), [.uncertain, .interrupted].contains(runs[index].status) else { return }
+        let previous = runs[index].verifiedAt
+        runs[index].verifiedAt = .now
+        persist()
+        if !persistenceError.isEmpty { runs[index].verifiedAt = previous }
     }
 
     func clearFinished() {

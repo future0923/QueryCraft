@@ -1,6 +1,14 @@
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
+#if os(iOS)
+import QueryCraftMobileTransport
+#else
 import QueryCraftMariaDBTransportV4
+#endif
 
 actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProviding, WorkspaceNativeBulkTransferSession, WorkspaceNativeRowSourceSession {
     private let configuration: MySQLConnectionConfiguration
@@ -12,7 +20,9 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
     }
 
     func connect() async throws {
+        #if !os(iOS)
         try await LicenseAccessGate.shared.requireDatabaseAccess()
+        #endif
         if await client?.isConnected() == true { return }
 
         let newClient = MariaDBClient(

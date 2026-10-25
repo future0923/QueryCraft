@@ -12,30 +12,10 @@ struct DataTransferTaskTree: View {
     @State private var deletingFolder = false
     @State private var showingDelete = false
 
-    private struct Row: Identifiable {
-        let id: UUID
-        let depth: Int
-        let folder: TransferTaskFolder?
-        let task: SavedTransferTask?
+    private var rows: [TransferTaskTreeRow] {
+        TransferTaskTreeRows.make(library: model.library.library, search: model.taskSearch, collapsed: collapsed)
     }
 
-    private var rows: [Row] {
-        let library = model.library.library, query = model.taskSearch
-        var result: [Row] = []
-        func append(parent: UUID?, depth: Int) {
-            for folder in library.folders where folder.parentID == parent {
-                let count = result.count
-                result.append(.init(id: folder.id, depth: depth, folder: folder, task: nil))
-                if !collapsed.contains(folder.id) || !query.isEmpty { append(parent: folder.id, depth: depth + 1) }
-                if !query.isEmpty && result.count == count + 1 && !folder.name.localizedCaseInsensitiveContains(query) { result.removeLast() }
-            }
-            for task in library.tasks where task.folderID == parent && (query.isEmpty || task.name.localizedCaseInsensitiveContains(query)) {
-                result.append(.init(id: task.id, depth: depth, folder: nil, task: task))
-            }
-        }
-        append(parent: nil, depth: 0)
-        return result
-    }
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {

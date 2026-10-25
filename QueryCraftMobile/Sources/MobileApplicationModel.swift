@@ -3,7 +3,7 @@ import Observation
 
 @MainActor @Observable
 final class MobileApplicationModel {
-    enum WorkspaceTab: Hashable { case tables, query, views }
+    enum WorkspaceTab: String, Codable, Hashable { case tables, query, views }
     private(set) var workspaceTab: WorkspaceTab = .tables
     private(set) var library = MobileLibraryState()
     private(set) var workspace: MobileDatabaseWorkspace?
@@ -15,6 +15,12 @@ final class MobileApplicationModel {
     var editingConnection: MobileConnectionDraft?
     var passwordPrompt: MobileConnectionProfile?
     var pendingDeletion: MobileConnectionProfile?
+    var showingTransfer = false
+    private(set) var transferModel: MobileTransferModel?
+    let transferManager: DataTransferManager
+    var transferBlocksWrites: Bool {
+        transferManager.hasActiveRuns || transferManager.runs.contains { [.uncertain, .interrupted].contains($0.status) && $0.verifiedAt == nil }
+    }
     var destination: MobileRoute? {
         didSet {
             guard !reconcilingTableAction else { return }
@@ -31,14 +37,17 @@ final class MobileApplicationModel {
     }
     @ObservationIgnored private var reconcilingTableAction = false
     @ObservationIgnored private let repository: any MobileLibraryPersisting
+    @ObservationIgnored private let workspaceRepository: any MobileWorkspacePersisting
     @ObservationIgnored private let passwords: any MobilePasswordStoring
     @ObservationIgnored private let service: any MobileSQLServicing
     @ObservationIgnored private var sessionPasswords: [UUID: String] = [:]
 
     init(repository: any MobileLibraryPersisting = MobileLibraryRepository(),
          passwords: any MobilePasswordStoring = MobileKeychainStore(),
-         service: any MobileSQLServicing = MobileMySQLService()) {
+         service: any MobileSQLServicing = MobileMySQLService(), workspaceRepository: any MobileWorkspacePersisting = MobileWorkspaceRepository(), transferManager: DataTransferManager? = nil) {
+        self.transferManager = transferManager ?? .init()
         self.repository = repository
+        self.workspaceRepository = workspaceRepository
         self.passwords = passwords
         self.service = service
         reloadLibrary()
@@ -61,6 +70,7 @@ final class MobileApplicationModel {
 
     func save(_ draft: MobileConnectionDraft) throws {
         guard libraryLoaded else { throw MobileQueryError.invalidConnection }
+        guard !transferBlocksWrites else { throw MobileDataMutationError.pendingChanges }
         let profile = try draft.profile()
         if let active = workspace, active.hasPendingChanges,
            active.profile != profile || active.query.password != draft.password {
@@ -70,6 +80,7 @@ final class MobileApplicationModel {
            active.profile.id == profile.id {
             throw MobileDataMutationError.pendingChanges
         }
+        try persistActiveWorkspace()
         let oldPassword = try passwords.password(for: profile.id)
         try passwords.setPassword(profile.remembersPassword && profile.authentication != .none ? draft.password : nil, for: profile.id)
         var state = library
@@ -82,6 +93,7 @@ final class MobileApplicationModel {
             throw error
         }
         library = state
+        transferModel?.updateProfiles(state.profiles, force: true)
         sessionPasswords[profile.id] = draft.password
         editingConnection = nil
         open(profile)
@@ -102,6 +114,7 @@ final class MobileApplicationModel {
                 passwordPrompt = profile
                 return
             }
+            try persistActiveWorkspace()
             if !profile.driver.isSQL {
                 if let active = resourceWorkspace, active.profile == profile, active.password == password {
                     isWorkspacePresented = true; passwordPrompt = nil; message = nil
@@ -133,7 +146,14 @@ final class MobileApplicationModel {
             destination = nil
             if let password { sessionPasswords[profile.id] = password }
             workspaceTab = .tables
-            workspace = MobileDatabaseWorkspace(profile: profile, password: password, service: service)
+            workspace = MobileDatabaseWorkspace(profile: profile, password: password, service: service, workspaceRepository: workspaceRepository)
+            if let restored = workspace.flatMap({ WorkspaceTab(rawValue: $0.navigationMode) }) { workspaceTab = restored }
+            if workspaceTab == .query { destination = .query }
+            workspace?.browser.didRestoreSelection = { [weak self] object in
+                guard let self, self.workspaceTab != .query else { return }
+                self.reconcilingTableAction = true; self.destination = .table(object); self.reconcilingTableAction = false
+            }
+            workspace?.externalWriteFence = { [weak self] in self?.transferBlocksWrites ?? true }
             workspace?.tableMetadataDidChange = { [weak self] object in
                 guard let self, self.isWorkspacePresented, self.workspace?.profile.id == profile.id,
                       case .table(let selected) = self.destination, selected.editingSelection == object.editingSelection else { return }
@@ -143,7 +163,7 @@ final class MobileApplicationModel {
                 guard let self, self.isWorkspacePresented, self.workspace?.profile.id == profile.id else { return }
                 self.workspaceTab = .tables; self.destination = .table(object)
             }
-            workspace?.query.didExecute = { [weak self] sql, database, schema in
+            workspace?.didExecuteQuery = { [weak self] sql, database, schema in
                 self?.recordQuery(sql: sql, database: database, profileID: profile.id, schemaName: schema)
             }
             workspace?.tableDidChange = { [weak self] object, statement in
@@ -161,10 +181,31 @@ final class MobileApplicationModel {
         } catch { message = error.localizedDescription }
     }
 
+    func openTransfer() {
+        if transferModel == nil {
+            let model = MobileTransferModel(profiles: library.profiles, manager: transferManager, resolve: { [weak self] id, override in
+                guard let self, let profile = self.library.profiles.first(where: { $0.id == id }), profile.driver.isSQL else { throw MobileQueryError.invalidConnection }
+                let secret = try override ?? self.sessionPasswords[id] ?? self.passwords.password(for: id)
+                if profile.requiresPassword, secret == nil { throw MobileTransferCredentialError.passwordRequired(id) }
+                return profile.configuration(password: secret).sharedConfiguration
+            })
+            model.allowsWrites = { [weak self] in
+                guard let self else { return false }
+                return !self.isBackgrounded && self.workspace?.hasPendingChanges != true && self.resourceWorkspace?.hasPendingChanges != true
+            }
+            model.background(isBackgrounded)
+            transferModel = model
+        }
+        transferModel?.updateProfiles(library.profiles, reload: true)
+        showingTransfer = true
+    }
+
     func selectTab(_ tab: WorkspaceTab) {
         guard workspaceTab != tab, let workspace else { return }
         if workspace.query.isLoading || workspace.query.isLoadingEditing { workspace.query.cancel() }
         workspaceTab = tab
+        workspace.navigationMode = tab.rawValue
+        workspace.persistWorkspace()
         if tab == .query { destination = .query }
         else {
             workspace.browser.selectKind(tab == .views ? .view : .table)
@@ -172,7 +213,12 @@ final class MobileApplicationModel {
         }
     }
 
+    private func persistActiveWorkspace() throws {
+        if let workspace, !workspace.persistWorkspace() { throw CocoaError(.fileWriteUnknown) }
+    }
+
     func showLibrary() {
+        do { try persistActiveWorkspace() } catch { message = workspace?.documentMessage ?? error.localizedDescription; return }
         workspace?.cancelAll(); resourceWorkspace?.cancel()
         destination = nil
         isWorkspacePresented = false
@@ -181,10 +227,13 @@ final class MobileApplicationModel {
     func setBackgrounded(_ backgrounded: Bool) {
         guard isBackgrounded != backgrounded else { return }
         isBackgrounded = backgrounded
+        transferModel?.background(backgrounded)
+        if backgrounded { for run in transferManager.runs where run.status.isActive { transferManager.cancel(run.id) } }
         workspace?.setBackgrounded(backgrounded); resourceWorkspace?.setBackgrounded(backgrounded)
     }
 
     func delete(_ profile: MobileConnectionProfile) throws {
+        guard !transferBlocksWrites else { throw MobileDataMutationError.pendingChanges }
         if resourceWorkspace?.profile.id == profile.id, resourceWorkspace?.hasPendingChanges == true {
             throw MobileDataMutationError.pendingChanges
         }
@@ -199,11 +248,14 @@ final class MobileApplicationModel {
         do { try repository.write(state) }
         catch { try? passwords.setPassword(oldPassword, for: profile.id); throw error }
         library = state; sessionPasswords[profile.id] = nil
+        transferModel?.updateProfiles(state.profiles, force: true)
         if workspace?.profile.id == profile.id {
             workspace?.cancelAll(); workspace = nil; destination = nil; isWorkspacePresented = false
         }
         if resourceWorkspace?.profile.id == profile.id { resourceWorkspace?.cancel(); resourceWorkspace = nil; isWorkspacePresented = false }
         pendingDeletion = nil
+        do { try workspaceRepository.remove(profileID: profile.id) }
+        catch { message = "连接已删除，但工作区文件清理失败：\(error.localizedDescription)" }
     }
 
     func recordQuery(sql: String, database: String, profileID: UUID, schemaName: String? = nil) {
@@ -218,14 +270,17 @@ final class MobileApplicationModel {
 
     func restore(_ history: MobileQueryHistoryItem) {
         guard let workspace, workspace.profile.id == history.profileID else { return }
-        workspace.query.cancel()
+        guard let document = workspace.newDocument() else { return }
+        document.query.database = history.database
+        document.query.schemaName = history.schemaName
+        document.query.sql = history.sql
         if workspace.profile.driver == .postgresql {
             workspace.browser.selectDatabase(history.database)
             workspace.browser.selectSchema(history.schemaName)
-            workspace.query.schemaName = history.schemaName
         }
-        workspace.query.database = history.database
-        workspace.query.sql = history.sql
+        workspace.navigationMode = WorkspaceTab.query.rawValue
+        workspaceTab = .query
+        workspace.persistWorkspace()
         isWorkspacePresented = true
         destination = .query
     }

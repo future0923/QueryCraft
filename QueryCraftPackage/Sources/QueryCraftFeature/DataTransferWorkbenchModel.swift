@@ -59,7 +59,7 @@ final class DataTransferWorkbenchModel {
     var sourceType: DatabaseType? { profiles.first { $0.id == configuration.source.profileID }?.databaseType }
     var targetType: DatabaseType? { profiles.first { $0.id == configuration.target.profileID }?.databaseType }
     var filteredObjects: [TransferObject] {
-        objects.filter { objectSearch.isEmpty || $0.name.localizedCaseInsensitiveContains(objectSearch) }
+        TransferObjectSelection.filtered(objects, search: objectSearch)
     }
     var canPrepare: Bool {
         !isPreparing && loadingSides.isEmpty && !configuration.objects.isEmpty && configuration.source.profileID != nil && configuration.target.profileID != nil
@@ -159,15 +159,11 @@ final class DataTransferWorkbenchModel {
 
     func refresh() { reload(.source, preserveSelection: true); reload(.target) }
     func swap() {
-        let old = configuration.source; configuration.source = configuration.target; configuration.target = old
-        configuration.objects = []; configuration.tableFilters = [:]
+        configuration.swapEndpoints()
         reload(.source); reload(.target)
     }
     func objectEnabled(_ object: TransferObject) -> Bool {
-        guard let source = sourceType else { return false }
-        if configuration.content == .dataOnly && object.kind != .table { return false }
-        guard let target = targetType else { return object.kind == .table }
-        return TransferCapabilities.supports(object.kind, source: source, target: target)
+        TransferCapabilities.objectEnabled(object, content: configuration.content, source: sourceType, target: targetType)
     }
     func select(_ object: TransferObject, enabled: Bool) {
         invalidatePreview()
@@ -178,26 +174,13 @@ final class DataTransferWorkbenchModel {
         for object in filteredObjects where objectEnabled(object) { self.select(object, enabled: select) }
     }
     func pruneSelection() {
-        let selected = configuration.objects.filter { objectEnabled($0) }
-        configuration.objects = selected
-        if configuration.content == .dataOnly && configuration.strategy == .rebuild { configuration.strategy = .append }
-        if configuration.content == .structureOnly && (configuration.strategy == .upsert || configuration.strategy == .overwrite && !(sourceType == .mysql && targetType == .mysql && selected.contains { $0.kind != .table })) { configuration.strategy = .append }
+        configuration.pruneSelection(sourceType: sourceType, targetType: targetType)
         invalidatePreview()
     }
     func applyBulkNames() {
-        let names = bulkNames.components(separatedBy: CharacterSet(charactersIn: ",;\n\r\t")).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        var missing: [String] = [], count = 0
-        for name in names {
-            let matches = objects.filter { object in
-                guard objectEnabled(object) else { return false }
-                if object.name == name || "\(configuration.source.namespace).\(object.name)" == name { return true }
-                let parts = (try? TransferSQL.tokens(name))?.filter(\.identifier).map(\.value) ?? []
-                return parts == [object.name] || parts == [configuration.source.namespace, object.name]
-            }
-            if matches.isEmpty { missing.append(name) }
-            for match in matches { select(match, enabled: true); count += 1 }
-        }
-        bulkFeedback = AppCopy.current.text("匹配 \(count) 个对象", "Matched \(count) objects") + (missing.isEmpty ? "" : AppCopy.current.text("；未匹配：", "; unmatched: ") + missing.joined(separator: ", "))
+        let result = TransferObjectSelection.match(bulkNames, objects: objects, namespace: configuration.source.namespace, enabled: objectEnabled)
+        for object in result.objects { select(object, enabled: true) }
+        bulkFeedback = result.feedback
     }
 
     func save() {

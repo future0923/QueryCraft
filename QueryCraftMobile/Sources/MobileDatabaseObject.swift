@@ -2,8 +2,8 @@ import Foundation
 import QueryCraftMobileTransport
 import QueryCraftMobileCore
 
-struct MobileDatabaseObject: Hashable, Identifiable, Sendable {
-    enum Kind: String, Sendable { case table, view }
+struct MobileDatabaseObject: Codable, Hashable, Identifiable, Sendable {
+    enum Kind: String, Codable, Sendable { case table, view }
     let database: String
     let name: String
     let kind: Kind

@@ -1,4 +1,4 @@
-public struct WorkspaceDatabaseDataFilter: Hashable, Sendable {
+public struct WorkspaceDatabaseDataFilter: Hashable, Codable, Sendable {
     public var logic: WorkspaceDatabaseDataFilterLogic
     public var conditions: [WorkspaceDatabaseDataFilterCondition]
 

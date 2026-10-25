@@ -42,12 +42,10 @@ struct MobileConnectionWorkspaceView: View {
             if selected == nil, case .table = app.destination { app.destination = nil }
         }
         .onChange(of: workspace.browser.selectedSchema) { _, schema in
-            workspace.query.schemaName = schema
             if app.workspaceTab != .query { app.destination = nil }
         }
         .onChange(of: workspace.browser.selectedDatabase) { _, database in
             workspace.newTable.cancel()
-            workspace.query.database = database ?? ""
             if app.workspaceTab != .query { app.destination = nil }
         }
 
@@ -68,8 +66,9 @@ struct MobileConnectionWorkspaceView: View {
         case .tables: MobileObjectDetail(app: app, workspace: workspace, kind: .table)
         case .views: MobileObjectDetail(app: app, workspace: workspace, kind: .view)
         case .query:
-            MobileWorkspaceView(model: workspace.query, widthKey: workspace.profile.id.uuidString, browser: workspace.browser,
+            MobileWorkspaceView(model: workspace.query, widthKey: workspace.profile.id.uuidString, browser: workspace.browser, documentWorkspace: workspace,
                 history: app.library.history.filter { $0.profileID == workspace.profile.id }, restoreHistory: { app.restore($0) })
+                        .id(workspace.activeDocument?.id)
         }
     }
 
@@ -84,8 +83,9 @@ struct MobileConnectionWorkspaceView: View {
             }
             Tab("查询", systemImage: "terminal", value: MobileApplicationModel.WorkspaceTab.query) {
                 NavigationStack {
-                    MobileWorkspaceView(model: workspace.query, widthKey: workspace.profile.id.uuidString, browser: workspace.browser,
+                    MobileWorkspaceView(model: workspace.query, widthKey: workspace.profile.id.uuidString, browser: workspace.browser, documentWorkspace: workspace,
                         history: app.library.history.filter { $0.profileID == workspace.profile.id }, restoreHistory: { app.restore($0) })
+                        .id(workspace.activeDocument?.id)
                         .toolbar {
                             MobileWorkspaceToolbar(app: app, workspace: workspace, includesHome: true)
                         }

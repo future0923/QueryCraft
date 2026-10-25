@@ -1,11 +1,19 @@
 # QueryCraft iOS / iPadOS 移植验证
 
-这是独立 worktree 中的 iOS / iPadOS 工程，最低系统版本 18。MySQL 保留已有完整移动功能；PostgreSQL 支持 SQL 写入/事务、磁盘缓存及查询结果编辑、表结构/新表/表操作和多格式文件导入，Redis 支持键/成员管理、搜索分页、Stream 浏览及命令事务控制台，Doris 支持只读连接与浏览，Elasticsearch 接入完整专用工作区，具体范围见下文。直接共享现有模型与原生驱动源码，尚未达到桌面版全部功能。
+这是独立 worktree 中的 iOS / iPadOS 工程，最低系统版本 18。MySQL 保留已有完整移动功能；PostgreSQL 支持 SQL 写入/事务、磁盘缓存及查询结果编辑、表结构/新表/表操作和多格式文件导入，Redis 支持键/成员管理、搜索分页、Stream 浏览及命令事务控制台，Doris 支持只读流式 SQL、磁盘缓存和真实结构信息，Elasticsearch 接入完整专用工作区，具体范围见下文。直接共享现有模型与原生驱动源码，尚未达到桌面版全部功能。
 
 
 当前能力以本节各驱动条目及最新验证记录为准；后文保留的历次移植阶段说明属于历史记录，其中旧的“只读／未移植”不覆盖当前范围。
 
-## 新增驱动范围（更新至 2026-10-24）
+## 工作区新增能力（2026-10-25）
+
+MySQL、PostgreSQL、Doris 的 SQL 页支持独立多文稿、重命名、保存查询及重启恢复；通过标题菜单管理文稿。每篇保留独立会话、事务、结果、数据库和 PostgreSQL Schema 列表，关闭活动事务先回滚，关闭未保存文本确认精确版本。恢复文件不含密码、查询结果或服务器事务，不自动重放 SQL。写入前保存待核实标记；未知结果在重启后继续保护。存储损坏不会被空文稿覆盖，可先备份、导出原文件再恢复保存；连接切换落盘失败会保留工作区。
+
+首页“数据迁移”复用 Mac 的完整配置、catalog/planner/runner/manager、任务库和原驱动 session。源支持 MySQL/PG/Doris，目标支持 MySQL/PG；结构/数据、追加/覆盖/Upsert/重建、筛选、大小写、所有者、批量和超时按真实能力开放。完整 SQL 预览、解锁确认、进度/取消/备份、待核实运行记录及任务文件夹管理都有原生入口。COPY/LOCAL INFILE 使用原传输；不支持时按共享规则回退，不另建简化迁移器。修改连接不会丢弃未保存任务或使用旧密码提交。
+
+SQL 格式化菜单可打开编辑器设置：字体、两套主题、颜色、缩进、补全键、格式化大小写、配色撤销/恢复及主题导入导出均共享 Mac 规则。UIKit 原生选区、撤销、IME 和查找保留；行号与当前行装饰不切换 TextKit 模式。系统查找颜色、多光标和真实设备验收边界见 [WORKSPACE_PARITY.md](WORKSPACE_PARITY.md)。
+
+## 新增驱动范围（更新至 2026-10-25）
 
 连接表单可选 MySQL、PostgreSQL、Doris、Redis、Elasticsearch，旧连接文件缺少驱动字段时仍按 MySQL 解码，连接 ID 和钥匙串键不变。连接摘要显示驱动类型；切换驱动使用对应端口和认证/TLS 默认值。PostgreSQL 支持数据库和默认 Schema 配置。Kafka 的传输/消费链路尚未移植，表单不提供 Kafka 连接选项。
 
@@ -13,9 +21,9 @@
   SQL 控制台复用 MySQL 已有的执行范围、确认、安全锁、多结果、事务/保存点/提交/回滚、取消和后台断开状态。同一连接保留跨次执行的会话；自动提交下读取使用只读事务，显式事务内读取使用当前事务。支持 DML/DDL 和 RETURNING；错误时停止后续语句、关闭会话并回滚未提交事务，结果不明禁止自动重放。libpq 单行模式配合公共分批通道写入同一磁盘缓存，当前页最多 500 行/4 MiB，单行 8 MiB、整批缓存 256 MiB；分页和全部缓存导出不重执行 SQL。字段类型/来源在完整响应后于原连接解析，保留事务临时表信息；缓存分页继续保留 Schema 和注释。加载途中尚未解析的字段元数据为空，不伪造。
   表数据增删改沿用暂存、安全锁、SQL 预览、提交/撤销入口，事务内锁表并复查字段/主键。支持默认值、NULL、identity 默认新增和原始大整数主键；生成列不可直接编辑，无主键表不可修改/删除已有行，视图表格保持只读。bytea 沿桌面文本表示；NUL 文本明确拒绝。目录/表预览仍使用独立只读连接与有界结果，和 SQL 持续会话分开。查询结果可编辑来源明确的单基础表字段和删除行，复用 Mac 的目标/主键验证；别名、重复投影和大整数按真实协议来源处理，表达式/关联/视图不伪造可编辑身份。完整、自动提交的多页磁盘缓存也能编辑当前页，提交后更新同一缓存，保留其他页和完整导出；删除通过 SQLite 逐行压缩位置，不把整个结果读入内存。活动 SQL 事务、未完成缓存和不能解析唯一基础表的结果保持明确限制，临时表元数据不会冒用其他会话的同名对象。
   图形结构编辑直接共用 PostgreSQLSchemaEditingProvider、descriptor 和事务 executor；支持字段/主键/索引、注释、IDENTITY、新建生成列及删除/恢复暂存。实际 server_version_num 决定能力，不显示 MySQL 字符集、前缀索引、可见性或表选项；已有生成列的存储/表达式不能直接修改。新表使用当前物理 Schema、同源草稿/字段/索引和完整 SQL 预览；全部结构语句在独立 PG 事务内执行，发送前锁表并核对基线。表菜单支持重命名、删除、截断、清空和实际所属 serial/identity 序列重置/设置；截断保留序列，所有危险操作仍需确认和安全锁。
-  表菜单「导入数据」使用系统 Files，直接共享 Mac 的 CSV/TSV/分隔文本、JSON/JSONL、XLSX/XLSM 和 SQL INSERT 解析器、冻结磁盘快照、字段映射、默认/生成列规则与事务执行器；可调整编码/行范围/NULL/工作表、查看文件预览和首行 SQL 示例，执行使用完整值。选项变更或读取失败不能提交旧预览；每批500行为默认值，可在1～10000调整，整份导入同一事务，中途失败/取消回滚。COMMIT 回执不明时保留全工作区写保护，只允许明确核对后结束，不能重新打开后重放。Mac 表文件导入实际使用 INSERT 批次；已共享 LibPQ COPY FROM/TO，其中 COPY FROM 已做真实事务回滚测试，使用 COPY 的跨连接迁移工作台尚未移植。
+  表菜单「导入数据」使用系统 Files，直接共享 Mac 的 CSV/TSV/分隔文本、JSON/JSONL、XLSX/XLSM 和 SQL INSERT 解析器、冻结磁盘快照、字段映射、默认/生成列规则与事务执行器；可调整编码/行范围/NULL/工作表、查看文件预览和首行 SQL 示例，执行使用完整值。选项变更或读取失败不能提交旧预览；每批500行为默认值，可在1～10000调整，整份导入同一事务，中途失败/取消回滚。COMMIT 回执不明时保留全工作区写保护，只允许明确核对后结束，不能重新打开后重放。Mac 表文件导入实际使用 INSERT 批次；已共享 LibPQ COPY FROM/TO，其中 COPY FROM 已做真实事务回滚测试，跨连接迁移工作台现在直接使用原 COPY/LOAD DATA 与共享执行器。
   SQL 补全显示名称无法唯一反解时不猜物理字段。真实 TLS/证书、多版本服务器和实体设备场景仍待验收；当前本轮验收状态见 [POSTGRESQL_PARITY.md](POSTGRESQL_PARITY.md)。
-- **Doris**：沿 macOS 的只读能力，复用 MariaDB 原生传输、SQL 编辑器、当前语句/选区、多结果、表/视图目录、列注释、分页、排序与筛选。Doris 与 Mac 共用 `DorisSchemaMetadata`，旧版本信息模式缺字段时回退 `SHOW FULL TABLES`。不发送 MySQL 的 `SET SESSION TRANSACTION READ ONLY` / `START TRANSACTION`，不开放事务、表/结构编辑与写 SQL。DUPLICATE/AGGREGATE KEY 不冒充唯一行标识，分页明确提示顺序限制。读取预览沿用 500 行/4 MiB 上限，尚未接入 MySQL 的 SQL 流式磁盘缓存。CSV/JSON/XLSX 与 SQL INSERT 导出共用原写入器，SQL 使用 Doris 方言并省略事务包装。
+- **Doris**：沿 macOS 的只读能力，复用 MariaDB 原生传输、SQL 编辑器、当前语句/选区、多结果、表/视图目录、列注释、分页、排序与筛选。Doris 与 Mac 共用 `DorisSchemaMetadata`，旧版本信息模式缺字段时回退 `SHOW FULL TABLES`。不发送 MySQL 的 `SET SESSION TRANSACTION READ ONLY` / `START TRANSACTION`，不开放事务、表/结构编辑与写 SQL。DUPLICATE/AGGREGATE KEY 不冒充唯一行标识，分页明确提示顺序限制。表数据页保持有界预览；SQL 页接入同一背压流和磁盘缓存、缓存分页及完整缓存导出。结构页读取原始 SHOW CREATE TABLE/VIEW 与共享索引转换；服务器不支持索引目录时明确提示不可用，不伪造空列表。CSV/JSON/XLSX 与 SQL INSERT 导出共用原写入器，SQL 使用 Doris 方言并省略事务包装。
 - **Redis**：iPhone/iPad 接入与 Mac 共用的键搜索/前缀树、集合读取/搜索、编辑计划、二进制编解码、命令控制台和命令导出源码。支持 ACL 和逻辑库；目录默认包含匹配，也可选前缀/精确及 Redis glob，SCAN 可继续扫描，COUNT 是提示。属性读取真实 TYPE/PTTL、MEMORY USAGE、OBJECT ENCODING；无权限的可选元数据标为不可用。
   String 按 64 KiB GETRANGE 浏览，整值编辑沿 Mac 的 **100 MiB** 上限；文本/HEX/JSON 展示、原始字节与整键命令导出均保留完整值。大文本以约 32 KiB 的 UTF-8 安全片段展示，提交校验完整原值并写完整值，不拿预览覆盖原值；JSON 展示不改原始字节，格式化输出限 100 MiB。集合支持 list/hash/set/zset 增删改、List 头尾插入、选择/批量删除/所选命令导出，超过 1,000 项按页编辑；页请求 200 项，每页最多保留 1,000 项/1 MiB。全键成员搜索共用 Mac 的字段范围、包含/前缀/精确、大小写与变音符号规则，不局限当前页。ZSet 默认降序，List 保留实际绝对索引；有草稿时禁止翻页/换搜索。
   新建五种常用类型、RENAMENX 重命名、整键 TTL/PERSIST/删除；独立整键操作也适用于大集合和 Stream。Hash 字段 TTL 按实际 HPTTL 能力探测，支持读取、设置、移除，旧服务降级；改值沿 HSET 清除字段 TTL，重命名按剩余 TTL 时长重新计时。Stream 共用 Mac 的 XRANGE 解析，按实际 entry ID 继续浏览，通过控制台执行 XADD/XDEL 等写命令。

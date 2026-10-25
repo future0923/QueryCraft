@@ -1,6 +1,11 @@
 import Foundation
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 @MainActor
 struct DataTransferLibraryTests {

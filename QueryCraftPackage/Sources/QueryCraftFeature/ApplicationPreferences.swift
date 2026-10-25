@@ -512,7 +512,7 @@ public final class ApplicationPreferences {
     }
 
     private static let supportedPageSizes = [50, 100, 200, 500, 1_000]
-    private static let supportedIndentationWidths = [2, 4, 6, 8]
+    private static let supportedIndentationWidths = EditorPreferenceRules.indentationWidths
     static let supportedRedisVisibleKeyTypeBatchSizes = [
         10, 25, 50, 100, 200, 500,
     ]
@@ -545,21 +545,21 @@ public final class ApplicationPreferences {
         static let appearance = "preferences.general.appearance"
         static let automaticallyChecksForUpdates =
             "preferences.general.automaticallyChecksForUpdates"
-        static let editorColors = "preferences.editor.colors.v1"
-        static let editorThemes = "preferences.editor.themes.v1"
-        static let editorANSIQuoteConnections = "preferences.editor.ansiQuoteConnections.v1"
-        static let editorFontFamily = "preferences.editor.fontFamily"
-        static let editorFontSize = "preferences.editor.fontSize"
+        static let editorColors = EditorPreferenceKey.colors
+        static let editorThemes = EditorPreferenceKey.themes
+        static let editorANSIQuoteConnections = EditorPreferenceKey.ansiQuoteConnections
+        static let editorFontFamily = EditorPreferenceKey.fontFamily
+        static let editorFontSize = EditorPreferenceKey.fontSize
         static let dataGridFontFamily =
             "preferences.appearance.dataGridFontFamily"
         static let dataGridFontSize =
             "preferences.appearance.dataGridFontSize"
         static let editorIndentationStyle =
-            "preferences.editor.indentationStyle"
+            EditorPreferenceKey.indentationStyle
         static let editorIndentationWidth =
-            "preferences.editor.indentationWidth"
-        static let editorCompletionKey = "preferences.editor.completionKey"
-        static let sqlKeywordCase = "preferences.editor.sqlKeywordCase"
+            EditorPreferenceKey.indentationWidth
+        static let editorCompletionKey = EditorPreferenceKey.completionKey
+        static let sqlKeywordCase = EditorPreferenceKey.keywordCase
         static let queryTimeout = "preferences.query.timeout"
         static let queryResultRowLimit = "preferences.query.resultRowLimit"
         static let confirmsDangerousSQL =

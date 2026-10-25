@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 import Foundation
 
 /// Upsert bulk-loads into a private temporary table, then applies the same ordered

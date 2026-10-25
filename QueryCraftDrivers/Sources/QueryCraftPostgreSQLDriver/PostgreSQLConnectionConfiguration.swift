@@ -31,7 +31,6 @@ struct PostgreSQLConnectionConfiguration: Equatable, Sendable {
         self.connectTimeout = connectTimeout
     }
 
-#if canImport(QueryCraftFeature)
     init(_ configuration: DatabaseConnectionConfiguration) throws {
         guard configuration.databaseType == .postgresql,
               configuration.databaseProduct.databaseType == .postgresql
@@ -55,5 +54,4 @@ struct PostgreSQLConnectionConfiguration: Equatable, Sendable {
         tlsMode = configuration.tlsMode
         connectTimeout = nil
     }
-#endif
 }

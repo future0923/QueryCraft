@@ -3,7 +3,7 @@ import GRDB
 
 struct SavedQuery: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
-    let connectionProfileID: ConnectionProfile.ID
+    let connectionProfileID: UUID
     let defaultDatabase: String?
     let name: String
     let sql: String

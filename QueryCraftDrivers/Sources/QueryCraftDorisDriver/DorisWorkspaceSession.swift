@@ -1,6 +1,14 @@
 import Foundation
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
+#if os(iOS)
+import QueryCraftMobileTransport
+#else
 import QueryCraftMariaDBTransportV4
+#endif
 
 actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProviding, WorkspaceSQLObjectOverviewProviding, WorkspaceNativeRowSourceSession {
     nonisolated let capabilities = WorkspaceSessionCapabilities.dorisReadOnly
@@ -18,7 +26,9 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
     }
 
     func connect() async throws {
+        #if !os(iOS)
         try await LicenseAccessGate.shared.requireDatabaseAccess()
+        #endif
         if await client?.isConnected() == true { return }
         let newClient = MariaDBClient(
             configuration: configuration.transportConfiguration
@@ -209,7 +219,7 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
             let result = try await requireClient().query(
                 "SHOW INDEX FROM \(qualifiedName(database: database, object: object.name))"
             )
-            return parseIndexes(result)
+            return DorisSchemaMetadata.indexes(result.dictionaryRows)
         } catch {
             return []
         }
@@ -393,21 +403,14 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
         if let database, !database.isEmpty {
             _ = try await client.query("USE \(quoteIdentifier(database))")
         }
-        let result = try await client.query(sql)
-        try Task.checkCancellation()
-        let columns = Self.dataColumns(from: result)
-        let rows = dataRows(
-            from: result,
-            offset: 0,
-            limit: maximumRows ?? result.rows.count
-        )
-        if !columns.isEmpty || !rows.isEmpty {
-            try await onBatch(WorkspaceDatabaseDataBatch(columns: columns, rows: rows))
+        let limiter = DorisQueryRowLimit(maximumRows: maximumRows)
+        let result = try await client.queryStream(sql) { batch in
+            let limited = await limiter.consume(batch)
+            if !limited.columns.isEmpty || !limited.rows.isEmpty { try await onBatch(limited) }
         }
-        return WorkspaceQueryExecutionResult(
-            columns: columns,
-            rowCount: rows.isEmpty ? Int(result.affectedRows) : rows.count
-        )
+        try Task.checkCancellation()
+        return WorkspaceQueryExecutionResult(columns: result.columns,
+            rowCount: result.columns.isEmpty ? Int(result.affectedRows) : min(result.rowCount, maximumRows ?? result.rowCount))
     }
 
     func streamTransferRows(sql: String, batchSize: Int,
@@ -432,51 +435,6 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
                 values: row.map {
                     $0.map(WorkspaceDatabaseDataCell.text) ?? .null
                 }
-            )
-        }
-    }
-
-    private func parseIndexes(
-        _ result: CDatabaseQueryResult
-    ) -> [WorkspaceDatabaseIndex] {
-        var names: [String] = []
-        var columns: [String: [WorkspaceDatabaseIndexColumn]] = [:]
-        var properties: [String: (Bool, String, String)] = [:]
-        for row in result.dictionaryRows {
-            guard let name = value(in: row, keys: ["Key_name", "KeyName"]),
-                  let column = value(in: row, keys: ["Column_name", "Column"])
-            else { continue }
-            let sequence = value(in: row, keys: ["Seq_in_index", "Seq"])
-                .flatMap(Int64.init) ?? Int64(columns[name, default: []].count + 1)
-            if properties[name] == nil {
-                names.append(name)
-                properties[name] = (
-                    value(in: row, keys: ["Non_unique"]).flatMap(Int.init) == 0,
-                    value(in: row, keys: ["Index_type", "IndexType"]) ?? "",
-                    value(in: row, keys: ["Comment", "Index_comment"]) ?? ""
-                )
-            }
-            columns[name, default: []].append(
-                WorkspaceDatabaseIndexColumn(
-                    sequence: sequence,
-                    name: column,
-                    prefixLength: nil,
-                    direction: nil,
-                    isExpression: false
-                )
-            )
-        }
-        return names.compactMap { name in
-            guard let property = properties[name] else { return nil }
-            return WorkspaceDatabaseIndex(
-                name: name,
-                columns: columns[name, default: []],
-                isUnique: property.0,
-                isPrimary: name.uppercased() == "PRIMARY",
-                type: property.1,
-                cardinality: nil,
-                isVisible: true,
-                comment: property.2
             )
         }
     }
@@ -544,16 +502,6 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
         )
     }
 
-    private func value(
-        in row: [String: String?],
-        keys: [String]
-    ) -> String? {
-        for key in keys {
-            if let value = row[key] ?? nil { return value }
-        }
-        return nil
-    }
-
     private func requireClient() throws -> MariaDBClient {
         guard let client else { throw WorkspaceSessionError.notConnected }
         return client
@@ -572,5 +520,18 @@ actor DorisWorkspaceSession: WorkspaceSession, WorkspaceSessionCapabilityProvidi
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "%", with: "\\%")
             .replacingOccurrences(of: "_", with: "\\_")
+    }
+}
+
+
+private actor DorisQueryRowLimit {
+    let maximumRows: Int?
+    private var count = 0
+    init(maximumRows: Int?) { self.maximumRows = maximumRows }
+    func consume(_ batch: WorkspaceDatabaseDataBatch) -> WorkspaceDatabaseDataBatch {
+        let remaining = maximumRows.map { max(0, $0 - count) } ?? batch.rows.count
+        let rows = Array(batch.rows.prefix(remaining))
+        count += rows.count
+        return .init(columns: batch.columns, rows: rows)
     }
 }

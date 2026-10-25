@@ -1,6 +1,6 @@
 import Foundation
 
-public struct WorkspaceDatabaseDataFilterCondition: Identifiable, Hashable, Sendable {
+public struct WorkspaceDatabaseDataFilterCondition: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
     public var isEnabled: Bool
     public var columnName: String

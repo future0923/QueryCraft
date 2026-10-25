@@ -56,5 +56,13 @@ struct MySQLConnectionConfiguration: Equatable, Sendable {
         )
     }
 }
+#if canImport(QueryCraftFeature)
 import QueryCraftFeature
+#else
+import QueryCraftMobileCore
+#endif
+#if os(iOS)
+import QueryCraftMobileTransport
+#else
 import QueryCraftMariaDBTransportV4
+#endif

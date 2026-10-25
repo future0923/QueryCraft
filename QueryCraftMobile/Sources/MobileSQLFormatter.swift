@@ -5,12 +5,13 @@ protocol MobileSQLFormatting: Sendable {
 }
 
 struct MobileSQLFormatter: MobileSQLFormatting {
+    var options: SQLFormattingOptions = .standard
     func edit(for request: SQLFormattingRequest, source: SQLSourceSnapshot, selection: NSRange) async throws -> SQLFormattingEdit? {
         let parser = try SQLStructuralParser()
         let snapshot = try await parser.parse(source)
         try Task.checkCancellation()
         return try await SQLFormattingWorker().formattingEdit(for: request, source: source,
-            selectedRange: selection, parseSnapshot: snapshot, options: .standard)
+            selectedRange: selection, parseSnapshot: snapshot, options: options)
     }
 }
 

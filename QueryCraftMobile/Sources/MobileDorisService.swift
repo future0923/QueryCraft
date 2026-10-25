@@ -82,3 +82,32 @@ struct MobileDorisService: MobileSQLServicing, MobileSQLMetadataProviding {
     }
     func editorContext(configuration: MobileSQLConfiguration) async throws -> SQLHighlightContext { .init(databaseType: .doris) }
 }
+
+
+struct MobileReadOnlyStructure: Sendable {
+    let object: MobileDatabaseObject
+    let ddl: String
+    let indexes: [WorkspaceDatabaseIndex]?
+    let indexMessage: String?
+}
+
+extension MobileDorisService {
+    func structure(configuration: MobileSQLConfiguration, object: MobileDatabaseObject) async throws -> MobileReadOnlyStructure {
+        let qualified = MobileMySQLService.identifier(object.database) + "." + MobileMySQLService.identifier(object.name)
+        let result = try await executor.execute(configuration: shared.catalogConfiguration(configuration),
+            sql: (object.kind == .view ? "SHOW CREATE VIEW " : "SHOW CREATE TABLE ") + qualified)
+        guard let row = result.rows.first, row.count > 1, let ddl = row[1] else { throw MobileQueryError.invalidServerMetadata }
+        try Task.checkCancellation()
+        guard object.kind == .table else { return .init(object: object, ddl: ddl, indexes: [], indexMessage: nil) }
+        do {
+            let indexes = try await executor.execute(configuration: shared.catalogConfiguration(configuration), sql: "SHOW INDEX FROM " + qualified)
+            try Task.checkCancellation()
+            return .init(object: object, ddl: ddl, indexes: DorisSchemaMetadata.indexes(indexes.dictionaryRows), indexMessage: nil)
+        } catch {
+            try Task.checkCancellation()
+            // Some Doris versions do not expose SHOW INDEX. Preserve the real
+            // DDL and label unavailable metadata rather than inventing no indexes.
+            return .init(object: object, ddl: ddl, indexes: nil, indexMessage: "索引信息不可用：" + error.localizedDescription)
+        }
+    }
+}

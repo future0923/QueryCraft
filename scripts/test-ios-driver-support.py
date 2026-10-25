@@ -80,8 +80,10 @@ try:
         def doris(sql, check=True):
             return subprocess.run([docker, 'exec', doris_name, 'mysql', '-h127.0.0.1', '-P9030', '-uroot', '-N', '-e', sql], text=True, capture_output=True, check=check).stdout
         wait_for('Doris', lambda: '1' in doris('SELECT 1'))
-        wait_for('Doris backend', lambda: 'true' in doris('SHOW BACKENDS').lower())
-        doris("CREATE DATABASE querycraft_ios_drivers; CREATE TABLE querycraft_ios_drivers.sample (id INT, name VARCHAR(80) COMMENT '真实字段注释') DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES ('replication_num'='1'); INSERT INTO querycraft_ios_drivers.sample VALUES (1,'你好 Doris'),(2,'second'); CREATE VIEW querycraft_ios_drivers.sample_view AS SELECT * FROM querycraft_ios_drivers.sample;")
+        doris("CREATE DATABASE querycraft_ios_drivers")
+        # Wait for actual tablet allocation, not an unrelated true status field.
+        wait_for('Doris backend', lambda: doris("CREATE TABLE IF NOT EXISTS querycraft_ios_drivers.sample (id INT, name VARCHAR(80) COMMENT '真实字段注释') DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES ('replication_num'='1')") is not None)
+        doris("INSERT INTO querycraft_ios_drivers.sample VALUES (1,'你好 Doris'),(2,'second'); CREATE VIEW querycraft_ios_drivers.sample_view AS SELECT * FROM querycraft_ios_drivers.sample;")
         print('Fixtures prepared; running mobile tests', flush=True)
         arguments = ['xcodebuildmcp', 'simulator', 'test', '--project-path', str(root / 'QueryCraftMobile/QueryCraftMobile.xcodeproj'),
             '--scheme', 'QueryCraftMobileProof', '--simulator-id', options.simulator, '--derived-data-path', str(root / '.build/ios-driver-derived'),

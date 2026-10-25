@@ -683,7 +683,7 @@ final class WorkspaceQueryDocumentModel: Identifiable {
             }
             availableSchemas = schemas
             if !schemas.contains(schemaName ?? "") {
-                schemaName = schemas.contains("public") ? "public" : schemas.first
+                schemaName = WorkspaceQuerySchemaSelection.resolved(current: schemaName, schemas: schemas)
             }
             isLoadingSchemas = false
         } catch is CancellationError {

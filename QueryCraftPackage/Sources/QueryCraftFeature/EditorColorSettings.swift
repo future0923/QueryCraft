@@ -23,6 +23,11 @@ enum EditorHexColor {
                        green: CGFloat((value >> 8) & 255) / 255,
                        blue: CGFloat(value & 255) / 255, alpha: 1)
     }
+    static func hex(_ color: UIColor) -> String? {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
+        return String(format: "#%02X%02X%02X", Int((red * 255).rounded()), Int((green * 255).rounded()), Int((blue * 255).rounded()))
+    }
     #else
     static func color(_ hex: String) -> NSColor {
         let value = UInt32(normalized(hex)?.dropFirst() ?? "000000", radix: 16) ?? 0

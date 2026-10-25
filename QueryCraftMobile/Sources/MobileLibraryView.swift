@@ -15,11 +15,12 @@ struct MobileLibraryView: View {
                 NavigationStack { MobileConnectionList(app: app) }
             }
         }
+        .sheet(isPresented: $app.showingTransfer) { if let model = app.transferModel { MobileTransferView(model: model) } }
         .sheet(item: $app.editingConnection) { draft in MobileConnectionForm(draft: draft) { try app.save(draft) } }
         .sheet(item: $app.passwordPrompt) { profile in
             MobilePasswordPrompt(profile: profile) { password in app.open(profile, suppliedPassword: password) }
         }
-        .confirmationDialog("删除连接及其查询历史？", isPresented: Binding(get: { app.pendingDeletion != nil }, set: { if !$0 { app.pendingDeletion = nil } }), titleVisibility: .visible) {
+        .confirmationDialog("删除连接、SQL 文稿、已保存查询和查询历史？", isPresented: Binding(get: { app.pendingDeletion != nil }, set: { if !$0 { app.pendingDeletion = nil } }), titleVisibility: .visible) {
             Button("删除连接", role: .destructive) {
                 if let profile = app.pendingDeletion { do { try app.delete(profile) } catch { app.message = error.localizedDescription } }
             }

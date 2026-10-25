@@ -1,3 +1,6 @@
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 /// An additive capability: older API 5 drivers keep using their existing INSERT path.
 /// New driver bundles referencing this capability require app version 0.1.10 or newer.
 public protocol WorkspaceNativeBulkTransferSession: WorkspaceSession {

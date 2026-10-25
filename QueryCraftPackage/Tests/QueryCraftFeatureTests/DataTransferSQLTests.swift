@@ -1,6 +1,11 @@
 import Foundation
 import Testing
+#if os(iOS)
+import QueryCraftMobileCore
+@testable import QueryCraftMobileProof
+#else
 @testable import QueryCraftFeature
+#endif
 
 struct DataTransferSQLTests {
     private func column(_ name: String = "value", type: String = "text", key: String = "", extra: String = "", nullable: Bool = true) -> WorkspaceDatabaseColumn {
@@ -16,6 +21,26 @@ struct DataTransferSQLTests {
         #expect(TransferCapabilities.supports(.table, source: .doris, target: .mysql))
         #expect(!TransferCapabilities.supports(.function, source: .mysql, target: .postgresql))
         #expect(!TransferCapabilities.supports(.sequence, source: .mysql, target: .mysql))
+    }
+
+    @Test("Switching transfer modes and driver pairs uses one selection policy")
+    func changingCapabilitiesPrunesOnlyUnsupportedObjects() {
+        let table = TransferObject(kind: .table, name: "table"), view = TransferObject(kind: .view, name: "view")
+        var configuration = DataTransferConfiguration()
+        configuration.objects = [table, view]; configuration.content = .structureOnly; configuration.strategy = .overwrite
+        configuration.pruneSelection(sourceType: .mysql, targetType: .mysql)
+        #expect(configuration.objects == [table, view]); #expect(configuration.strategy == .overwrite)
+        configuration.pruneSelection(sourceType: .mysql, targetType: .postgresql)
+        #expect(configuration.objects == [table]); #expect(configuration.strategy == .append)
+        configuration.content = .dataOnly; configuration.strategy = .rebuild
+        configuration.pruneSelection(sourceType: .postgresql, targetType: .mysql)
+        #expect(configuration.strategy == .append)
+        configuration.source = .init(profileID: UUID(), database: "source")
+        configuration.target = .init(profileID: UUID(), database: "target")
+        configuration.tableFilters = ["table": "id=1"]
+        configuration.swapEndpoints()
+        #expect(configuration.source.database == "target"); #expect(configuration.target.database == "source")
+        #expect(configuration.objects.isEmpty); #expect(configuration.tableFilters.isEmpty)
     }
 
     @Test("Filters cannot smuggle writes or extra statements", arguments: ["id=1; DROP TABLE t", "SELECT * INTO OUTFILE '/tmp/a' FROM t", "SELECT * FROM t FOR UPDATE", "CALL f()", "id=1 /* open", "'unterminated", "WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x", "SELECT * FROM t /*!50000 INTO OUTFILE '/tmp/a' */", "id=1 /*M! AND x=1 */"])

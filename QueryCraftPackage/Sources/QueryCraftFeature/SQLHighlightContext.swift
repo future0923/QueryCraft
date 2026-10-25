@@ -36,11 +36,9 @@ struct SQLHighlightContext: Equatable, Hashable, Sendable {
         return changed ? result as String : nil
     }
 
-    #if !os(iOS)
     static func connectionKey(_ configuration: DatabaseConnectionConfiguration) -> String {
         let parts = [configuration.databaseType.rawValue, configuration.host.lowercased(), String(configuration.port), configuration.username]
         let data = (try? JSONEncoder().encode(parts)) ?? Data()
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
-    #endif
 }

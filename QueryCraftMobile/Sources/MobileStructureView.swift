@@ -9,12 +9,42 @@ struct MobileStructureView: View {
             MobileSchemaContent(controller: controller, draft: controller.draft(for: object))
                 .id(object.id)
         } else {
-            // Standalone model previews keep the same stable readonly container.
-            MobileResultsView(data: .init(columns: ["名称", "类型", "允许 NULL", "键", "默认值", "附加", "注释"], rows: (model.columns ?? []).map {
-                [$0.name, $0.type, $0.isNullable ? "是" : "否", $0.key, $0.defaultValue, $0.extra, $0.comment]
-            }), revision: model.revision.uuidString + ".structure", widthKey: (model.selectedObject?.id ?? "") + ".structure",
-                hasLoaded: model.columns != nil, isLoading: model.isLoadingTable, errorMessage: model.tableError, status: "只读结构")
+            MobileReadOnlyStructureView(model: model)
         }
+    }
+}
+
+struct MobileReadOnlyStructureView: View {
+    @Bindable var model: MobileBrowserModel
+    @State private var section = "字段"
+    @State private var ddl: MobileStructureSQLSnapshot?
+    var body: some View {
+        VStack(spacing: 0) {
+            // Standalone model previews keep the same stable readonly container.
+            MobileResultsView(data: data, revision: model.revision.uuidString + ".structure", widthKey: (model.selectedObject?.id ?? "") + ".structure." + section,
+                hasLoaded: model.columns != nil && (section == "字段" || model.readOnlyStructure != nil), isLoading: model.isLoadingTable,
+                errorMessage: model.tableError ?? (section == "索引" ? model.readOnlyStructure?.indexMessage : nil), status: "只读结构")
+            if model.supportsReadOnlyStructure {
+                HStack {
+                    Picker("结构", selection: $section) { Text("字段").tag("字段"); Text("索引").tag("索引") }.pickerStyle(.menu)
+                    Spacer()
+                    Button("建表 SQL", systemImage: "chevron.left.forwardslash.chevron.right") {
+                        if let structure = model.readOnlyStructure { ddl = .init(sql: structure.ddl) }
+                    }
+                }.padding(.horizontal, 16).frame(height: 44)
+                    .disabled(model.readOnlyStructure == nil)
+            }
+        }.sheet(item: $ddl) { MobileStructureSQLView(sql: $0.sql, scopeDescription: "服务器 SHOW CREATE 返回的原始定义。") }
+    }
+    private var data: MobileGridData {
+        if section == "索引" {
+            return .init(columns: ["名称", "字段", "类型", "唯一", "注释"], rows: (model.readOnlyStructure?.indexes ?? []).map {
+                [$0.name, $0.columnList, $0.type, $0.isUnique ? "是" : "否", $0.comment]
+            })
+        }
+        return .init(columns: ["名称", "类型", "允许 NULL", "键", "默认值", "附加", "注释"], rows: (model.columns ?? []).map {
+            [$0.name, $0.type, $0.isNullable ? "是" : "否", $0.key, $0.defaultValue, $0.extra, $0.comment]
+        })
     }
 }
 
@@ -158,6 +188,7 @@ private extension WorkspaceDatabaseSchemaEditorState.IndexItem {
 struct MobileStructureSQLSnapshot: Identifiable { let id = UUID(); let sql: String }
 struct MobileStructureSQLView: View {
     let sql: String
+    var scopeDescription = "字段定义由当前元数据快照生成；索引和其他约束请在对应项目查看。"
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
@@ -167,7 +198,7 @@ struct MobileStructureSQLView: View {
                     ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
                     ToolbarItem(placement: .primaryAction) { ShareLink(item: sql) }
                 }
-                .safeAreaInset(edge: .bottom) { Text("字段定义由当前元数据快照生成；索引和其他约束请在对应项目查看。").font(.caption).foregroundStyle(.secondary).padding() }
+                .safeAreaInset(edge: .bottom) { Text(scopeDescription).font(.caption).foregroundStyle(.secondary).padding() }
         }
     }
 }
