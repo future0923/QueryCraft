@@ -49,7 +49,7 @@ extension MCPRuntime {
             for name in requested.prefix(maximumTables) {
                 try Task.checkCancellation()
                 guard let object = objects.first(where: { $0.name == name || (args.string("schema") != nil && $0.nameWithinSchema == name) }) else {
-                    throw MCPFailure("Object not found in the selected database. Refresh list_tables and use its exact name.", code: .connectionNotFound)
+                    throw MCPFailure("Object not found in the selected database/schema or outside the authorized scope.", code: .objectNotFound)
                 }
                 details.append((object, try await connection.fetchDetails(for: object, in: database ?? "")))
             }
