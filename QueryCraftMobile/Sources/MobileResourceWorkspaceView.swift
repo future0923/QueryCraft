@@ -14,39 +14,17 @@ struct MobileResourceWorkspaceView: View {
     var body: some View {
         NavigationSplitView(preferredCompactColumn: $preferredColumn) {
             VStack(spacing: 0) {
-                HStack {
-                    Menu {
-                        Picker("逻辑数据库", selection: Binding(get: { model.scope ?? "" }, set: { model.selectScope($0) })) {
-                            ForEach(model.scopes ?? [], id: \.self) { Text(model.profile.driver == .redis ? "DB " + $0 : $0).tag($0) }
-                        }
-                    } label: { Label(model.scope.map { model.profile.driver == .redis ? "DB " + $0 : $0 } ?? (model.isLoadingCatalog ? "连接中" : "选择数据库"), systemImage: "cylinder") }
-                    .disabled(model.scopes == nil)
-                    Spacer()
-                    if model.profile.driver == .redis {
-                        Menu {
-                            Toggle("按前缀分组", isOn: $groupsRedisKeys)
-                            Picker("键名匹配", selection: $model.redisSearchMode) {
-                                ForEach(RedisKeySearchMatchMode.allCases) { Text($0.title).tag($0) }
-                            }
-                        } label: { Image(systemName: "line.3.horizontal.decrease") }
-                        .frame(minWidth: 44, minHeight: 44).accessibilityLabel("键名匹配方式").disabled(model.hasPendingChanges)
-                        Button("命令", systemImage: "terminal") { model.beginRedisConsole() }
-                            .labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44).disabled(!model.canManageRedisKeys).accessibilityIdentifier("openRedisConsole")
-                        Menu {
-                            ForEach(RedisKeyCreationPlan.creatableTypes, id: \.self) { type in
-                                Button(type.rawValue) { model.beginRedisKeyCreation(type) }
-                            }
-                        } label: { Label("新建键", systemImage: "plus") }
-                        .labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44).disabled(!model.canManageRedisKeys).accessibilityIdentifier("createRedisKey")
-                    }
-                }.padding(.horizontal, 16).frame(height: 44)
                 List {
                     if model.profile.driver == .redis, groupsRedisKeys, let tree = model.redisTree {
                         OutlineGroup(tree, children: \.outlineChildren) { node in
                             if let reference = node.reference {
                                 resourceRow(.init(name: reference.name, kind: "key"), displayName: node.title)
                             } else {
-                                Label("\(node.title) (\(node.keyCount))", systemImage: "folder")
+                                Label {
+                                    Text("\(node.title) (\(node.keyCount))").foregroundStyle(.primary)
+                                } icon: {
+                                    Image(systemName: "folder").foregroundStyle(.secondary)
+                                }
                             }
                         }
                         ForEach((model.catalog ?? []).filter { $0.binaryKeyData != nil }) { resourceRow($0) }
@@ -69,22 +47,35 @@ struct MobileResourceWorkspaceView: View {
                     }
                 }.padding(.horizontal, 16).frame(height: 48)
             }
-            .navigationTitle(model.profile.name).navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(catalogTitle).navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleMenu {
+                Picker("逻辑数据库", selection: Binding(get: { model.scope ?? "" }, set: { model.selectScope($0) })) {
+                    ForEach(model.scopes ?? [], id: \.self) { Text(model.profile.driver == .redis ? "DB " + $0 : $0).tag($0) }
+                }.disabled(model.scopes == nil || model.hasPendingChanges || model.isBackgrounded)
+            }
             .searchable(text: $model.search, prompt: model.profile.driver == .redis ? "搜索键名，如 user:*" : "搜索索引、别名和数据流")
             .onSubmit(of: .search) { if model.profile.driver == .redis { model.loadCatalog() } }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("连接", systemImage: "chevron.left", action: app.showLibrary) }
                 if sizeClass == .compact && preferredColumn == .sidebar {
-                    ToolbarItem(placement: .primaryAction) { refreshButton }
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        refreshButton
+                        if model.profile.driver == .redis { redisCatalogActions }
+                    }
                 }
             }
         } detail: {
             VStack(spacing: 0) {
+                if !model.structure, let chunk = model.details?.redisString {
+                    MobileRedisStringValueView(model: model, chunk: chunk)
+                        .id((model.scope ?? "") + "\0" + (model.selected?.id ?? ""))
+                } else {
                 MobileResultsView(data: (model.structure ? model.details?.structure : model.details?.data) ?? .init(columns: [], rows: []),
                     revision: model.revision.uuidString + String(model.structure),
                     widthKey: model.profile.id.uuidString + (model.selected?.id ?? "") + String(model.structure),
                     hasLoaded: model.details != nil, isLoading: model.isLoadingDetails, errorMessage: model.detailError,
                     status: model.details?.status ?? "只读浏览", exportName: model.selected?.name ?? "data", exportDialect: nil, resourcePagination: model)
+                }
 
             }
             .overlay {
@@ -94,8 +85,16 @@ struct MobileResourceWorkspaceView: View {
             .toolbarTitleMenu {
                 Picker("查看", selection: $model.structure) { Text("数据").tag(false); Text(model.profile.driver == .redis ? "属性" : "Mapping").tag(true) }
             }
-            .toolbar { if sizeClass == .regular || preferredColumn == .detail { ToolbarItem(placement: .primaryAction) { refreshButton } } }
+            .toolbar {
+                if sizeClass == .regular || preferredColumn == .detail {
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        refreshButton
+                        if model.profile.driver == .redis { redisCatalogActions }
+                    }
+                }
+            }
         }
+        .tint(MobileAppearance.tint)
         .sheet(isPresented: Binding(get: { model.redisEditor != nil }, set: { if !$0 { model.closeRedisEditor() } })) {
             if let editor = model.redisEditor { MobileRedisEditorView(editor: editor, close: model.closeRedisEditor) }
         }
@@ -118,7 +117,7 @@ struct MobileResourceWorkspaceView: View {
                 Text(displayName ?? resource.name).lineLimit(1).foregroundStyle(.primary)
                 Text(resource.kind).font(.caption).foregroundStyle(.secondary)
             }
-        }.listRowBackground(model.selected == resource ? Color.accentColor.opacity(0.1) : nil)
+        }.listRowBackground(model.selected == resource ? MobileAppearance.selection : nil)
         .contextMenu {
             if model.profile.driver == .redis {
                 Button("重命名", systemImage: "pencil") { model.beginRedisKeyRename(resource) }
@@ -130,11 +129,33 @@ struct MobileResourceWorkspaceView: View {
             }
         }
     }
+    private var catalogTitle: String {
+        guard model.profile.driver == .redis else { return model.profile.name }
+        return model.profile.name + " · " + (model.scope.map { "DB " + $0 } ?? "选择数据库")
+    }
+    private var redisCatalogActions: some View {
+        Menu {
+            Menu {
+                Toggle("按前缀分组", isOn: $groupsRedisKeys)
+                Picker("键名匹配", selection: $model.redisSearchMode) {
+                    ForEach(RedisKeySearchMatchMode.allCases) { Text($0.title).tag($0) }
+                }
+            } label: { Label("目录显示与匹配", systemImage: "line.3.horizontal.decrease") }
+            .accessibilityIdentifier("redisCatalogOptions").disabled(model.hasPendingChanges)
+            Button("命令", systemImage: "terminal") { model.beginRedisConsole() }
+                .disabled(!model.canManageRedisKeys).accessibilityIdentifier("openRedisConsole")
+            Menu {
+                ForEach(RedisKeyCreationPlan.creatableTypes, id: \.self) { type in
+                    Button(type.rawValue) { model.beginRedisKeyCreation(type) }
+                }
+            } label: { Label("新建键", systemImage: "plus") }
+            .disabled(!model.canManageRedisKeys).accessibilityIdentifier("createRedisKey")
+        } label: { Label("更多键操作", systemImage: "ellipsis") }
+        .labelStyle(.iconOnly).accessibilityIdentifier("redisCatalogActions")
+    }
     private var refreshButton: some View {
-        HStack {
-            if model.isLoading { Button("取消", systemImage: "stop.circle", action: model.cancel).labelStyle(.iconOnly) }
-            Button("刷新", systemImage: "arrow.clockwise", action: model.refresh).labelStyle(.iconOnly)
-                .accessibilityIdentifier("refreshCurrentContent")
-        }
+        Button(model.isLoading ? "取消" : "刷新", systemImage: model.isLoading ? "stop.circle" : "arrow.clockwise") {
+            if model.isLoading { model.cancel() } else { model.refresh() }
+        }.labelStyle(.iconOnly).accessibilityIdentifier("refreshCurrentContent")
     }
 }

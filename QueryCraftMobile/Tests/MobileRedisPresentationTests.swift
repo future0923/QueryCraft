@@ -20,8 +20,10 @@ import QueryCraftMobileCore
             window.rootViewController = host; window.makeKeyAndVisible()
             defer { window.isHidden = true; previous?.makeKey(); model.cancel() }
             try await Task.sleep(for: .milliseconds(200)); host.view.layoutIfNeeded()
-            let grid = try XCTUnwrap(descendants(host.view).compactMap { $0 as? UICollectionView }.first { $0.delegate is MobileDataGrid.Coordinator })
-            let frame = grid.frame
+            let valueView = try XCTUnwrap(descendants(host.view).compactMap { $0 as? UITextView }.first { $0.accessibilityIdentifier == "redisStringText" })
+            XCTAssertEqual(valueView.text, "你好 Redis")
+            XCTAssertFalse(descendants(host.view).contains { ($0 as? UICollectionView)?.delegate is MobileDataGrid.Coordinator })
+            let frame = valueView.frame
             model.beginRedisEditing()
             let editor = try XCTUnwrap(model.redisEditor); await editor.reload()?.value
             try await Task.sleep(for: .milliseconds(500)); host.view.layoutIfNeeded()
@@ -41,7 +43,7 @@ import QueryCraftMobileCore
             await editor.submit()?.value; XCTAssertFalse(editor.hasChanges); XCTAssertFalse(editor.needsVerification)
             model.closeRedisEditor()
             try await Task.sleep(for: .milliseconds(400)); host.view.layoutIfNeeded()
-            XCTAssertEqual(grid.frame, frame)
+            XCTAssertEqual(valueView.frame, frame)
             let stored = try await client.execute(["GET", key]).stringValue
             XCTAssertEqual(stored, "从 iOS 编辑 Redis")
             _ = try await client.execute(["DEL", key]); await client.close()
@@ -109,7 +111,7 @@ import QueryCraftMobileCore
             defer { window.isHidden = true; previous?.makeKey() }
             try await Task.sleep(for: .milliseconds(300)); host.view.layoutIfNeeded()
             let fields = descendants(host.view).compactMap { $0 as? UITextField }
-            XCTAssertEqual(fields.contains { $0.placeholder?.contains("字段 TTL") == true }, editor.snapshot?.hashFieldExpirationSupport == true)
+            XCTAssertEqual(fields.contains { $0.placeholder == "永久" || $0.accessibilityIdentifier?.hasPrefix("redisMemberTTL-") == true }, editor.snapshot?.hashFieldExpirationSupport == true)
             if let output = ProcessInfo.processInfo.environment["PROOF_DRIVER_PREVIEW_OUTPUT"] {
                 let directory = URL(fileURLWithPath: output, isDirectory: true)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -242,7 +244,7 @@ import QueryCraftMobileCore
             let action = try XCTUnwrap(model.redisKeyAction); await action.loadMetadata()?.value
             try await Task.sleep(for: .milliseconds(500)); host.view.layoutIfNeeded()
             let sheet = try XCTUnwrap(host.presentedViewController)
-            XCTAssertTrue(descendants(sheet.view).compactMap { $0 as? UITextField }.contains { $0.placeholder?.contains("TTL") == true })
+            XCTAssertTrue(descendants(sheet.view).compactMap { $0 as? UITextField }.contains { $0.placeholder == "正整数" })
             action.safetyLock.disable(); action.expirationMode = .expires; action.ttl = "60000"; action.prepare()
             XCTAssertTrue(action.preview?.contains("PEXPIRE") == true)
             try await Task.sleep(for: .milliseconds(200)); try capture("metadata-dark")

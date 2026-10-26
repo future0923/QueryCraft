@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct MobileRedisEditorView: View {
     @Bindable var editor: MobileRedisEditor
     let close: () -> Void
+    @State private var isSelectingMembers = false
     @State private var confirmDiscard = false
     @State private var confirmReload = false
     @State private var exportData = Data()
@@ -17,7 +18,9 @@ struct MobileRedisEditorView: View {
             ScrollViewReader { proxy in
                 Form {
                     Section("DB \(editor.database) · \(editor.snapshot?.details.reference.type.rawValue ?? "Redis")") {
-                        Text(editor.key).lineLimit(3).truncationMode(.middle).textSelection(.enabled)
+                        LabeledContent("键名") {
+                            Text(editor.key).lineLimit(3).truncationMode(.middle).multilineTextAlignment(.trailing).textSelection(.enabled)
+                        }
                         Toggle("安全锁", isOn: Binding(get: { editor.safetyLock.isEnabled }, set: { if $0 { editor.safetyLock.enable() } else { editor.safetyLock.disable() } }))
                             .disabled(editor.isSubmitting || editor.isBackgrounded)
                     }
@@ -34,7 +37,7 @@ struct MobileRedisEditorView: View {
                                     Spacer()
                                     Button("下一页") { editor.nextPage() }.disabled(!editor.canTurnPage || snapshot.continuation == nil)
                                 }
-                                Text("先提交或丢弃本页草稿再翻页。SCAN 非稳定快照，成员可能重复或变化；本页不提供整键 TTL 修改和删除。").font(.caption).foregroundStyle(.secondary)
+                                Text("先提交或丢弃本页草稿再翻页。" + ([RedisKeyType.hash, .set].contains(snapshot.details.reference.type) ? "SCAN 非稳定快照，成员可能重复或变化。" : "并发修改可能影响成员顺序和分页。") + "本页不提供整键 TTL 修改和删除。").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                         if snapshot.details.reference.type == .string {
@@ -65,29 +68,13 @@ struct MobileRedisEditorView: View {
                                     Text(editor.activeSearch == nil ? "当前页没有成员。" : "当前搜索页没有匹配成员。")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
-                                ForEach($editor.rows) { $row in
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        if snapshot.details.reference.type == .list {
-                                            Text(row.originalIndex.map { "位置 \($0)" } ?? (row.insertionEdge == .head ? "新增到头部" : "新增到尾部")).font(.caption)
-                                        } else {
-                                            TextField(snapshot.details.reference.type == .hash ? "字段" : "成员", text: $row.firstValue).disabled(row.isBinaryReadOnly)
-                                        }
-                                        if snapshot.details.reference.type != .set {
-                                            TextField(snapshot.details.reference.type == .sortedSet ? "分数" : "值", text: $row.secondValue, axis: .vertical).disabled(row.isBinaryReadOnly)
-                                        }
-                                        if snapshot.details.reference.type == .hash, snapshot.hashFieldExpirationSupport == true {
-                                            TextField("字段 TTL（毫秒，留空为永久）", text: $row.thirdValue).keyboardType(.numberPad).disabled(row.isBinaryReadOnly)
-                                        }
-                                        if row.isBinaryReadOnly { Text("二进制成员保留原始字节，暂不支持移动端修改。").font(.caption) }
-                                        HStack {
-                                            Button { editor.toggleSelection(row.id) } label: {
-                                                Image(systemName: editor.selectedRowIDs.contains(row.id) ? "checkmark.circle.fill" : "circle")
-                                            }.accessibilityLabel(editor.selectedRowIDs.contains(row.id) ? "取消选择成员" : "选择成员")
-                                            Spacer()
-                                        Button(row.isDeleted ? "撤销删除" : "删除成员", role: row.isDeleted ? nil : .destructive) { editor.removeRow(row.id) }
-                                            .disabled(row.isBinaryReadOnly)
-                                        }
-                                    }.opacity(row.isDeleted ? 0.5 : 1)
+                                ForEach(editor.rows) { row in
+                                    let input = $editor.rows.identifiedRow(row)
+                                    MobileRedisMemberRow(row: input, type: snapshot.details.reference.type,
+                                        supportsFieldExpiration: snapshot.hashFieldExpirationSupport == true,
+                                        isSelected: editor.selectedRowIDs.contains(row.id),
+                                        select: isSelectingMembers ? { editor.toggleSelection(row.id) } : nil,
+                                        remove: { editor.removeRow(row.id) })
                                 }
                                 if snapshot.details.reference.type == .hash {
                                     Text(snapshot.hashFieldExpirationSupport == true
@@ -100,21 +87,27 @@ struct MobileRedisEditorView: View {
                                     if snapshot.details.reference.type == .list { Button("添加到头部") { editor.addRow(head: true) } }
                                     Spacer()
                                     Menu {
-                                        Button("选择本页全部", action: editor.selectAllRows)
-                                        Button("取消选择", action: editor.clearSelection)
+                                        Button(isSelectingMembers ? "完成选择" : "选择成员") {
+                                            isSelectingMembers.toggle()
+                                            if !isSelectingMembers { editor.clearSelection() }
+                                        }
+                                        Button("选择本页全部") { isSelectingMembers = true; editor.selectAllRows() }
+                                        Button("取消选择") { editor.clearSelection(); isSelectingMembers = false }
                                         Button("删除所选成员", role: .destructive, action: editor.removeSelectedRows).disabled(editor.selectedRowIDs.isEmpty)
                                         Button("导出所选命令") { commandExportRequest = true }.disabled(editor.selectedRowIDs.isEmpty)
                                         Button("导出整键命令") { commandExportRequest = false }.disabled(snapshot.isPartial || editor.activeSearch != nil)
                                     } label: { Label("成员操作", systemImage: "ellipsis.circle") }
-                                }
+                                }.buttonStyle(.borderless)
                             }.disabled(!editor.canEdit || editor.deleteKey)
                         }
                         Section("过期时间") {
                             Picker("到期方式", selection: $editor.expirationMode) {
                                 ForEach(RedisKeyExpirationMode.allCases) { Text($0.title).tag($0) }
                             }
-                            TextField("TTL（毫秒，正整数）", text: $editor.ttl).keyboardType(.numberPad)
-                                .disabled(editor.expirationMode == .persistent)
+                            LabeledContent("TTL（毫秒）") {
+                                TextField("正整数", text: $editor.ttl).keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                                    .accessibilityIdentifier("redisEditTTL").disabled(editor.expirationMode == .persistent)
+                            }
                             Text("未修改 TTL 时保留原到期时间；新 TTL 从提交时开始计算。").font(.caption).foregroundStyle(.secondary)
                         }.disabled(!editor.canEdit || editor.deleteKey || snapshot.isPartial)
                         Section {

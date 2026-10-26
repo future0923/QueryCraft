@@ -225,6 +225,7 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisReplyValue+FormattedText.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeySearchMatchMode.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisValueFormatter.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisValueDisplayFormat.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyEditableRow.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyExpirationMode.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisKeyEditError.swift

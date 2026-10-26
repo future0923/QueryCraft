@@ -14,8 +14,10 @@ struct MobileRedisKeyActionView: View {
                         if case .rename(let reference) = action.mode { LabeledContent("原名称", value: reference.name) }
                         if action.isMetadata { Text(action.name).lineLimit(3).truncationMode(.middle).textSelection(.enabled) }
                         else {
-                            TextField(action.isCreation ? "键名" : "新名称", text: $action.name)
-                                .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("redisKeyName")
+                            LabeledContent(action.isCreation ? "键名" : "新名称") {
+                                TextField("请输入", text: $action.name).multilineTextAlignment(.trailing)
+                                    .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("redisKeyName")
+                            }
                         }
                         Toggle("安全锁", isOn: Binding(get: { action.safetyLock.isEnabled }, set: { if $0 { action.safetyLock.enable() } else { action.safetyLock.disable() } }))
                     }.disabled(!action.canEdit)
@@ -26,12 +28,11 @@ struct MobileRedisKeyActionView: View {
                             }.disabled(!action.canEdit)
                         } else {
                             Section("成员") {
-                                ForEach($action.rows) { $row in
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        if action.type != .list { TextField(action.type == .hash ? "字段" : "成员", text: $row.firstValue) }
-                                        if action.type != .set { TextField(action.type == .sortedSet ? "分数" : "值", text: $row.secondValue, axis: .vertical) }
-                                        Button("删除成员", role: .destructive) { action.rows.removeAll { $0.id == row.id } }
-                                    }
+                                ForEach(action.rows) { row in
+                                    let input = $action.rows.identifiedRow(row)
+                                    MobileRedisMemberRow(row: input, type: action.type,
+                                        creationIndex: action.rows.firstIndex { $0.id == row.id },
+                                        remove: { action.removeRow(row.id) })
                                 }
                                 Button("添加成员", action: action.addRow).disabled(action.rows.count >= 1_000)
                             }.disabled(!action.canEdit)
@@ -42,7 +43,10 @@ struct MobileRedisKeyActionView: View {
                             Picker("到期方式", selection: $action.expirationMode) {
                                 ForEach(RedisKeyExpirationMode.allCases) { Text($0.title).tag($0) }
                             }
-                            TextField("TTL（毫秒，正整数）", text: $action.ttl).keyboardType(.numberPad).disabled(action.expirationMode == .persistent)
+                            LabeledContent("TTL（毫秒）") {
+                                TextField("正整数", text: $action.ttl).keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                                    .accessibilityIdentifier("redisKeyTTL").disabled(action.expirationMode == .persistent)
+                            }
                         }.disabled(!action.canEdit)
                     }
                     Section {

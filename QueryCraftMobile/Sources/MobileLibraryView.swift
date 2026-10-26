@@ -25,6 +25,7 @@ struct MobileLibraryView: View {
                 if let profile = app.pendingDeletion { do { try app.delete(profile) } catch { app.message = error.localizedDescription } }
             }
         }
+        .mobileAppearance()
     }
 }
 

@@ -39,7 +39,8 @@ import QueryCraftMobileCore
     @ObservationIgnored private var detailCursor: UInt64 = 0
     @ObservationIgnored private var history: [(Int, UInt64)] = []
     @ObservationIgnored private var loadedSearch = ""
-    var canGoBack: Bool { !history.isEmpty && !isLoadingDetails }
+    var hasPreviousDetailPage: Bool { !history.isEmpty }
+    var canGoBack: Bool { hasPreviousDetailPage && !isLoadingDetails }
     var isLoading: Bool { elasticsearch?.isLoading == true || isLoadingCatalog || isLoadingDetails }
     var visibleResources: [MobileResource] {
         guard profile.driver == .elasticsearch, !search.isEmpty else { return catalog ?? [] }

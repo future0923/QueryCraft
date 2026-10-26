@@ -75,7 +75,7 @@ struct MobileTransferView: View {
                         Button("运行记录", systemImage: "clock") { history = true }
                         Spacer()
                         Button("预览传输计划", systemImage: "doc.text.magnifyingglass") { model.prepare() }
-                            .buttonStyle(.borderedProminent).disabled(!model.canPrepare)
+                            .buttonStyle(.borderedProminent).foregroundStyle(MobileAppearance.onTint).disabled(!model.canPrepare)
                     }
                 }.padding().background(.bar)
             }
@@ -166,7 +166,7 @@ struct MobileTransferPreview: View {
             }
             .safeAreaInset(edge: .bottom) {
                 Button("确认传输", role: .destructive) { model.startReviewedPlan() }
-                    .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                    .buttonStyle(.borderedProminent).tint(.red).frame(maxWidth: .infinity)
                     .disabled(!acknowledged || model.safetyLock.isEnabled || model.blocksWrites || !model.allowsWrites() || plan.ownership == .preserve && !plan.missingOwners.isEmpty)
                     .accessibilityIdentifier("confirmTransfer")
                     .padding().frame(maxWidth: .infinity).background(.bar)

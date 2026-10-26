@@ -19,6 +19,7 @@ struct MobileResourceDetails: Sendable {
     var nextCursor: UInt64 = 0
     var pageStride = 100
     var redisType: RedisKeyType? = nil
+    var redisString: RedisStringChunk? = nil
 }
 protocol MobileResourceServicing: Sendable {
     func scopes() async throws -> [String]
@@ -154,13 +155,18 @@ struct MobileResourceService: MobileResourceServicing {
             var ttl = try await command(["PTTL", key]).integerValue
             var next: UInt64 = 0, hasNext = false
             var rows: [[String?]] = []
+            var stringChunk: RedisStringChunk?
             switch type {
             case "string":
-                let total = try await command(["STRLEN", key]).integerValue ?? 0
-                let raw = try await client.executeRaw(["GETRANGE", key, String(offset), String(offset + 65_535)].map(RedisBinaryValue.init(utf8:)), databaseIndex: Int(scope))
-                guard let data = raw.dataValue else { throw RedisWorkspaceError.invalidReply("GETRANGE") }
-                rows = [[String(offset), String(data: data, encoding: .utf8) ?? "BINARY (\(data.count) bytes): " + data.prefix(256).map { String(format: "%02x", $0) }.joined()]]
-                hasNext = offset + 65_536 < total
+                let chunk = try await RedisCollectionReader(client: client).fetchRedisStringChunk(
+                    .init(databaseIndex: Int(scope) ?? 0, name: key, type: .string), offset: offset, maximumBytes: 65_536)
+                guard chunk.offset <= chunk.totalByteCount,
+                      chunk.value.data.count == min(65_536, chunk.totalByteCount - chunk.offset)
+                else { throw RedisWorkspaceError.mutationConflict(key) }
+                let preview = MobileRedisStringPreview.aligned(chunk)
+                stringChunk = preview
+                rows = [[preview.value.losslessUTF8String ?? "HEX: " + RedisHexCodec.format(preview.value.data)]]
+                hasNext = preview.hasMore
             case "list", "hash", "set", "zset":
                 let reference = RedisKeyReference(databaseIndex: Int(scope) ?? 0, name: key, type: RedisKeyType(rawValue: type) ?? .unknown)
                 let identity = "collection\0" + scope + "\0" + key + "\0" + type
@@ -173,7 +179,7 @@ struct MobileResourceService: MobileResourceServicing {
                     switch entry {
                     case .list(let index, let value): [String(index), display(value)]
                     case .hash(let field, let value, _): [display(field), display(value)]
-                    case .set(let member): [display(member), nil]
+                    case .set(let member): [display(member)]
                     case .sortedSet(let member, let score): [display(member), score]
                     }
                 }
@@ -189,7 +195,7 @@ struct MobileResourceService: MobileResourceServicing {
             default: throw RedisWorkspaceError.unsupportedKeyType(type)
             }
             let finalType = try await command(["TYPE", key]).stringValue
-            if finalType == "none" { type = "none"; ttl = -2; rows = []; hasNext = false; next = 0 }
+            if finalType == "none" { type = "none"; ttl = -2; rows = []; hasNext = false; next = 0; stringChunk = nil }
             else if finalType != type { throw RedisWorkspaceError.mutationConflict(key) }
             let memory = try? await command(["MEMORY", "USAGE", key]).integerValue
             let encoding = try? await command(["OBJECT", "ENCODING", key]).stringValue
@@ -197,18 +203,28 @@ struct MobileResourceService: MobileResourceServicing {
             await client.close(); try Task.checkCancellation()
             let columns: [String]
             switch type {
+            case "string": columns = ["值"]
+            case "list": columns = ["索引", "值"]
+            case "set": columns = ["成员"]
             case "hash": columns = ["字段", "值"]
             case "zset": columns = ["成员", "分数"]
             case "stream": columns = ["entryID", "fields"]
-            default: columns = ["位置 / 成员", "值"]
+            default: columns = []
             }
             let attributes: [[String?]] = [
                 ["类型", type], ["PTTL（毫秒）", ttl.map(String.init)],
                 ["MEMORY USAGE（字节）", memory.map(String.init) ?? "不可用"],
                 ["编码", encoding ?? "不可用"], ["说明", "-1 无过期时间；-2 键已不存在"]
             ]
-            let status = type == "none" ? "键已不存在" : "\(type) · \(rows.count) 项；SCAN COUNT 为提示值"
-            return MobileResourceDetails(data: .init(columns: columns, rows: rows), structure: .init(columns: ["属性", "值"], rows: attributes), status: status, hasNext: hasNext, nextCursor: next, pageStride: type == "string" ? 65_536 : 100, redisType: RedisKeyType(rawValue: type))
+            let status: String
+            if let chunk = stringChunk {
+                status = "string · \(chunk.totalByteCount) 字节" + (chunk.offset > 0 || chunk.hasMore ? " · 当前段 \(chunk.value.data.count) 字节" : "")
+            } else if type == "none" { status = "键已不存在" }
+            else {
+                let unit = type == "hash" ? "个字段" : type == "stream" ? "条消息" : "个成员"
+                status = "\(type) · 本页 \(rows.count) \(unit)" + (["hash", "set"].contains(type) ? "；SCAN 非稳定快照" : "")
+            }
+            return MobileResourceDetails(data: .init(columns: columns, rows: rows), structure: .init(columns: ["属性", "值"], rows: attributes), status: status, hasNext: hasNext, nextCursor: next, pageStride: stringChunk?.value.data.count ?? 100, redisType: RedisKeyType(rawValue: type), redisString: stringChunk)
 
         } catch { await client.close(); throw error }
     }

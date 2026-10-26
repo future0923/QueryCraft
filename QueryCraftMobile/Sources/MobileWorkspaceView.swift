@@ -166,7 +166,7 @@ struct MobileWorkspaceView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                             Text(confirmation.configuration.database ?? "未选择数据库").font(.caption.weight(.semibold))
                             Button(confirmation.requiresUnlock ? "关闭安全锁并执行" : "确认执行", role: .destructive) { model.confirmSQL() }
-                                .buttonStyle(.borderedProminent).accessibilityIdentifier("confirmSQLWrite")
+                                .buttonStyle(.borderedProminent).tint(.red).accessibilityIdentifier("confirmSQLWrite")
                         }.frame(maxWidth: .infinity).padding().background(.bar)
                     }
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { model.sqlConfirmation = nil } } }

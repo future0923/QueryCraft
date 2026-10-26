@@ -118,26 +118,14 @@ struct MobileResultsView: View {
                 }
                 if let resourcePagination {
                     if resourcePagination.profile.driver == .redis {
-                        Menu {
-                            Button("编辑值", systemImage: "square.and.pencil") { resourcePagination.beginRedisEditing() }
-                                .disabled(!resourcePagination.canEditRedis)
-                            Button("重命名", systemImage: "pencil") {
-                                if let selected = resourcePagination.selected { resourcePagination.beginRedisKeyRename(selected) }
-                            }.disabled(!resourcePagination.canManageRedisKeys || resourcePagination.selected == nil || resourcePagination.selected?.binaryKeyData != nil)
-                            Button("整键 TTL", systemImage: "clock") {
-                                if let selected = resourcePagination.selected { resourcePagination.beginRedisMetadataAction(selected, action: .expiration) }
-                            }.disabled(!resourcePagination.canManageRedisKeys || resourcePagination.selected?.binaryKeyData != nil || resourcePagination.selected == nil)
-                            Button("删除整个键", systemImage: "trash", role: .destructive) {
-                                if let selected = resourcePagination.selected { resourcePagination.beginRedisMetadataAction(selected, action: .delete) }
-                            }.disabled(!resourcePagination.canManageRedisKeys || resourcePagination.selected?.binaryKeyData != nil || resourcePagination.selected == nil)
-                        } label: { Label("编辑", systemImage: "square.and.pencil") }
-                        .disabled(resourcePagination.selected == nil || resourcePagination.selected?.binaryKeyData != nil || resourcePagination.isBackgrounded)
-                        .accessibilityIdentifier("editRedisKey")
+                        MobileRedisKeyMenu(model: resourcePagination)
                     }
+                    if !resourcePagination.structure && (resourcePagination.details?.hasNext == true || resourcePagination.hasPreviousDetailPage) {
                     HStack(spacing: 6) {
                         Button("上一页", systemImage: "chevron.left", action: resourcePagination.previous).labelStyle(.iconOnly).disabled(!resourcePagination.canGoBack)
                         Button("下一页", systemImage: "chevron.right", action: resourcePagination.next).labelStyle(.iconOnly).disabled(resourcePagination.isLoadingDetails || resourcePagination.details?.hasNext != true)
                     }.buttonStyle(.bordered).controlSize(.small)
+                    }
                 }
                 if let queryPagination, queryPagination.hasCachePages {
                     HStack(spacing: 6) {
@@ -218,7 +206,7 @@ struct MobileResultsView: View {
                             }
                         }.disabled(history.isEmpty)
                     }
-                } label: { Label("显示、查找与排序", systemImage: "ellipsis") }
+                } label: { Label("显示、查找与排序", systemImage: resourcePagination?.profile.driver == .redis ? "slider.horizontal.3" : "ellipsis") }
                 .accessibilityIdentifier("resultOptions")
             }
         }

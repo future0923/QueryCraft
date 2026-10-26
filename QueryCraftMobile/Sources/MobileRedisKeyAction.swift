@@ -188,6 +188,10 @@ struct MobileRedisKeyActionService: MobileRedisKeyActing {
         guard canEdit, rows.count < 1_000 else { return }
         rows.append(.init(isNew: true, firstValue: "", secondValue: type == .sortedSet ? "0" : ""))
     }
+    func removeRow(_ id: UUID) {
+        guard canEdit else { return }
+        rows.removeAll { $0.id == id }
+    }
     func prepare() {
         guard canEdit else { return }
         prepared = nil; preview = nil; message = nil

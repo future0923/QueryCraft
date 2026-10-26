@@ -23,7 +23,7 @@ struct MobileElasticsearchWorkspaceView: View {
                                         Text([summary.documentCount.map { "\($0) 篇文档" }, summary.health].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                                     }
                                 }
-                            }.listRowBackground(model.selected?.id == object.id ? Color.accentColor.opacity(0.12) : nil)
+                            }.listRowBackground(model.selected?.id == object.id ? MobileAppearance.selection : nil)
                             .contextMenu { objectActions(object) }.disabled(!model.canNavigate)
                         }
                     }

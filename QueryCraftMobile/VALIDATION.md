@@ -1,5 +1,71 @@
 # iOS / iPadOS 验证记录
 
+## Redis Hash 输入崩溃、真机验收与左右布局（2026-10-26）
+
+用户报告在新建Hash中输入字段/值即闪退。读取本机连接iPhone的本App崩溃报告 `redis-hash-physical-crash.ips`：主线程SIGABRT，`_swift_reportExclusivityConflict` / `swift_beginAccess`，调用链为Form行primary action → 删除成员 → `removeAll(where:)` → 经Binding再次读取 `MobileRedisKeyAction.rows`。根因是输入框和删除按钮同处Form行，默认按钮样式将删除变成整行操作；删除谓词又读取被修改集合里的行绑定。
+
+修复：行内按钮使用borderless限定点击；删除使用值快照里的稳定ID；新建和编辑集合的输入绑定按ID实时定位，移除后的迟到回调忽略而不落到下一行。泛型行/ID明确Sendable且从MainActor创建，无unchecked或关闭独占访问检查。SQL/ES筛选条件相同的删除谓词/索引绑定风险一起修正。
+
+最终图标基线修正：key/value 与删除、撤销和选择图标采用 firstTextBaseline；图标以同字号内联 Text 呈现，44pt 点击区单独保留，长值仍对齐首行。显式固定行分隔线起点，避免系统根据图标推断出短分隔线。两端相关回归各9/0/0（49.187s/32.718s，`redis-member-baseline-{iphone,ipad}.json`）；最终分隔线增量后的四类型输入专项每端1/0/0（46.398s/30.455s，`redis-member-baseline-final-{iphone,ipad}.json`）。最新真机再次2/0/0、53.538s，无诊断（`redis-member-baseline-final-physical-final.json`），完成真实Hash读写及所有权清理，EXISTS=0文本和截图已导出检查于 `redis-member-baseline-final-physical-attachments/`。无测试环境正常启动PID14498（`redis-member-baseline-final-normal-launch.json`）。本分支AGENTS补充图标首行基线与点击区规范。
+
+按用户左右原则，新建/编辑共用MobileRedisMemberRow：Hash左字段右值、ZSet左成员右分数、List左真实位置右值、Set成员编辑；右侧长值最多四行并保留完整草稿。键名、重命名和TTL用LabeledContent左右布局。默认不显示选择圆圈，批量选择由成员操作显式开启，选择/导出/删除能力保留；删除为44pt点击范围的行尾图标。规则补入本分支AGENTS.md，不修改主检出目录的规范或用户文件。
+
+| 验证阶段 | 结果 | 证据（`.build/ios-validation/`） |
+| --- | --- | --- |
+| 崩溃修复iPhone/iPad相关回归 | 每端31/0/0，77.089s/52.476s | `redis-hash-input-fixed-{iphone,ipad}.json` |
+| 绑定并发约束专项 | 每端10/0/0，63.556s/37.027s | `redis-hash-input-final-{iphone,ipad}.json` |
+| 最新左右布局iPhone/iPad回归 | 每端34/0/0，52.489s/84.134s | `redis-member-layout-final-{iphone,ipad}.json` |
+| 首次物理iPhone输入/实库验收 | 2/0/0，117.379s | `redis-hash-physical-acceptance.json` |
+| 最新左右布局物理iPhone验收 | 2/0/0，85.862s | `redis-member-layout-physical-final.json` |
+
+真机测试在实际App宿主、保存的Redis连接和设备钥匙串下执行，不导出或记录密码。原生UICollectionView表单primary-action回调复现崩溃路径，并经UITextField/UITextView输入，验证新建Hash/List/Set/ZSet不会误删。Hash在用户授权下使用独立UUID键和所有权字段：真实输入→预览/创建→HGET读回→编辑添加字段→再次读回→删除字段→HEXISTS=0。结束时Lua仅删除所有权标记仍匹配的测试键，随后EXISTS=0；异常路径同样清理，并提供同owner的独立清理用例。物理测试必须显式配置授权flag和UUID，常规测试不访问保存连接。
+
+最新真机清理文本与截图位于 `redis-member-layout-physical-attachments/`（从xcresult导出），均已检查。两端新建四类集合截图为 `.build/ios-driver-previews/redis-member-create-*-{iphone,ipad}.png`；原生输入用例还核对key/value控件横向位置。真机无测试环境正常启动成功，`redis-member-layout-physical-normal-launch.json`，PID14408；严格深度签名通过，沿用原App标识和数据。UIKit回调/输入是设备内程序化验证，没有移动用户桌面鼠标或注入桌面键盘事件；不冒充完整手指手势/第三方输入法矩阵。iPad物理设备离线，仅其模拟器验证通过。
+
+初始新回归中的枚举名拼写导致编译失败，布局初验中旧TTL控件定位断言失效，均保留失败报告并修正后重跑。初次device test使用CoreDevice UUID无法匹配Xcode目标（`redis-hash-physical-destination-failure.json`），改用Xcode列出的真实UDID才执行成功；不将零用例失败计为真机验收。最新真机仅余既有测试weak变量/多余await提示，无错误；首次泛型绑定产生的Sendable提示已通过约束消除。
+
+驱动范围：Redis集合新建/编辑与实际配置实库；MySQL/PostgreSQL/Doris共用SQL筛选表单的稳定绑定；ES筛选表单同修且既有资源入口回归。未据此宣称五类数据库业务全量或多版本实库复测。Kafka无移动链路，Mac和六类外置驱动协议/实现、Driver API5及发行身份均不变，无需重打外置驱动。本轮未提交、推送、tag或发布。
+
+
+## 全局移动中性色（2026-10-26）
+
+沿用户认可的Redis目录样式，将 MobileAppearance 放到 MobileLibraryView 所有 presentation 修饰器外侧，覆盖首页、各连接工作区及下层 sheet/dialog。SwiftUI统一tint；零尺寸、不可点击的UIView锚点仅设置所属场景窗口的UIKit默认tint，不影响布局，也不覆盖已有编辑器明确设置的主题/光标。选中背景、补全行和片段占位符使用动态label灰阶；连接编辑侧滑为中性深灰。普通实心按钮显式使用反差文字，危险确认仍显式红色。源代码审查剩余的一处systemBlue仅用于ES请求行的语法强调，用户编辑器主题与系统原生查找内容颜色保持原语义。
+
+- iPhone/iPad相关检查各 **20/0/0**，166.527s/77.507s，`.build/ios-validation/neutral-appearance-{iphone,ipad}.json`。覆盖原生SQL布局/加载保留、公共网格/全屏、补全/片段导航、字体/主题/IME、Redis类型与刷新、ES资源入口、原生文件导出弹窗。独立UIHostingController显式应用与实际App根入口相同的appearance环境；未为单纯颜色常量另写镜像断言。
+- 真实App根入口明暗截图 `neutral-home-{iphone,ipad}-{dark,light}.jpg` 已查看；暗色空首页实心按钮为白底黑字，浅色为中性配色，保存连接的卡片/工具栏无蓝色。仅使用内存调试连接库且不连接数据库，截图后两端均移除调试启动环境正常启动成功（`neutral-normal-{iphone,ipad}.json`），临时连接不落用户文件。
+- 最新iPhoneOS arm64开发签名构建/覆盖安装/启动成功，`neutral-appearance-physical-iphone.json`，110.370s，PID14212，严格深度签名校验通过。沿用原标识和应用数据，无测试环境传入真机。iPad真机仍离线，未安装；程序化验证不替代物理触控/IME验收。
+
+六类影响：MySQL/PostgreSQL/Doris、Redis和ES移动页面共用根主题与公共网格；Kafka仍无移动链路。仅改移动展示与相应预览环境，不改Mac、驱动协议/实现、Driver API5或发行身份，无需重打外置驱动。本轮没有新增实库业务验收或声称六库协议均复测。未操作用户真实桌面鼠标/键盘，未提交、推送、tag或发布。
+
+
+## Redis 目录导航与配色（2026-10-26）
+
+按真机反馈移除目录中独占44pt的DB/操作行；标题合并为“连接名 · DB n”，通过原生 toolbarTitleMenu/Picker 选择DB，仍复用 selectScope 的清理、取消和草稿保护。顶部公共刷新保持直接可点击，目录显示/匹配、控制台、新建键归入旁边的原生“更多键操作”菜单。加载时同一按钮切换为停止，不额外挤开工具栏。Redis的按钮、文件夹、选中背景改用随明暗模式变化的中性色，其他驱动主题不变。iPad数据页的显示选项使用滑杆图标，与键操作菜单区分。
+
+- 菜单收敛后 iPhone/iPad 相关专项各 **6/0/0**，56.241s/45.106s，报告 `.build/ios-validation/redis-navigation-final-{iphone,ipad}.json`。覆盖真实资源入口的编辑、新建/重命名及Redis类型、原文/JSON/Hex、刷新失败/迟到响应、选区/滚动，以及原ES资源页面。
+- 最终仅Redis结果选项图标区分后，两端原生Redis/ES页面专项各 **2/0/0**，46.184s/36.165s，报告 `redis-navigation-icons-{iphone,ipad}.json`；最新两端截图核对刷新与两个菜单的图标可区分。
+- 实际查看 `.build/ios-driver-previews/redis-type-catalog-{dark,light,db1}-{iphone,ipad}.png`，标题DB0/DB1与明暗模式均核对。四按钮并排的初版触发系统溢出，刷新因此被隐藏；该版记录 `redis-navigation-{iphone,ipad}.json` 保留，最终使用固定刷新加更多菜单。浅色预览使用新的UIHostingController，避免跨外观切换时原生搜索控件尚未完成更新的截图。
+
+真机：最新arm64开发签名构建、覆盖安装和启动成功（`redis-navigation-physical-iphone-final.json`，35.707s，PID 14145）；沿用原应用标识和数据，不传入测试夹具环境。iPad当前离线，未安装；原生截图与程序化验证不冒充物理触控/输入法验收。
+
+本轮仅调整移动Redis界面入口；MySQL/PostgreSQL/Doris、Elasticsearch专用工作区及Kafka的协议/数据链路无变化。共享结果选项仅Redis资源页换图标，ES资源页继续单独回归；Mac、Driver API5、应用和六类驱动发行身份不变，无外置驱动实现变更。未使用真实桌面鼠标/键盘，未提交、推送、tag或发布。
+
+
+## Redis 类型展示修正（2026-10-26）
+
+用户真机反馈 String 被展示为“位置 / 成员、值”两列表格。追踪发现 iPhone/iPad 共用 MobileResourceService/Workspace 的通用网格入口，未使用 Mac 的 String 专用展示。现根据真实 TYPE 分支：String 可换行/选择原文，支持有效文本、完整对象/数组 JSON 和 Hex；仅提供当前内容支持的格式，复用 Mac RedisValueFormatter/RedisValueDisplayFormat，保留大整数、数字词法和原始字节。空 String 显示“空字符串”，二进制显示完整当前段 Hex。List 索引/值、Hash 字段/值、Set 仅成员、ZSet 成员/分数、Stream 实际 entryID/fields；仅 Hash/Set 显示真实 SCAN 提示。属性页及无后续数据的集合不显示分页。
+
+String 复用原 RedisCollectionReader 读取，最多64KiB一段；移动展示收齐 UTF-8 边界，下一段从实际字节结尾继续，完整拼接不丢字节。仅大值显示上一段/下一段，状态展示总字节数及当前段大小，导出明确区分完整值与当前段；并发缩短造成不一致字节数量时保留旧内容报错，不允许空段无限翻页。普通刷新保留内容、文本选区和有效滚动位置，错误复用公共顶部刷新重试；切键清除旧对象内容并拒绝迟到响应。
+
+- 两端 Redis 相关回归各 **52/0/0**，iPhone151.793s、iPad89.467s：`.build/ios-validation/redis-types-{iphone,ipad}.json`。包括原编辑/写保护、分页、搜索、控制台、键操作，以及新增真实 TYPE/UTF-8/二进制读取和原生展示。
+- 最终格式选项/滚动选区增量后，两端专项各 **5/0/0**，iPhone43.092s、iPad44.936s：`redis-types-final-{iphone,ipad}.json`。原生 UI 实际挂载并核对无 String 网格、选取/换行、空值、Hex、JSON大整数及1.00、全部集合列、刷新挂起/失败重试/迟到响应及更新长文本后的滚动/选区。一次测试持有格式切换前的旧UITextView导致断言失败，改为重新获取当前视图后通过；失败原始记录保留 `redis-types-final-iphone-initial-failure.json`。
+- 查看了两端实际 UIHostingController/UIKit 截图：`.build/ios-driver-previews/redis-type-*.png`。均为程序化挂载，不使用真实桌面鼠标/键盘，不冒充物理触控验收。实库仅本次自有 loopback Redis7.2.4，结束清理。
+
+真机：最新 iPhoneOS arm64 开发签名构建、覆盖安装、启动成功（`redis-types-physical-iphone.json`，63.962s，PID 14108），严格深度签名验证通过；沿用原应用标识，未卸载或清除应用数据。未传入测试入口或夹具凭据。iPad离线，未安装；真实触控、完整IME/外接键盘及服务器/TLS矩阵仍待用户体验与后续验收。
+
+驱动影响：Redis复用既有读取器，不改外置驱动协议/实现；MySQL/PostgreSQL/Doris的SQL结果路径、Elasticsearch专用工作区、Kafka均无业务变更。共享结果页仅收敛 resourcePagination 分支，原ES资源页展示回归通过；Mac共享格式枚举只补iOS条件import，Mac行为不变。Driver API5、应用与驱动发行身份均不变，无需重新打包外置驱动；本轮无提交、推送、tag或发布。
+
+
 ## 剩余工作区整体验收（2026-10-25，完成）
 
 本轮完成 Doris、持久多 SQL 文稿、通用迁移和编辑器设置，以3e2a2df为基线；功能矩阵见 [WORKSPACE_PARITY.md](WORKSPACE_PARITY.md)。属于模拟器交付，Kafka继续排除移动移植。2026-10-25 用户授权将本轮功能和验证记录提交至 `codex/ios-ipad-editor`；不推送、打 tag 或发布。

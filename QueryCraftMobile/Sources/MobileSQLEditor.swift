@@ -547,9 +547,9 @@ struct MobileSQLEditor: UIViewRepresentable {
     func updateSnippetDecorations() {
         if snippetHintsLayer.superlayer == nil { layer.addSublayer(snippetHintsLayer); layer.addSublayer(snippetCurrentLayer) }
         let dark = traitCollection.userInterfaceStyle == .dark
-        snippetHintsLayer.fillColor = UIColor.systemBlue.withAlphaComponent(dark ? 0.16 : 0.1).resolvedColor(with: traitCollection).cgColor
+        snippetHintsLayer.fillColor = UIColor.label.withAlphaComponent(dark ? 0.16 : 0.1).resolvedColor(with: traitCollection).cgColor
         snippetCurrentLayer.fillColor = UIColor.clear.cgColor
-        snippetCurrentLayer.strokeColor = UIColor.systemBlue.resolvedColor(with: traitCollection).cgColor
+        snippetCurrentLayer.strokeColor = UIColor.label.resolvedColor(with: traitCollection).cgColor
         snippetCurrentLayer.lineWidth = 1
         func path(_ ranges: [SQLSourceRange]) -> CGPath {
             let path = UIBezierPath()
@@ -632,11 +632,11 @@ struct MobileSQLEditor: UIViewRepresentable {
         var content = UIListContentConfiguration.cell(); content.text = item.label
         if expanded { content.secondaryText = item.detail; content.secondaryTextProperties.font = .systemFont(ofSize: 11); content.secondaryTextProperties.numberOfLines = 1 }
         content.textProperties.font = .monospacedSystemFont(ofSize: expanded ? 15 : 13, weight: .medium)
-        content.textProperties.color = indexPath.item == selected ? .systemBlue : .label
+        content.textProperties.color = .label
         content.textProperties.numberOfLines = expanded ? 2 : 1; content.directionalLayoutMargins = .init(top: 0, leading: 8, bottom: 0, trailing: 8)
         cell.contentConfiguration = content
         var background = UIBackgroundConfiguration.clear()
-        background.backgroundColor = indexPath.item == selected ? UIColor.systemBlue.withAlphaComponent(0.12) : .clear
+        background.backgroundColor = indexPath.item == selected ? MobileAppearance.selectionColor : .clear
         background.cornerRadius = 8; cell.backgroundConfiguration = background
         cell.isAccessibilityElement = true; cell.accessibilityLabel = item.label; cell.accessibilityHint = item.detail
         cell.accessibilityTraits = .button

@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import QueryCraftMobileCore
+#endif
 
 enum RedisValueDisplayFormat: CaseIterable, Identifiable, Sendable {
     case text

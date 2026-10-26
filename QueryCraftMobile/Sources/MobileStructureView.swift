@@ -149,7 +149,7 @@ struct MobileSchemaContent: View {
                 if !extra.isEmpty { Text(extra).font(.caption).foregroundStyle(.secondary) }
                 if !subtitle.isEmpty { Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
             }.foregroundStyle(deleted ? Color.red : changed ? Color.orange : Color.primary).padding(.vertical, 4)
-        }.id(presentationID).listRowBackground(draft.selectedID == id ? Color.accentColor.opacity(0.08) : Color(uiColor: .secondarySystemGroupedBackground))
+        }.id(presentationID).listRowBackground(draft.selectedID == id ? MobileAppearance.selection : Color(uiColor: .secondarySystemGroupedBackground))
         .contextMenu {
             Button(deleted ? "恢复" : "编辑") { if deleted { draft.restore(id) } else { open(id) } }.disabled(!controller.canEdit(draft))
             if !deleted { Button("暂存删除", role: .destructive) { draft.delete(id) }.disabled(!controller.canEdit(draft)) }

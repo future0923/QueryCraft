@@ -6,7 +6,7 @@ import UIKit
 @MainActor final class MobileSQLSnippetPresentationTests: XCTestCase {
     func testActualRepresentableExpandsTemplateAndTouchControlsTrackSharedSession() async throws {
         let draft = SnippetRenderDraft(), controls = MobileSQLSnippetContext()
-        let host = UIHostingController(rootView: SnippetRenderView(draft: draft, controls: controls))
+        let host = UIHostingController(rootView: SnippetRenderView(draft: draft, controls: controls).mobileAppearance())
         let (window, previous) = try mount(host)
         defer { window.endEditing(true); window.isHidden = true; previous?.makeKey() }
         let view = try await editor(in: host.view)
@@ -37,14 +37,14 @@ import UIKit
         let suite = "SnippetPresentation.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = SQLSnippetStore(userDefaults: defaults)
-        let host = UIHostingController(rootView: MobileSQLSnippetsView(store: store))
+        let host = UIHostingController(rootView: MobileSQLSnippetsView(store: store).mobileAppearance())
         let (window, previous) = try mount(host)
         defer { window.endEditing(true); window.isHidden = true; previous?.makeKey() }
         try await Task.sleep(for: .milliseconds(180)); host.view.layoutIfNeeded()
         capture(host, name: "sql-snippet-management")
         XCTAssertFalse(descendants(host.view).compactMap { $0 as? UICollectionView }.isEmpty)
         let snippet = try XCTUnwrap(store.snippets.first { $0.trigger == "cte" })
-        let edit = UIHostingController(rootView: MobileSQLSnippetEditor(store: store, snippet: snippet))
+        let edit = UIHostingController(rootView: MobileSQLSnippetEditor(store: store, snippet: snippet).mobileAppearance())
         window.rootViewController = edit; edit.view.layoutIfNeeded()
         try await Task.sleep(for: .milliseconds(180))
         let fields = descendants(edit.view).compactMap { $0 as? UITextField }

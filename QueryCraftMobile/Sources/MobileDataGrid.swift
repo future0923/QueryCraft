@@ -353,7 +353,7 @@ struct MobileDataGrid: UIViewRepresentable {
     override init(frame: CGRect) {
         super.init(frame: frame)
         isAccessibilityElement = true
-        let selection = UIView(); selection.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.15)
+        let selection = UIView(); selection.backgroundColor = MobileAppearance.selectionColor
         selectedBackgroundView = selection
         label.numberOfLines = 1; label.lineBreakMode = .byTruncatingTail
         subtitle.font = .monospacedSystemFont(ofSize: 11, weight: .regular); subtitle.textColor = .secondaryLabel

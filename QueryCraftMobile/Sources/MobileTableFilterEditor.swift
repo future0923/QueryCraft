@@ -14,10 +14,12 @@ struct MobileTableFilterEditor: View {
                         ForEach(WorkspaceDatabaseDataFilterLogic.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
                 }
-                ForEach($draft.filter.conditions) { $condition in
+                ForEach(draft.filter.conditions) { condition in
+                    let input = $draft.filter.conditions.identifiedRow(condition)
                     Section {
-                        MobileFilterConditionRow(condition: $condition, columns: draft.columns, focusedInput: $focusedInput)
+                        MobileFilterConditionRow(condition: input, columns: draft.columns, focusedInput: $focusedInput)
                         Button("移除条件", role: .destructive) { draft.filter.conditions.removeAll { $0.id == condition.id } }
+                            .buttonStyle(.borderless)
                     }
                 }
                 Section {

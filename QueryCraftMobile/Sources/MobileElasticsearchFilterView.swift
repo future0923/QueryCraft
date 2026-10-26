@@ -10,17 +10,19 @@ struct MobileElasticsearchFilterView: View {
     var body: some View {
         NavigationStack {
             Form {
-                ForEach($filter.conditions) { $condition in
+                ForEach(filter.conditions) { condition in
+                    let input = $filter.conditions.identifiedRow(condition)
                     Section {
                         Picker("字段", selection: Binding(get: { condition.columnName }, set: { name in
                             guard let field = fields.first(where: { $0.path == name }), let kind = WorkspaceDatabaseDataFilterColumnKind(elasticsearchType: field.type, hasKeywordSubfield: field.keywordSubfieldPath != nil) else { return }
-                            condition = .init(id: condition.id, columnName: name, columnKind: kind, elasticsearchClause: condition.elasticsearchClause, operation: WorkspaceDatabaseDataFilterOperator.available(for: kind).first ?? .exists)
+                            input.wrappedValue = .init(id: condition.id, columnName: name, columnKind: kind, elasticsearchClause: condition.elasticsearchClause, operation: WorkspaceDatabaseDataFilterOperator.available(for: kind).first ?? .exists)
                         })) { ForEach(fields) { field in Text(field.path + " · " + field.type).tag(field.path) } }
-                        Picker("Bool 子句", selection: $condition.elasticsearchClause) { ForEach(WorkspaceElasticsearchBoolClause.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
-                        Picker("运算符", selection: $condition.operation) { ForEach(WorkspaceDatabaseDataFilterOperator.available(for: condition.columnKind), id: \.self) { Text($0.title).tag($0) } }
-                        if condition.operation.requiresValue { TextField("值", text: $condition.value).textInputAutocapitalization(.never).autocorrectionDisabled() }
-                        if condition.operation.requiresSecondValue { TextField("结束值", text: $condition.secondValue).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                        Picker("Bool 子句", selection: input.elasticsearchClause) { ForEach(WorkspaceElasticsearchBoolClause.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+                        Picker("运算符", selection: input.operation) { ForEach(WorkspaceDatabaseDataFilterOperator.available(for: condition.columnKind), id: \.self) { Text($0.title).tag($0) } }
+                        if condition.operation.requiresValue { TextField("值", text: input.value).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                        if condition.operation.requiresSecondValue { TextField("结束值", text: input.secondValue).textInputAutocapitalization(.never).autocorrectionDisabled() }
                         Button("移除条件", role: .destructive) { filter.conditions.removeAll { $0.id == condition.id } }
+                            .buttonStyle(.borderless)
                     }
                 }
                 Section {

@@ -128,7 +128,7 @@ enum MobileSQLCompletionLayout {
         content.directionalLayoutMargins = .init(top: 4, leading: 12, bottom: 4, trailing: 12)
         cell.contentConfiguration = content
         cell.backgroundColor = .secondarySystemBackground
-        let selectedBackground = UIView(); selectedBackground.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.18)
+        let selectedBackground = UIView(); selectedBackground.backgroundColor = MobileAppearance.selectionColor
         cell.selectedBackgroundView = selectedBackground
         cell.accessibilityLabel = item.label; cell.accessibilityHint = item.detail
         cell.accessibilityTraits = .button

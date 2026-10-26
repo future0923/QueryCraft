@@ -15,7 +15,7 @@ import QueryCraftMobileTransport
         await workspace.browser.loadObjects()?.value
         workspace.query.sql = "SELECT preserved_draft"
         let host = UIHostingController(rootView: MobileConnectionWorkspaceView(app: app, workspace: workspace)
-            .environment(\.horizontalSizeClass, .regular))
+            .environment(\.horizontalSizeClass, .regular).mobileAppearance())
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previousKey = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)

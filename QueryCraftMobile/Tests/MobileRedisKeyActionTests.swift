@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SwiftUI
 import QueryCraftMobileCore
 @testable import QueryCraftMobileProof
 
@@ -49,6 +50,41 @@ import QueryCraftMobileCore
         #expect(action.needsVerification); #expect(action.statuses == nil); #expect(!action.isLoading)
         action.setBackgrounded(false); await action.verify()?.value; #expect(action.canClose)
         #expect(await service.writes == 1)
+    }
+    @Test func removingFocusedMemberKeepsIdentityAndIgnoresLateInput() {
+        let action = MobileRedisKeyAction(mode: .create(.hash), database: 0, service: HeldKeyActionService())
+        action.addRow(); action.addRow()
+        let first = action.rows[0], second = action.rows[1]
+        let rows = Binding(get: { action.rows }, set: { action.rows = $0 })
+        let firstInput = rows.identifiedRow(first), secondInput = rows.identifiedRow(second)
+        firstInput.firstValue.wrappedValue = "first"
+        secondInput.firstValue.wrappedValue = "second"
+        action.removeRow(first.id)
+        firstInput.secondValue.wrappedValue = "late keyboard callback"
+        #expect(action.rows.map(\.id) == [second.id])
+        secondInput.secondValue.wrappedValue = "still the same member"
+        #expect(action.rows[0].firstValue == "second")
+        #expect(action.rows[0].secondValue == "still the same member")
+        action.removeRow(second.id)
+        secondInput.firstValue.wrappedValue = "removed"
+        #expect(action.rows.isEmpty)
+        #expect(firstInput.wrappedValue.id == first.id)
+    }
+    @Test func filterRowBindingSurvivesRemovalAndReordering() {
+        let first = WorkspaceDatabaseDataFilterCondition(columnName: "a", columnKind: .text, operation: .equal)
+        let second = WorkspaceDatabaseDataFilterCondition(columnName: "b", columnKind: .text, operation: .equal)
+        var filter = WorkspaceDatabaseDataFilter(conditions: [first, second])
+        let conditions = Binding(get: { filter.conditions }, set: { filter.conditions = $0 })
+        let a = conditions.identifiedRow(first), b = conditions.identifiedRow(second)
+        filter.conditions.reverse()
+        a.value.wrappedValue = "correct identity"
+        #expect(filter.conditions[1].value == "correct identity")
+        filter.conditions.removeAll { $0.id == first.id }
+        a.value.wrappedValue = "late callback"
+        b.value.wrappedValue = "remaining condition"
+        #expect(filter.conditions.count == 1)
+        #expect(filter.conditions[0].id == second.id)
+        #expect(filter.conditions[0].value == "remaining condition")
     }
     @Test func sharedCreationRulesPreserveListOrderAndRejectDuplicateFields() throws {
         let rows: [RedisKeyEditableRow] = [.init(isNew: true, firstValue: "", secondValue: " first "), .init(isNew: true, firstValue: "", secondValue: "  "), .init(isNew: true, firstValue: "", secondValue: "last")]

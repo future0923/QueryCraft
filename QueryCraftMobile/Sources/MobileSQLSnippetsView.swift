@@ -48,7 +48,7 @@ struct MobileSQLSnippetsView: View {
                             Button { editing = snippet } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(snippet.name).foregroundStyle(.primary)
-                                    Text(snippet.trigger).font(.system(.caption, design: .monospaced)).foregroundStyle(.blue)
+                                    Text(snippet.trigger).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
                                     Text(SQLSnippetTemplate(content: snippet.content).previewText)
                                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(.rect)

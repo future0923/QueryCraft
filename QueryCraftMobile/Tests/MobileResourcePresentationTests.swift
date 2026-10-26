@@ -11,7 +11,7 @@ import UIKit
         await model.load()?.value; await model.loadCatalog()?.value
         model.select(.init(name: "admin_user", kind: "索引")); await model.loadDetails()?.value
         let app = MobileApplicationModel()
-        let host = UIHostingController(rootView: MobileResourceWorkspaceView(app: app, model: model))
+        let host = UIHostingController(rootView: MobileResourceWorkspaceView(app: app, model: model).mobileAppearance())
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene); window.rootViewController = host; window.makeKeyAndVisible()

@@ -12,7 +12,7 @@ import QueryCraftMobileTransport
         await model.execute()?.value
         let host = UIHostingController(rootView: NavigationStack {
             MobileWorkspaceView(model: model, widthKey: UUID().uuidString)
-        }.environment(\.scenePhase, .active))
+        }.environment(\.scenePhase, .active).mobileAppearance())
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene); window.rootViewController = host; window.makeKeyAndVisible()

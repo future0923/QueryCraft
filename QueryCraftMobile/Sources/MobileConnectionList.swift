@@ -14,7 +14,7 @@ struct MobileConnectionList: View {
                     }
                     .swipeActions(edge: .trailing) {
                         Button("删除") { app.pendingDeletion = profile }.tint(.red)
-                        Button("编辑") { app.edit(profile) }.tint(.blue)
+                        Button("编辑") { app.edit(profile) }.tint(MobileAppearance.swipeAction)
                     }
             }
             if let message = app.message {
@@ -33,7 +33,7 @@ struct MobileConnectionList: View {
                 } description: {
                     Text("保存数据库连接，随时开始查询。")
                 } actions: {
-                    Button("添加连接") { app.edit(nil) }.buttonStyle(.borderedProminent).controlSize(.large)
+                    Button("添加连接") { app.edit(nil) }.buttonStyle(.borderedProminent).foregroundStyle(MobileAppearance.onTint).controlSize(.large)
                 }
             }
         }
