@@ -175,6 +175,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
 
     func makeScrollView() -> NSScrollView {
         let tableView = WorkspaceDirectDrawTableView()
+        tableView.backgroundColor = .queryCraftCanvas
         tableView.dataSource = self
         tableView.delegate = self
         let headerView = WorkspaceGridHeaderView()
@@ -224,7 +225,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
+        scrollView.backgroundColor = .queryCraftCanvas
         scrollView.setAccessibilityIdentifier("databaseObjectData")
 
         self.tableView = tableView
@@ -1296,7 +1297,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         editor.isSelectable = true
         editor.isBordered = false
         editor.drawsBackground = true
-        editor.backgroundColor = .textBackgroundColor
+        editor.backgroundColor = .queryCraftCanvas
         editor.focusRingType = .none
         editor.wantsLayer = true
         editor.layer?.borderColor = NSColor.controlAccentColor.cgColor

@@ -158,18 +158,22 @@ struct MobileWorkspaceView: View {
         .sheet(isPresented: $showingSnippets) { MobileSQLSnippetsView(store: snippets) }
         .sheet(item: $model.sqlConfirmation) { confirmation in
             NavigationStack {
-                ScrollView { Text(confirmation.sql).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
-                    .navigationTitle("确认执行 SQL").navigationBarTitleDisplayMode(.inline)
-                    .safeAreaInset(edge: .bottom) {
-                        VStack(spacing: 8) {
-                            Text(confirmation.requiresUnlock ? "执行将关闭安全锁。请核对目标数据库、WHERE 条件及事务边界。" : "请核对目标数据库、WHERE 条件及事务边界。")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text(confirmation.configuration.database ?? "未选择数据库").font(.caption.weight(.semibold))
-                            Button(confirmation.requiresUnlock ? "关闭安全锁并执行" : "确认执行", role: .destructive) { model.confirmSQL() }
-                                .buttonStyle(.borderedProminent).tint(.red).accessibilityIdentifier("confirmSQLWrite")
-                        }.frame(maxWidth: .infinity).padding().background(.bar)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(confirmation.requiresUnlock ? "执行将关闭安全锁。请核对目标数据库、WHERE 条件及事务边界。" : "请核对目标数据库、WHERE 条件及事务边界。")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text(confirmation.configuration.database ?? "未选择数据库").font(.caption.weight(.semibold))
+                        Text(confirmation.sql).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding()
+                }
+                .navigationTitle("确认执行 SQL").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { model.sqlConfirmation = nil } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(confirmation.requiresUnlock ? "解锁并执行" : "确认执行", role: .destructive) { model.confirmSQL() }
+                            .accessibilityIdentifier("confirmSQLWrite")
                     }
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { model.sqlConfirmation = nil } } }
+                }
             }
         }
         .onChange(of: model.editorConfiguration, initial: true) { _, configuration in formatting.cancel(); editorSchema.configure(configuration); model.refreshSchemas() }

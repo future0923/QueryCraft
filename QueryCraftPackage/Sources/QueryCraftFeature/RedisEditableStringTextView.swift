@@ -17,7 +17,7 @@ struct RedisEditableStringTextView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
+        scrollView.backgroundColor = .queryCraftCanvas
 
         let textView = NSTextView()
         textView.delegate = context.coordinator
@@ -25,7 +25,7 @@ struct RedisEditableStringTextView: NSViewRepresentable {
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.drawsBackground = true
-        textView.backgroundColor = .textBackgroundColor
+        textView.backgroundColor = .queryCraftCanvas
         textView.textColor = .textColor
         textView.font = .monospacedSystemFont(
             ofSize: NSFont.systemFontSize,

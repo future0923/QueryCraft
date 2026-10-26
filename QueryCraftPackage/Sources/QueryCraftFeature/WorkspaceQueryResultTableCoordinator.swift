@@ -104,6 +104,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
 
     func makeScrollView() -> NSScrollView {
         let tableView = WorkspaceDirectDrawTableView()
+        tableView.backgroundColor = .queryCraftCanvas
         tableView.dataSource = self
         tableView.delegate = self
         let headerView = WorkspaceGridHeaderView()
@@ -153,7 +154,7 @@ final class WorkspaceQueryResultTableCoordinator: NSObject {
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
+        scrollView.backgroundColor = .queryCraftCanvas
         scrollView.setAccessibilityIdentifier("queryResult")
 
         self.tableView = tableView

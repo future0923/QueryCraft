@@ -6,17 +6,8 @@ struct MobileCatalogView: View {
     let kind: MobileDatabaseObject.Kind
     @FocusState private var searchFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var contrast
     private var noun: String { kind == .view ? "视图" : "表" }
-    // Split-view sidebars can have an elevated UIKit appearance. Resolve the
-    // base surface explicitly so it matches the adjacent data canvas.
-    private var canvas: Color {
-        Color(uiColor: UIColor.systemBackground.resolvedColor(with: UITraitCollection {
-            $0.userInterfaceStyle = colorScheme == .dark ? .dark : .light
-            $0.userInterfaceLevel = .base
-            $0.accessibilityContrast = contrast == .increased ? .high : .normal
-        }))
-    }
+    private var canvas: Color { MobileAppearance.canvas(for: colorScheme) }
     var body: some View {
         List(selection: $app.destination) {
             Section {
@@ -53,6 +44,15 @@ struct MobileCatalogView: View {
                     }
                 }
             }
+            Section {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small).opacity(browser.isLoadingCatalog ? 1 : 0)
+                    Text(app.message ?? browser.catalogError ?? catalogStatus)
+                        .font(.caption).foregroundStyle(app.message != nil || browser.catalogError != nil ? Color.red : .secondary)
+                        .lineLimit(2, reservesSpace: true)
+                    Spacer(minLength: 0)
+                }.listRowBackground(Color.clear).accessibilityIdentifier("catalogStatus")
+            }
         }
         .scrollContentBackground(.hidden)
         .background(canvas)
@@ -65,19 +65,7 @@ struct MobileCatalogView: View {
         .onChange(of: app.destination) { _, _ in searchFocused = false }
         .onDisappear { searchFocused = false }
         .textInputAutocapitalization(.never).autocorrectionDisabled()
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small).opacity(browser.isLoadingCatalog ? 1 : 0)
-                Text(app.message ?? browser.catalogError ?? catalogStatus)
-                    .font(.caption).foregroundStyle(app.message != nil || browser.catalogError != nil ? Color.red : .secondary).lineLimit(2)
-                Spacer(minLength: 0)
-                if browser.supportsSchemaEditing, kind == .table, let database = browser.selectedDatabase, let controller = app.workspace?.newTable {
-                    Button(controller.draft == nil ? "新建表" : "新表草稿", systemImage: "plus") { controller.present(database: database) }
-                        .font(.caption).disabled(controller.isSubmitting || browser.isBackgrounded)
-                        .accessibilityIdentifier("newTableButton")
-                }
-            }.padding(.horizontal, 20).frame(height: 44).background(canvas)
-        }
+
     }
     private var catalogStatus: String {
         if browser.isLoadingCatalog { return "正在加载…" }

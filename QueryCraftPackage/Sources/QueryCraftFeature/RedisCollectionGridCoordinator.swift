@@ -82,6 +82,7 @@ final class RedisCollectionGridCoordinator: NSObject {
 
     func makeScrollView() -> NSScrollView {
         let tableView = WorkspaceDirectDrawTableView()
+        tableView.backgroundColor = .queryCraftCanvas
         tableView.dataSource = self
         tableView.delegate = self
         tableView.workspaceDataSource = self
@@ -121,7 +122,7 @@ final class RedisCollectionGridCoordinator: NSObject {
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
+        scrollView.backgroundColor = .queryCraftCanvas
         scrollView.setAccessibilityIdentifier("redis.collection.grid")
 
         self.tableView = tableView

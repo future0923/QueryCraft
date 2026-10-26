@@ -16,7 +16,7 @@ struct RedisCommandTranscriptView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
+        scrollView.backgroundColor = .queryCraftCanvas
 
         let textView = NSTextView()
         textView.isEditable = false
@@ -24,7 +24,7 @@ struct RedisCommandTranscriptView: NSViewRepresentable {
         textView.isRichText = false
         textView.allowsUndo = false
         textView.drawsBackground = true
-        textView.backgroundColor = .textBackgroundColor
+        textView.backgroundColor = .queryCraftCanvas
         textView.textContainerInset = NSSize(width: 14, height: 14)
         textView.textContainer?.lineFragmentPadding = 0
         textView.isHorizontallyResizable = false

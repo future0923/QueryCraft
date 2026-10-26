@@ -42,7 +42,7 @@ struct RedisKeyEditingBar: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 38)
-        .background(.bar)
+        .workspaceBarBackground()
     }
 
     private var addTitle: String {

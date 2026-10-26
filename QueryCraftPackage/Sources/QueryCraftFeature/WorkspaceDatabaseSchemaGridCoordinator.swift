@@ -107,6 +107,7 @@ final class WorkspaceDatabaseSchemaGridCoordinator: NSObject {
 
     func makeScrollView() -> NSScrollView {
         let tableView = WorkspaceDirectDrawTableView()
+        tableView.backgroundColor = .queryCraftCanvas
         tableView.dataSource = self
         tableView.delegate = self
         tableView.workspaceDataSource = self
@@ -141,7 +142,7 @@ final class WorkspaceDatabaseSchemaGridCoordinator: NSObject {
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
+        scrollView.backgroundColor = .queryCraftCanvas
         scrollView.setAccessibilityIdentifier(accessibilityIdentifier)
 
         self.tableView = tableView

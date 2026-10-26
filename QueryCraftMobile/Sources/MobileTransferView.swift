@@ -9,17 +9,15 @@ struct MobileTransferView: View {
     @State private var password = ""
     @State private var discardTask: SavedTransferTask?
     @State private var changingTask = false
-    @ScaledMetric(relativeTo: .caption) private var statusHeight: CGFloat = 48
     var body: some View {
         NavigationStack {
             Form {
-                Section("任务") {
+                Section {
                     TextField("任务名称", text: $model.taskName)
-                    HStack {
-                        Button("保存配置", systemImage: "square.and.arrow.down") { model.saveTask() }
-                        Spacer()
-                        Button("已保存任务", systemImage: "folder") { saved = true }
-                    }
+                } header: { Text("任务") } footer: {
+                    MobileFormStatus(message: model.message ?? (model.manager.persistenceError.isEmpty ? "先选择来源、目标和对象，再从操作菜单预览传输计划。" : model.manager.persistenceError),
+                        isBusy: model.isPreparing || !model.loadingSides.isEmpty,
+                        isError: model.message != nil || !model.manager.persistenceError.isEmpty)
                 }
                 endpoint(.source, title: "来源")
                 endpoint(.target, title: "目标")
@@ -64,26 +62,22 @@ struct MobileTransferView: View {
             .disabled(model.manager.hasActiveRuns)
             .textInputAutocapitalization(.never).autocorrectionDisabled()
             .navigationTitle("数据迁移").navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 8) {
-                    HStack {
-                        ProgressView().controlSize(.small).opacity(model.isPreparing || !model.loadingSides.isEmpty ? 1 : 0)
-                        Text(model.message ?? model.manager.persistenceError).font(.caption).foregroundStyle(.red).lineLimit(3)
-                        Spacer(minLength: 0)
-                    }.frame(height: statusHeight)
-                    HStack {
-                        Button("运行记录", systemImage: "clock") { history = true }
-                        Spacer()
-                        Button("预览传输计划", systemImage: "doc.text.magnifyingglass") { model.prepare() }
-                            .buttonStyle(.borderedProminent).foregroundStyle(MobileAppearance.onTint).disabled(!model.canPrepare)
-                    }
-                }.padding().background(.bar)
-            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("关闭") { model.invalidatePreview(); dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("交换来源与目标", systemImage: "arrow.up.arrow.down") { model.swap() }
-                        .disabled(!model.loadingSides.isEmpty || model.manager.hasActiveRuns)
+                    Menu {
+                        Button("预览传输计划", systemImage: "doc.text.magnifyingglass") { model.prepare() }
+                            .disabled(!model.canPrepare).accessibilityIdentifier("previewTransfer")
+                        Button("运行记录", systemImage: "clock") { history = true }
+                        Divider()
+                        Button("保存配置", systemImage: "square.and.arrow.down") { model.saveTask() }
+                            .disabled(model.manager.hasActiveRuns)
+                        Button("已保存任务", systemImage: "folder") { saved = true }
+                            .disabled(model.manager.hasActiveRuns)
+                        Button("交换来源与目标", systemImage: "arrow.up.arrow.down") { model.swap() }
+                            .disabled(!model.loadingSides.isEmpty || model.manager.hasActiveRuns)
+                    } label: { Label("操作", systemImage: "ellipsis") }
+                    .accessibilityIdentifier("transferActions")
                 }
             }
         }
@@ -164,15 +158,15 @@ struct MobileTransferPreview: View {
 
                 }
             }
-            .safeAreaInset(edge: .bottom) {
-                Button("确认传输", role: .destructive) { model.startReviewedPlan() }
-                    .buttonStyle(.borderedProminent).tint(.red).frame(maxWidth: .infinity)
-                    .disabled(!acknowledged || model.safetyLock.isEnabled || model.blocksWrites || !model.allowsWrites() || plan.ownership == .preserve && !plan.missingOwners.isEmpty)
-                    .accessibilityIdentifier("confirmTransfer")
-                    .padding().frame(maxWidth: .infinity).background(.bar)
-            }
             .navigationTitle("确认数据迁移").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("返回修改") { model.showingPreview = false } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("返回修改") { model.showingPreview = false } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("确认传输", role: .destructive) { model.startReviewedPlan() }
+                        .disabled(!acknowledged || model.safetyLock.isEnabled || model.blocksWrites || !model.allowsWrites() || plan.ownership == .preserve && !plan.missingOwners.isEmpty)
+                        .accessibilityIdentifier("confirmTransfer")
+                }
+            }
         }
     }
 }

@@ -11,6 +11,10 @@ struct MobileDataImportView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    MobileFormStatus(message: model.message ?? (model.isLoading ? "正在读取和校验…" : "CSV / TSV / JSON / XLSX / SQL INSERT"),
+                        isBusy: model.isLoading || model.isRunning, isError: model.message != nil)
+                }
                 Section("目标") {
                     LabeledContent("服务器", value: model.configuration.host + ":" + String(model.configuration.port))
                     LabeledContent("数据库", value: model.object.database)
@@ -94,10 +98,7 @@ struct MobileDataImportView: View {
             .textInputAutocapitalization(.never).autocorrectionDisabled()
             .navigationTitle("导入 PostgreSQL 数据").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("保留并关闭", action: close).disabled(model.isRunning) } }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack { ProgressView().controlSize(.small).opacity(model.isLoading || model.isRunning ? 1 : 0); Text(model.message ?? (model.isLoading ? "正在读取和校验…" : "CSV / TSV / JSON / XLSX / SQL INSERT")).font(.caption).lineLimit(3); Spacer(minLength: 0) }
-                    .padding(.horizontal, 16).frame(height: 60).background(.background)
-            }
+
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
                 do { if let url = try result.get().first { model.select(url) } } catch { model.message = error.localizedDescription }
             }

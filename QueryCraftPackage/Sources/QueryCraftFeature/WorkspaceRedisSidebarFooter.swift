@@ -59,7 +59,7 @@ struct WorkspaceRedisSidebarFooter: View {
         }
         .padding(.horizontal, 8)
         .frame(height: 36)
-        .background(.bar)
+        .workspaceBarBackground()
         .overlay(alignment: .top) { Divider() }
     }
 

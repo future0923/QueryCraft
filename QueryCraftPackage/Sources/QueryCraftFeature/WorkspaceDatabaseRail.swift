@@ -142,7 +142,9 @@ private extension View {
     func workspaceDatabaseRailBackground(
         colorScheme: ColorScheme
     ) -> some View {
-        if #available(macOS 26.0, *) {
+        if colorScheme == .dark {
+            background(Color.black)
+        } else if #available(macOS 26.0, *) {
             background {
                 Color(nsColor: .controlBackgroundColor)
                     .overlay(
@@ -155,7 +157,7 @@ private extension View {
                     )
             }
         } else {
-            background(Color(nsColor: .windowBackgroundColor))
+            background(Color(nsColor: .queryCraftWindowCanvas))
                 .overlay(alignment: .trailing) {
                     Divider()
                 }

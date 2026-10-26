@@ -29,6 +29,7 @@ struct MobileExistingTableOptionsView: View {
                 Section { LabeledContent("数据库", value: draft.object.database); LabeledContent("表", value: draft.object.name) }
                 MobileTableOptionsForm(options: $options, choices: draft.state.schemaChoices, allowsDatabaseDefaults: false)
                     .disabled(!editable)
+                Section { MobileFormStatus(message: feedback, isError: !editable || !choicesAreValid) }
             }
             .textInputAutocapitalization(.never).autocorrectionDisabled()
             .navigationTitle("表选项").navigationBarTitleDisplayMode(.inline)
@@ -39,11 +40,7 @@ struct MobileExistingTableOptionsView: View {
                         .accessibilityIdentifier("stageTableOptions")
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Text(feedback)
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(4)
-                    .frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64, alignment: .leading).padding(.horizontal, 16).background(.background)
-            }
+
         }
     }
 }

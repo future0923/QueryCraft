@@ -187,7 +187,7 @@ struct WorkspaceRedisNewKeyDetailView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 50)
-        .background(.bar)
+        .workspaceBarBackground()
     }
 
     @ViewBuilder
@@ -261,7 +261,7 @@ struct WorkspaceRedisNewKeyDetailView: View {
             .foregroundStyle(.red)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
-            .background(.bar)
+            .workspaceBarBackground()
         }
     }
 

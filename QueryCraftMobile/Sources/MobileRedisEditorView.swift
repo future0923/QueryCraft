@@ -17,6 +17,10 @@ struct MobileRedisEditorView: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 Form {
+                    Section {
+                        MobileFormStatus(message: editor.message ?? (editor.isSubmitting ? "正在提交…" : editor.isLoading ? "正在读取…" : editor.isValidatingString ? "正在校验完整 String 字节…" : "修改后先预览，再确认提交。"),
+                            isBusy: editor.isLoading || editor.isSubmitting || editor.isPreparingExport || editor.isValidatingString || editor.isFormattingString, isError: editor.message != nil)
+                    }
                     Section("DB \(editor.database) · \(editor.snapshot?.details.reference.type.rawValue ?? "Redis")") {
                         LabeledContent("键名") {
                             Text(editor.key).lineLimit(3).truncationMode(.middle).multilineTextAlignment(.trailing).textSelection(.enabled)
@@ -111,7 +115,7 @@ struct MobileRedisEditorView: View {
                             Text("未修改 TTL 时保留原到期时间；新 TTL 从提交时开始计算。").font(.caption).foregroundStyle(.secondary)
                         }.disabled(!editor.canEdit || editor.deleteKey || snapshot.isPartial)
                         Section {
-                            Toggle("删除整个键", isOn: $editor.deleteKey).tint(.red)
+                            Toggle("删除整个键", isOn: $editor.deleteKey)
                             if editor.deleteKey { Text("将删除整个键及全部成员；其他草稿改动不会提交。").font(.caption).foregroundStyle(.red) }
                         }.disabled(!editor.canEdit || snapshot.isPartial)
                     }
@@ -139,21 +143,16 @@ struct MobileRedisEditorView: View {
                     if value != nil { proxy.scrollTo("redisConfirmation", anchor: .bottom) }
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small).opacity(editor.isLoading || editor.isSubmitting || editor.isPreparingExport || editor.isValidatingString || editor.isFormattingString ? 1 : 0)
-                    Text(editor.message ?? (editor.isSubmitting ? "正在提交…" : editor.isLoading ? "正在读取…" : editor.isValidatingString ? "正在校验完整 String 字节…" : "修改后先预览，再确认提交。"))
-                        .font(.caption).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
-                    if editor.needsVerification || editor.message != nil {
-                        Button(editor.needsVerification ? "读取核实" : "重新读取") { confirmReload = true }
-                            .disabled(editor.isSubmitting || editor.isLoading || editor.isBackgrounded)
-                    }
-                }.padding(.horizontal, 16).frame(height: 64).background(.bar)
-            }
             .navigationTitle("编辑 Redis 键").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) {
-                Button("完成") { if editor.hasChanges { confirmDiscard = true } else { close() } }.disabled(!editor.canClose)
-            } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("完成") { if editor.hasChanges { confirmDiscard = true } else { close() } }.disabled(!editor.canClose)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button(editor.needsVerification ? "读取核实" : "重新读取", systemImage: "arrow.clockwise") { confirmReload = true }
+                        .disabled(editor.isSubmitting || editor.isLoading || editor.isBackgrounded)
+                }
+            }
             .confirmationDialog("放弃尚未提交的草稿？", isPresented: $confirmDiscard, titleVisibility: .visible) {
                 Button("放弃草稿并关闭", role: .destructive, action: close)
             }

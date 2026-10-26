@@ -34,7 +34,7 @@ struct WorkspaceDatabaseDataFilterSummaryBar: View {
         .controlSize(.small)
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(.bar)
+        .workspaceBarBackground()
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("databaseDataFilterSummaryBar")

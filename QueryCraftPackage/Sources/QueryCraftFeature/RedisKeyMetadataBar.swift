@@ -33,7 +33,7 @@ struct RedisKeyMetadataBar: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .frame(height: 40)
-        .background(.bar)
+        .workspaceBarBackground()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
         .accessibilityHidden(details == nil)

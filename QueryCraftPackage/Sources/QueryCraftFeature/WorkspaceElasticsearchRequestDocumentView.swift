@@ -97,12 +97,12 @@ struct WorkspaceElasticsearchRequestDocumentView: View {
         .controlSize(.regular)
         .padding(.horizontal, 8)
         .frame(height: 38)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Color(nsColor: .queryCraftCanvas))
     }
 
     private var resultArea: some View {
         ZStack {
-            Color(nsColor: .textBackgroundColor)
+            Color(nsColor: .queryCraftCanvas)
 
             if document.results.isEmpty {
                 VStack(spacing: 0) {

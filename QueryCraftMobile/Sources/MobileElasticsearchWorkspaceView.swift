@@ -28,12 +28,16 @@ struct MobileElasticsearchWorkspaceView: View {
                         }
                     }
                 }
-            }.listStyle(.plain)
+                HStack {
+                    ProgressView().controlSize(.small).opacity(model.isLoadingCatalog ? 1 : 0)
+                    Text(model.catalogError ?? "\(model.catalog?.count ?? 0) 个对象").font(.caption)
+                        .lineLimit(2, reservesSpace: true).foregroundStyle(model.catalogError == nil ? Color.secondary : .red)
+                    Spacer(minLength: 0)
+                }.listRowSeparator(.hidden).accessibilityIdentifier("elasticsearchCatalogStatus")
+            }.listStyle(.plain).mobileCanvas()
             .overlay { if model.catalog != nil, model.visibleObjects.isEmpty, !model.isLoadingCatalog, model.catalogError == nil { ContentUnavailableView("没有匹配对象", systemImage: "magnifyingglass") } }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack { ProgressView().controlSize(.small).opacity(model.isLoadingCatalog ? 1 : 0); Text(model.catalogError ?? "\(model.catalog?.count ?? 0) 个对象").font(.caption).lineLimit(2).foregroundStyle(model.catalogError == nil ? Color.secondary : .red); Spacer() }.padding(.horizontal).frame(height: 48).background(.bar)
-            }
-            .searchable(text: $model.search, prompt: "搜索索引、Alias、Data Stream")
+
+            .searchable(text: $model.search, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索索引、Alias、Data Stream")
             .navigationTitle(model.profile.name).navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("连接", systemImage: "chevron.left", action: app.showLibrary) }

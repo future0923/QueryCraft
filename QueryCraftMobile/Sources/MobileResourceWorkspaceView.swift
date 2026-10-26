@@ -31,29 +31,28 @@ struct MobileResourceWorkspaceView: View {
                     } else {
                         ForEach(model.visibleResources) { resourceRow($0) }
                     }
-                }.listStyle(.plain)
+                    HStack {
+                        ProgressView().controlSize(.small).opacity(model.isLoadingCatalog ? 1 : 0)
+                        Text(model.catalogError ?? (model.profile.driver == .redis ? "已加载 \(model.catalog?.count ?? 0) 个键" : "\(model.catalog?.count ?? 0) 个对象"))
+                            .font(.caption).foregroundStyle(model.catalogError == nil ? Color.secondary : .red).lineLimit(2, reservesSpace: true)
+                        Spacer(minLength: 0)
+                    }.listRowSeparator(.hidden).accessibilityIdentifier("resourceCatalogStatus")
+                }.listStyle(.plain).scrollContentBackground(.hidden)
                     .overlay {
                         if model.catalog != nil, model.visibleResources.isEmpty, !model.isLoadingCatalog, model.catalogError == nil {
                             ContentUnavailableView(model.catalogCursor == 0 ? "没有匹配对象" : "本批次无匹配键，扫描尚未结束", systemImage: "magnifyingglass")
                         }
                     }
-                HStack {
-                    ProgressView().controlSize(.small).opacity(model.isLoadingCatalog ? 1 : 0)
-                    Text(model.catalogError ?? (model.profile.driver == .redis ? "已加载 \(model.catalog?.count ?? 0) 个键" : "\(model.catalog?.count ?? 0) 个对象"))
-                        .font(.caption).foregroundStyle(model.catalogError == nil ? Color.secondary : .red).lineLimit(2)
-                    Spacer(minLength: 0)
-                    if model.catalogCursor != 0 {
-                        Button("继续扫描") { model.loadCatalog(more: true) }.disabled(model.isLoadingCatalog)
-                    }
-                }.padding(.horizontal, 16).frame(height: 48)
+
             }
+            .mobileCanvas()
             .navigationTitle(catalogTitle).navigationBarTitleDisplayMode(.inline)
             .toolbarTitleMenu {
                 Picker("逻辑数据库", selection: Binding(get: { model.scope ?? "" }, set: { model.selectScope($0) })) {
                     ForEach(model.scopes ?? [], id: \.self) { Text(model.profile.driver == .redis ? "DB " + $0 : $0).tag($0) }
                 }.disabled(model.scopes == nil || model.hasPendingChanges || model.isBackgrounded)
             }
-            .searchable(text: $model.search, prompt: model.profile.driver == .redis ? "搜索键名，如 user:*" : "搜索索引、别名和数据流")
+            .searchable(text: $model.search, placement: .navigationBarDrawer(displayMode: .always), prompt: model.profile.driver == .redis ? "搜索键名，如 user:*" : "搜索索引、别名和数据流")
             .onSubmit(of: .search) { if model.profile.driver == .redis { model.loadCatalog() } }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("连接", systemImage: "chevron.left", action: app.showLibrary) }
@@ -81,6 +80,7 @@ struct MobileResourceWorkspaceView: View {
             .overlay {
                 if model.selected == nil { ContentUnavailableView("选择对象", systemImage: "externaldrive", description: Text("从目录选择要浏览的对象。")) }
             }
+            .mobileCanvas()
             .navigationTitle(model.selected?.name ?? model.profile.driver.title).navigationBarTitleDisplayMode(.inline)
             .toolbarTitleMenu {
                 Picker("查看", selection: $model.structure) { Text("数据").tag(false); Text(model.profile.driver == .redis ? "属性" : "Mapping").tag(true) }
@@ -135,6 +135,9 @@ struct MobileResourceWorkspaceView: View {
     }
     private var redisCatalogActions: some View {
         Menu {
+            if model.catalogCursor != 0 {
+                Button("继续扫描", systemImage: "arrow.forward") { model.loadCatalog(more: true) }.disabled(model.isLoadingCatalog)
+            }
             Menu {
                 Toggle("按前缀分组", isOn: $groupsRedisKeys)
                 Picker("键名匹配", selection: $model.redisSearchMode) {

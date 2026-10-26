@@ -43,7 +43,7 @@ struct RedisCommandPromptBar: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 42)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Color(nsColor: .queryCraftCanvas))
     }
 
     private func moveUp() -> Bool {

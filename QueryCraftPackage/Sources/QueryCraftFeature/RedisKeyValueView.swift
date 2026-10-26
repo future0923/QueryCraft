@@ -46,7 +46,7 @@ struct RedisKeyValueView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
-                .background(.bar)
+                .workspaceBarBackground()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

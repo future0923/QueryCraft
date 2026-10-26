@@ -75,7 +75,7 @@ struct RedisCollectionBottomBar: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .frame(height: 40)
-        .background(.bar)
+        .workspaceBarBackground()
         .accessibilityIdentifier("redisCollectionBottomBar")
     }
 

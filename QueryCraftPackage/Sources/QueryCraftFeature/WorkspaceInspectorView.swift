@@ -37,7 +37,7 @@ struct WorkspaceInspectorView: View {
                 height: geometry.size.height,
                 alignment: .top
             )
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(Color(nsColor: .queryCraftWindowCanvas))
         }
         .task(id: databaseSelectionID) {
             guard case .database(let databaseContext) = context else { return }

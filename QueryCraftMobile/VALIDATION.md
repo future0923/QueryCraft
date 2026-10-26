@@ -1,5 +1,60 @@
 # iOS / iPadOS 验证记录
 
+## 合并 main 前的提交检查（2026-10-26）
+
+本次提交、合并源码，不发版、不打 tag，不调整 0.1.12/build22。已重新阅读 RELEASE_PROCESS。相对 v0.1.12 的分支累计包含移动端、公共业务逻辑及 MySQL/PostgreSQL/Doris/Redis/Elasticsearch 驱动源码适配；不能将最后一轮 UI 改动无驱动变化误当作整个分支无驱动变化。MariaDBTransport 变更同时涉及 MySQL/Doris。相关本机驱动独立构建、打包、签名、隔离加载与六类工厂验证见本文件各阶段记录；不覆盖用户当前 Dev 安装。Kafka 无移动新增实现，保留桌面兼容范围。Driver API 仍为 5，兼容常量及打包脚本相对发布基线未改变。此次六类驱动均不发布；正式发版须对上述五类受影响驱动重新评估发行身份、最低主程序版本及双架构包验证，不能直接发布本地验收包。MCP/SSH 的 main 并行工作保留其既有提交与独立发布安排。
+
+## 保留原生灰色 Tab 胶囊，移除额外目录底板（2026-10-26）
+
+按用户最后确认的截图，保留单条原生 Tab 的灰色玻璃胶囊背景、选中态和系统材质效果；撤销隐藏目录底部 scroll edge effect 的改动。目录内容延伸至导航后方，SQL/Redis/ES 的目录计数改为列表内滚动内容，搜索使用顶部导航搜索区，不额外添加固定目录状态底板或第二排导航。iPad 常规宽度维持原有标题菜单和分栏导航。AGENTS.md 明确记录“保留灰色玻璃胶囊背景”的边界。
+
+最终验证：物理 iPhone 3/0/0（71.009s，`native-navigation-gray-restored-device.json`）；iPad 模拟器 4/0/0（166.442s，`native-navigation-gray-restored-ipad.json`）。覆盖原生 Tab 唯一性、页签切换、查询草稿保留、列表延伸区域、顶部搜索及键盘，Redis 类型展示/刷新失败/过期响应，以及 iPad 基础背景与分栏。原生搜索控件在页签切换后异步挂载，测试改为有上限地等待 UISearchBar/UISearchTextField，不更改产品搜索行为。真机截图已从 xcresult 导出并检查，灰色玻璃胶囊存在，列表延伸到其背后（`native-navigation-gray-restored-device-attachments/EF6FFF1E-1163-461E-85E9-24315E989436.png`）。历史失败报告保留，没有覆盖为通过。
+
+驱动范围：MySQL/PostgreSQL/Doris 共用 SQL 目录；Redis、Elasticsearch 分别移除目录固定状态区；Kafka 无对应移动入口。此次仅展示与布局，不改驱动协议/数据模型，不据此宣称六类驱动实库全量验证。测试使用内存目录和 Redis 服务替身，无实库测试数据写入。iPad 为模拟器验证，未宣称真机验证。真机沿用原应用标识和数据安装，测试后正常启动记录为 `native-navigation-gray-restored-normal-launch.json`。未提交或发布。
+
+## 移除移动端常驻底部操作面板（2026-10-26）
+
+按用户截图要求，数据迁移及迁移确认、SQL 执行确认、结构 SQL、新建表、表选项、PG 文件导入、Redis 编辑/键操作/命令和 ES 操作表单移除底部固定操作/说明面板。迁移预览、运行记录、保存、已保存任务和交换来源收进右上角操作菜单，确认使用原生导航栏按钮；新建表预览/选项重试与 Redis 读取核实进入导航栏。目录新建表与 Redis 继续扫描也移入操作菜单。说明与状态改为滚动内容，加载指示与三行反馈区域尺寸稳定。安全锁、预览、未知结果核实、确认、禁用与取消条件沿原模型执行。紧凑的分页/计数状态栏和主动查找条保留；Mac 页面未因本轮调整而改变。
+
+| 检查 | 结果 | 证据（`.build/ios-validation/`） |
+| --- | --- | --- |
+| iPhone 真机布局专项 | 2 成功 / 0 失败 / 0 跳过 | `action-layout-device.json` |
+| iPad 模拟器布局专项 | 2 成功 / 0 失败 / 0 跳过 | `action-layout-ipad.json` |
+| 真机相关回归 | 新建表 3、SQL 输入 2、Redis 创建成员输入 1 均通过 | `action-layout-device-navigation-group-locator-failure.json` 中对应 6 条 passed；该批新增布局用例曾仅因菜单定位失败，最终专项已通过 |
+| iPad 相关回归 | 新建表 3、表选项 3、SQL 输入 2、Redis 创建成员输入 1 均通过 | `action-layout-ipad-navigation-group-locator-failure.json` 中对应 9 条 passed；最终专项已通过 |
+
+新增布局验收将真实 SwiftUI 表单挂载在原生窗口，覆盖 320pt 窄宽、横向尺寸、375pt 分栏大字体与当前设备完整尺寸，断言表单可视区域到达安全区底部、错误反馈不缩小视口、操作保留在导航栏，并检查键盘输入后恢复。自定义尺寸是同一窗口内的布局约束测试；真机运行时窗口保持既有横屏，不将它表述为真机旋转全覆盖。导出的真机与 iPad 附件已目视确认底部没有固定面板；保存在 `action-layout-final-device-attachments/` 与 `action-layout-final-ipad-attachments/`。最初测试只检查 UIView/普通导航按钮，未覆盖 UIKit 的 trailingItemGroups，定位断言失败；按本机 UIKit 公共 API 修正后双端专项通过，失败历史保留。
+
+驱动适用范围：MySQL/PG 共用 SQL 确认与目录操作，PG 另有导入；Doris 迁移仅作来源，目录仍只读；Redis、ES 使用各自编辑/命令表单；Kafka 暂无移动端工作区，本轮无入口可改。数据迁移的对象语义、planner/runner/manager 与 Mac 共用逻辑已核对，未修改驱动协议、公共模型或写入链路。本轮验证使用临时目录和内存 fixture，没有实库写入；临时文件在测试结束清理。iPad 真机未连接，相关结果来自模拟器。iPhone 已安装本轮构建并恢复正常启动；本轮未提交代码。
+
+## MySQL / PostgreSQL 真机验收、基础背景与开关（2026-10-26）
+
+用户授权iPhone真机自动化验收并清理测试数据。沿实际MobileCatalogView、MobileBrowserModel、MobileWorkspaceView、MobileSQLEditor、MobileTableFilterEditor、MobileCellEditView和MobileTableChanges链路，使用原生UIKit输入/集合回调与实际数据库请求；不操作用户电脑的真实鼠标或键盘。MySQL使用手机已保存连接，密码仅在设备钥匙串读取，不导出。手机无保存的PG连接，使用带独立所有权label的临时PostgreSQL17实例，从真实iPhone连接电脑局域网映射端口；不新增保存连接。
+
+工作期间原工作树被用户归档；从归档快照40f5c5c确认Redis修复和新测试源码完整，恢复到新受管工作树`ios-ipad-validation/QueryCraftPublic`。忽略的构建缓存没有随快照保存，重新从原固定版本/校验值构建原生库。原分支历史、主检出目录现有功能改动均未重置；仅按用户明确要求在主目录和恢复工作树两份AGENTS.md记录背景规范。
+
+本轮外观范围：只将深色基础页面/目录/分栏空白画布改为不透明#000000，不按此要求修改按钮、图标、字体、输入框、选中态、布局和编辑器自定义主题。移动SQL/Redis/ES目录共用MobileAppearance画布规则，显式隐藏系统目录背景并设置导航栏底色，避免elevated灰底。Mac基础分栏/窗口/原生表格/内容画布使用动态NSColor：深色纯黑，浅色回退原生颜色；侧栏背景仅在深色添加，浅色材质不覆盖。控件/字段背景的扩大替换已撤回，按钮和搜索框保留原生层次。移动Switch单独按用户要求使用系统绿色开启色，保留原生形状/尺寸和关闭灰色；局部button样式Toggle不被转换成Switch。
+
+| 最终验证 | 成功/失败/跳过 | 证据（`.build/ios-validation/`） |
+| --- | --- | --- |
+| 物理iPhone：MySQL/PG实库、原生输入、网格、执行/IME、背景和开关 | 12/0/0，64.092s | `sql-physical-acceptance.json` |
+| 物理iPhone：独立MySQL清理核验 | 1/0/0，13.891s | `sql-physical-independent-cleanup.json` |
+| iPad模拟器：实际分栏、开关、SQL工作区、Redis/ES原生展示和执行/IME | 7/0/0，145.114s | `canvas-switch-ipad.json` |
+| 最终合成组字测试边界增量：iPad模拟器 | 2/0/0，55.814s | `sql-ime-final-ipad.json` |
+| Mac原生动态颜色/侧栏与主内容离屏像素/分栏状态 | 6/0/0，315.768s | `mac-canvas-tests.json` |
+
+真机每个驱动覆盖原生搜索ad/amu（共用Mac模糊匹配）、真实目录与主键/分页、刷新保留当前结果、筛选输入不误删/焦点行删除后迟到回调不改其他行、筛选命中/空结果/清除、SQL原生输入与执行、别名的真实字段来源、大整数主键9007199254740993、NULL/空串区分、查询结果与表数据两条单元格编辑路径、安全锁阻止提交、解锁提交后独立查询读回，以及查询错误后修正重试。表名只使用本轮UUID，创建时设置所有权注释；清理前读回注释匹配才DROP，并验证information_schema/pg_class记录为空。两条成功清理回执已从xcresult导出检查于`sql-physical-final-attachments/`，MySQL额外独立核验回执在`sql-physical-final-cleanup-attachments/`。临时PG容器在finally核对label后销毁，每次失败同样清理。
+
+外观验证在真实展开的UISplitViewController中检查SQL/Redis/ES侧栏像素，覆盖深→浅→深；标准色深截图确认黑色RGB均为0。Switch检查实际UISwitch的系统绿色RGBA、开启/关闭、同等原生尺寸，button Toggle仍非Switch，并检查最终截图。Mac验证动态颜色在深色/高对比深色为RGB0、alpha1，浅色与原生色相同，以及实际分栏侧栏与主内容离屏像素；不将隐藏检查器的零尺寸离屏图当作通过。
+
+SQL组字行为追踪到Mac的WorkspaceQueryEditorCommandCoordinator：commandReturn与commandShiftReturn在hasMarkedText时直接消费按键，不结束组字。iOS原先主动unmarkText，现两条执行快捷键同样在markedTextRange非空时直接返回。合成组字回归在命令同步执行边界核对正文、绑定和标记均未变化，并在异步等待后确认没有SQL发出。真机第三方输入法可在后续IPC回写中替换通过UITextInput合成的组字；早期用例将这种延迟替换误当作快捷键同步结果，相关阶段文本附件保留于`sql-ime-guarded-attachments/`。最终没有替换生产键盘，也没有通过关闭输入法或强行恢复字符串掩盖平台回写；不把合成组字验证冒称真实候选词/完整第三方输入法兼容验收。
+
+失败证据保留：首轮新增测试的函数引用与PG结果桥接类型编译错误（尚未执行写入）；截图HDR16位字节误按8位与绿色CGColor色彩空间标签比较，均改为标准截图/真实RGBA核对；首次PG初始化出现一次InvalidTransition，未定位为驱动协议缺陷、未宣称已修复，后续多轮同链路通过；iPad先使用了与本机不匹配的arm64原生库，补齐x86_64后通过；Mac离屏隐藏检查器无尺寸，最终只验证真实展开的侧栏和主内容。最终物理iPhone12项、独立清理、iPad最终增量和Mac6项均无测试失败；既有历史失败报告没有覆写成通过。
+
+最新签名App严格深度codesign验证通过，无测试环境正常启动PID14758（`sql-physical-normal-launch.json`），沿用原应用标识和数据。iPad物理设备仍离线，仅模拟器验证；Mac已编译测试主功能模块，未覆盖用户正在运行的Mac应用。真实手指手势、外接键盘全矩阵、候选词输入法、多版本/TLS组合及弱网/后台完整验收不在本轮完成声明内。
+
+六类范围：MySQL/PG真机实库；Doris共用SQL目录背景和执行输入保护，但本轮未重测Doris实库；Redis/ES移动目录与Mac公共原生表格/侧栏按同一背景规则，未据此宣称其业务全量复测；Kafka仅Mac现有入口适用，移动仍未移植。无外置驱动实现/协议、Driver API5和发行身份变化，不需要重打驱动包。本轮未手动提交、推送、打tag或发布。
+
 ## Redis Hash 输入崩溃、真机验收与左右布局（2026-10-26）
 
 用户报告在新建Hash中输入字段/值即闪退。读取本机连接iPhone的本App崩溃报告 `redis-hash-physical-crash.ips`：主线程SIGABRT，`_swift_reportExclusivityConflict` / `swift_beginAccess`，调用链为Form行primary action → 删除成员 → `removeAll(where:)` → 经Binding再次读取 `MobileRedisKeyAction.rows`。根因是输入框和删除按钮同处Form行，默认按钮样式将删除变成整行操作；删除谓词又读取被修改集合里的行绑定。

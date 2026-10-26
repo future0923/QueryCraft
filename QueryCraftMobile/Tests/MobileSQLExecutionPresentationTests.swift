@@ -35,19 +35,31 @@ import QueryCraftMobileTransport
         model.sql = "SELECT 'name';"
         let (view, coordinator, window, previous) = try mount(model)
         defer { coordinator.stop(); window.endEditing(true); window.isHidden = true; previous?.makeKey() }
-        view.becomeFirstResponder()
+        XCTAssertTrue(view.becomeFirstResponder())
+        // A physical third-party keyboard establishes its text-input session
+        // asynchronously after this standalone UIKit host becomes key.
+        try await Task.sleep(for: .milliseconds(250))
+        let wholeDocument = try XCTUnwrap(view.keyCommands?.first { $0.input == "\r" && $0.modifierFlags == [.command, .shift] })
         view.selectedRange = (view.text as NSString).range(of: "name")
         view.setMarkedText("中文", selectedRange: .init(location: 2, length: 0))
         coordinator.textViewDidChange(view)
+        XCTAssertTrue(view.text.contains("中文"), "Native marked-text injection must finish before checking execution")
+        let injected = view.text ?? ""
         XCTAssertNotNil(view.markedTextRange)
         XCTAssertNil(model.execute(), "Toolbar run must not execute uncommitted IME composition")
         XCTAssertEqual(model.errorMessage, SQLExecutionTargetError.textCompositionActive.localizedDescription)
         let command = try XCTUnwrap(view.keyCommands?.first { $0.input == "\r" && $0.modifierFlags == .command })
         _ = view.perform(command.action)
+        _ = view.perform(wholeDocument.action)
+        // Assert the synchronous command boundary. After yielding, the real
+        // installed keyboard may replace synthetic marked text from its own
+        // IPC buffer; that is not a mutation performed by either command.
+        XCTAssertEqual(view.text, injected); XCTAssertEqual(model.sql, injected)
+        XCTAssertNotNil(view.markedTextRange, "Execution shortcuts must leave composition owned by the input method, matching macOS")
         try await Task.sleep(for: .milliseconds(80))
         let statements = await executor.statements
         XCTAssertTrue(statements.isEmpty)
-        XCTAssertTrue(view.text.contains("中文")); XCTAssertNil(view.markedTextRange)
+
     }
 
     private func mount(_ model: MobileQueryModel) throws -> (MobileSQLTextView, MobileSQLEditor.Coordinator, UIWindow, UIWindow?) {
@@ -55,6 +67,7 @@ import QueryCraftMobileTransport
             selection: .init(get: { model.executionInput.selection }, set: { model.executionInput.selection = $0 }),
             isFocused: .constant(false), schema: MobileSQLSchemaCatalog(), defaultDatabase: "", executionInput: model.executionInput) { model.execute() }
         let coordinator = editor.makeCoordinator(), view = MobileSQLEditor.makeTextView(coordinator: coordinator)
+
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow), window = UIWindow(windowScene: scene), host = UIViewController()
         window.rootViewController = host; host.view.addSubview(view); window.makeKeyAndVisible()

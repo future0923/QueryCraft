@@ -31,7 +31,7 @@ struct WorkspaceElasticsearchDocumentInspectorView: View {
 
         case .loading:
             VStack(spacing: 0) {
-                Color(nsColor: .windowBackgroundColor)
+                Color(nsColor: .queryCraftWindowCanvas)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 WorkspaceDatabaseDataProgressBar(

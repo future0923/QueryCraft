@@ -120,9 +120,9 @@ final class WorkspaceMainSplitViewController: NSSplitViewController {
         detailMinimumWidth: CGFloat,
         inspectorMinimumWidth: CGFloat
     ) {
-        sidebarHostingController = NSHostingController(rootView: sidebar)
-        detailHostingController = NSHostingController(rootView: detail)
-        inspectorHostingController = NSHostingController(rootView: inspector)
+        sidebarHostingController = NSHostingController(rootView: Self.canvas(sidebar))
+        detailHostingController = NSHostingController(rootView: Self.canvas(detail))
+        inspectorHostingController = NSHostingController(rootView: Self.canvas(inspector))
         initialShowsSidebar = showsSidebar
         initialShowsInspector = showsInspector
         self.onInspectorVisibilityChange = onInspectorVisibilityChange
@@ -136,6 +136,10 @@ final class WorkspaceMainSplitViewController: NSSplitViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("WorkspaceMainSplitViewController does not support NSCoder")
+    }
+
+    private static func canvas(_ content: AnyView) -> AnyView {
+        AnyView(content.modifier(WorkspaceCanvasBackground()))
     }
 
     override func viewDidLoad() {
@@ -219,9 +223,9 @@ final class WorkspaceMainSplitViewController: NSSplitViewController {
     ) {
         let previousSidebarWidth = visibleWidth(of: sidebarSplitItem)
 
-        sidebarHostingController.rootView = sidebar
-        detailHostingController.rootView = detail
-        inspectorHostingController.rootView = inspector
+        sidebarHostingController.rootView = Self.canvas(sidebar)
+        detailHostingController.rootView = Self.canvas(detail)
+        inspectorHostingController.rootView = Self.canvas(inspector)
 
         self.sidebarMinimumWidth = sidebarMinimumWidth
         self.sidebarMaximumWidth = sidebarMaximumWidth

@@ -88,7 +88,7 @@ struct RedisCollectionRemoteSearchBar: View {
             .fixedSize(horizontal: true, vertical: false)
         }
         .padding()
-        .background(.bar)
+        .workspaceBarBackground()
         .overlay(alignment: .bottom) {
             Divider()
         }

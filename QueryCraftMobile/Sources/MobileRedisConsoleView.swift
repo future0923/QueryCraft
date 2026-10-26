@@ -9,6 +9,10 @@ struct MobileRedisConsoleView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    MobileFormStatus(message: console.message ?? (console.needsVerification ? "执行结果未知。先读取核实，不可直接重放。" : "记录限 4 MiB，大回复保留前缀，每条最多展示 120 行。历史输入保留完整命令。"),
+                        isBusy: document.isExecuting || console.isVerifying || console.isClosingConnection, isError: console.message != nil || console.needsVerification)
+                }
                 Section("DB \(console.database)" + (console.transactionOpen ? " · MULTI 未提交" : "")) {
                     Toggle("安全锁", isOn: Binding(get: { console.safetyLock.isEnabled }, set: { if $0 { console.safetyLock.enable() } else { console.safetyLock.disable() } }))
                         .disabled(document.isExecuting || console.isBackgrounded)
@@ -56,18 +60,19 @@ struct MobileRedisConsoleView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .textInputAutocapitalization(.never).autocorrectionDisabled()
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack {
-                    ProgressView().controlSize(.small).opacity(document.isExecuting || console.isVerifying || console.isClosingConnection ? 1 : 0)
-                    Text(console.message ?? (console.needsVerification ? "执行结果未知。先读取核实，不可直接重放。" : "记录限 4 MiB，大回复保留前缀，每条最多展示 120 行。历史输入保留完整命令。"))
-                        .font(.caption).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
-                    if console.needsVerification { Button("读取核实") { console.verify() }.disabled(document.isExecuting || console.isBackgrounded || console.isVerifying) }
-                }.padding(.horizontal, 16).frame(height: 72).background(.bar)
-            }
+
             .navigationTitle("Redis 命令").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) {
-                Button("完成") { if console.transactionOpen || !document.source.isEmpty { confirmDiscard = true } else { close() } }.disabled(!console.canClose)
-            } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("完成") { if console.transactionOpen || !document.source.isEmpty { confirmDiscard = true } else { close() } }.disabled(!console.canClose)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    if console.needsVerification {
+                        Button("读取核实", systemImage: "arrow.clockwise") { console.verify() }
+                            .disabled(document.isExecuting || console.isBackgrounded || console.isVerifying)
+                    }
+                }
+            }
             .confirmationDialog("关闭会话并丢弃未执行命令和未 EXEC 的事务？", isPresented: $confirmDiscard, titleVisibility: .visible) {
                 Button("关闭会话", role: .destructive, action: close)
             }

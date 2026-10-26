@@ -10,6 +10,10 @@ struct MobileRedisKeyActionView: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 Form {
+                    Section {
+                        MobileFormStatus(message: action.message ?? (action.isSubmitting ? "正在提交…" : action.isLoading ? "正在读取键属性…" : "修改后先预览，再确认提交。"),
+                            isBusy: action.isLoading || action.isSubmitting, isError: action.message != nil)
+                    }
                     Section("DB \(action.database) · \(action.type == .unknown ? "Redis" : action.type.rawValue)") {
                         if case .rename(let reference) = action.mode { LabeledContent("原名称", value: reference.name) }
                         if action.isMetadata { Text(action.name).lineLimit(3).truncationMode(.middle).textSelection(.enabled) }
@@ -78,24 +82,21 @@ struct MobileRedisKeyActionView: View {
                 .onChange(of: action.preview) { _, value in if value != nil { proxy.scrollTo("redisKeyConfirmation", anchor: .bottom) } }
                 .onChange(of: action.statuses != nil) { _, value in if value { proxy.scrollTo("redisKeyStatus", anchor: .bottom) } }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small).opacity(action.isLoading || action.isSubmitting ? 1 : 0)
-                    Text(action.message ?? (action.isSubmitting ? "正在提交…" : action.isLoading ? "正在读取键属性…" : "修改后先预览，再确认提交。"))
-                        .font(.caption).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
+            .navigationTitle(action.title).navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("完成") { if action.submitted == nil && action.hasDraft { confirmDiscard = true } else { close() } }.disabled(!action.canClose)
+                }
+                ToolbarItem(placement: .primaryAction) {
                     if action.needsVerification || action.isMetadata && action.submitted == nil && action.message != nil {
-                        Button(action.needsVerification ? "读取核实" : "重试读取") {
+                        Button(action.needsVerification ? "读取核实" : "重试读取", systemImage: "arrow.clockwise") {
                             if action.needsVerification { action.verify() }
                             else if action.metadata != nil && action.hasDraft { confirmMetadataReload = true }
                             else { action.loadMetadata() }
                         }.disabled(action.isLoading || action.isSubmitting || action.isBackgrounded)
                     }
-                }.padding(.horizontal, 16).frame(height: 76).background(.bar)
+                }
             }
-            .navigationTitle(action.title).navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) {
-                Button("完成") { if action.submitted == nil && action.hasDraft { confirmDiscard = true } else { close() } }.disabled(!action.canClose)
-            } }
             .confirmationDialog("重新读取会丢弃当前 TTL 草稿。", isPresented: $confirmMetadataReload, titleVisibility: .visible) {
                 Button("丢弃草稿并读取", role: .destructive) { action.loadMetadata() }
             }

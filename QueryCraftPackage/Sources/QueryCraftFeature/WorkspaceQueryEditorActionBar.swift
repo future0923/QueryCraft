@@ -102,7 +102,7 @@ struct WorkspaceQueryEditorActionBar: View {
         .controlSize(.regular)
         .padding(.horizontal, 8)
         .frame(height: 38)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Color(nsColor: .queryCraftCanvas))
         .accessibilityIdentifier("queryEditorActionBar")
     }
 

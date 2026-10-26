@@ -192,13 +192,17 @@ struct MobileStructureSQLView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
-            ScrollView { Text(sql).font(.system(.footnote, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(scopeDescription).font(.caption).foregroundStyle(.secondary)
+                    Text(sql).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding()
+            }
                 .navigationTitle("结构 SQL").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
                     ToolbarItem(placement: .primaryAction) { ShareLink(item: sql) }
                 }
-                .safeAreaInset(edge: .bottom) { Text(scopeDescription).font(.caption).foregroundStyle(.secondary).padding() }
         }
     }
 }

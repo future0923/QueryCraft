@@ -64,7 +64,7 @@ struct WorkspaceKafkaReadBar: View {
         .controlSize(.small)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.bar)
+        .workspaceBarBackground()
         .onAppear(perform: restore)
         .onChange(of: request) { restore() }
         .onChange(of: scanRequest) { restoreFilter() }

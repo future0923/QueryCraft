@@ -68,6 +68,7 @@ final class WorkspaceWindowController: NSWindowController,
         window.isRestorable = false
         window.isReleasedWhenClosed = false
         window.toolbarStyle = .automatic
+        window.backgroundColor = .queryCraftWindowCanvas
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.titlebarSeparatorStyle = .none

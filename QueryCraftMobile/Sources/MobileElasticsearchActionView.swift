@@ -8,6 +8,10 @@ struct MobileElasticsearchActionView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    MobileFormStatus(message: action.isSubmitting ? "正在等待服务器回执…" : action.isBusy ? "处理中…" : action.hasLoaded ? "" : "尚未加载，请重试",
+                        isBusy: action.isBusy, isError: !action.hasLoaded && !action.isBusy)
+                }
                 Section("目标") {
                     LabeledContent("连接", value: action.owner.profile.name)
                     LabeledContent("服务器", value: action.owner.profile.host + ":" + String(action.owner.profile.port))
@@ -99,9 +103,7 @@ struct MobileElasticsearchActionView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle(action.kind.title).navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack { ProgressView().controlSize(.small).opacity(action.isBusy ? 1 : 0); Text(action.isSubmitting ? "正在等待服务器回执…" : action.isBusy ? "处理中…" : action.hasLoaded ? "" : "尚未加载，请重试").font(.caption); Spacer() }.padding(.horizontal).frame(height: 40).background(.bar)
-            }
+
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(action.completed ? "完成" : "关闭") { if action.completed || action.kind == .simulate { action.close() } else { discard = true } }.disabled(action.isBusy || action.needsVerification) }
                 ToolbarItem(placement: .primaryAction) { Button("重新读取", systemImage: "arrow.clockwise") { discard = true }.disabled(action.isBusy || action.needsVerification || action.completed) }

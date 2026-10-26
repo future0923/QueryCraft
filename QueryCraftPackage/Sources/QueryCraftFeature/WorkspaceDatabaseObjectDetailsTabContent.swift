@@ -35,7 +35,7 @@ struct WorkspaceDatabaseObjectDetailsTabContent: Equatable, View {
         switch state {
         case .notLoaded, .loading:
             VStack(spacing: 0) {
-                Color(nsColor: .textBackgroundColor)
+                Color(nsColor: .queryCraftCanvas)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 WorkspaceDatabaseDataProgressBar(

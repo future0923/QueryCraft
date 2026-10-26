@@ -21,6 +21,6 @@ struct WorkspaceConnectionFailureBar: View {
             .controlSize(.small)
             .padding()
         }
-        .background(.bar)
+        .workspaceBarBackground()
     }
 }

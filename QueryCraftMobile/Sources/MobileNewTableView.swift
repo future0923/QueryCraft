@@ -17,6 +17,10 @@ struct MobileNewTableView: View {
         NavigationStack {
             Form {
                 Section {
+                    MobileFormStatus(message: draft.message ?? draft.choicesError ?? (controller.canEdit(draft) ? "先定义字段和索引，再预览建表 SQL" : "请切回目标数据库的表页继续操作"),
+                        isBusy: controller.isLoadingChoices || controller.isSubmitting, isError: draft.message != nil || draft.choicesError != nil)
+                }
+                Section {
                     LabeledContent("数据库", value: definition.databaseName)
                     if let schema = definition.schemaName { LabeledContent("Schema", value: schema) }
                     MobileSchemaTextField(title: "表名", text: $definition.tableName)
@@ -80,20 +84,13 @@ struct MobileNewTableView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(draft.hasCompleted ? "完成" : "保留并关闭") { controller.dismiss() }.disabled(controller.isSubmitting) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("预览 SQL") { preview = .init(plan: draft.plan) }
-                        .disabled(!controller.canEdit(draft) || !draft.isValid).accessibilityIdentifier("previewCreateTable")
-                }
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack {
-                    ProgressView().controlSize(.small).opacity(controller.isLoadingChoices || controller.isSubmitting ? 1 : 0)
-                    Text(draft.message ?? draft.choicesError ?? (controller.canEdit(draft) ? "先定义字段和索引，再预览建表 SQL" : "请切回目标数据库的表页继续操作"))
-                        .font(.caption).lineLimit(3)
-                    Spacer(minLength: 0)
-                    if draft.choicesError != nil, controller.canEdit(draft) {
+                    Menu {
+                        Button("预览 SQL") { preview = .init(plan: draft.plan) }
+                            .disabled(!controller.canEdit(draft) || !draft.isValid).accessibilityIdentifier("previewCreateTable")
                         Button("重试选项") { controller.loadChoices(draft) }
-                    }
-                }.padding(.horizontal, 16).frame(height: 60).background(.background)
+                            .disabled(draft.choicesError == nil || !controller.canEdit(draft))
+                    } label: { Label("操作", systemImage: "ellipsis") }
+                }
             }
             .sheet(item: $editing) { selection in
                 if selection.section == .columns {

@@ -93,7 +93,7 @@ struct WorkspaceQueryDocumentView: View {
                 .frame(minHeight: 236, idealHeight: 456)
 
                 ZStack {
-                    Color(nsColor: .textBackgroundColor)
+                    Color(nsColor: .queryCraftCanvas)
 
                     if document.executionState != .idle {
                         WorkspaceQueryResultView(

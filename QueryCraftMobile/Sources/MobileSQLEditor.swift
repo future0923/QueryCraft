@@ -586,8 +586,9 @@ struct MobileSQLEditor: UIViewRepresentable {
     }
     @objc private func formatCurrent() { guard markedTextRange == nil else { return }; requestFormatting?() }
     @objc private func complete() { requestCompletion?() }
-    @objc private func runDocument() { if markedTextRange != nil { unmarkText() } else { executeDocument?() } }
-    @objc private func run() { if markedTextRange != nil { unmarkText() } else { executeQuery?() } }
+    // Match macOS: execution shortcuts must not commit/cancel IME composition.
+    @objc private func runDocument() { guard markedTextRange == nil else { return }; executeDocument?() }
+    @objc private func run() { guard markedTextRange == nil else { return }; executeQuery?() }
     @objc private func tab() { if navigateSnippet?(1) != true { if !EditorPreferenceRules.acceptsTab(completionKey) || acceptCompletion?() != true { insertText(indentationUnit) } } }
     @objc private func backtab() { _ = navigateSnippet?(-1) }
     @objc private func escape() { if hasCompletions { dismissCompletion?() } else if endSnippet?() != true { resignFirstResponder() } }

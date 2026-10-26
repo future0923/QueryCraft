@@ -73,7 +73,7 @@ struct DataTransferWorkbenchView: View {
             if model.showingHistory { statusArea.frame(height: 40).padding(.horizontal, 16) }
             else { footer }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color(nsColor: .queryCraftWindowCanvas))
         .frame(minWidth: 900, minHeight: 620)
         .task { await model.loadProfiles() }
         .onChange(of: model.configuration.content) { model.pruneSelection() }
@@ -286,7 +286,7 @@ struct DataTransferWorkbenchView: View {
             }.controlSize(.regular).padding(14).frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(width: 220).frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.4))
+        .background(Color(nsColor: .queryCraftWindowCanvas).opacity(0.4))
         .accessibilityElement(children: .contain).accessibilityIdentifier("transfer.options")
     }
 

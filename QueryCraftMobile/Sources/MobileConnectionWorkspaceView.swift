@@ -160,6 +160,16 @@ private struct MobileWorkspaceToolbar: ToolbarContent {
                     .accessibilityIdentifier("backToConnections")
             }
         }
+        if includesHome, app.workspaceTab == .tables, workspace.browser.supportsSchemaEditing,
+           let database = workspace.browser.selectedDatabase {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button(workspace.newTable.draft == nil ? "新建表" : "新表草稿", systemImage: "plus") { workspace.newTable.present(database: database) }
+                        .disabled(workspace.newTable.isSubmitting || workspace.browser.isBackgrounded)
+                        .accessibilityIdentifier("newTableButton")
+                } label: { Label("操作", systemImage: "ellipsis") }
+            }
+        }
         if includesRefresh {
             ToolbarItemGroup(placement: .primaryAction) {
                 if app.isLoading {

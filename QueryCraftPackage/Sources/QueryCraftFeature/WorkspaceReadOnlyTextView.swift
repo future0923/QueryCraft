@@ -72,13 +72,13 @@ private struct WorkspacePlainReadOnlyTextView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.borderType = showsBorder ? .bezelBorder : .noBorder
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
+        scrollView.backgroundColor = .queryCraftCanvas
 
         let textView = NSTextView()
         textView.isEditable = false
         textView.isSelectable = true
         textView.drawsBackground = true
-        textView.backgroundColor = .textBackgroundColor
+        textView.backgroundColor = .queryCraftCanvas
         textView.textColor = .textColor
         textView.textContainerInset = NSSize(width: 5, height: 5)
         textView.isHorizontallyResizable = false

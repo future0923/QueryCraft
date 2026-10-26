@@ -92,7 +92,7 @@ struct DataTransferTaskTree: View {
                 Spacer()
             }.padding(12)
             .dropDestination(for: String.self) { values, _ in handleDrop(values, folderID: nil) }
-        }.background(Color(nsColor: .windowBackgroundColor))
+        }.background(Color(nsColor: .queryCraftWindowCanvas))
         .alert(AppCopy.current.text("重命名", "Rename"), isPresented: $showingRename) {
             TextField(AppCopy.current.text("名称", "Name"), text: $renameName)
             Button(AppCopy.current.text("取消", "Cancel"), role: .cancel) {}

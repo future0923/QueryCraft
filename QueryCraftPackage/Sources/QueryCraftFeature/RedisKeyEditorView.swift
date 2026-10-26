@@ -51,7 +51,7 @@ struct RedisKeyEditorView: View {
                 .foregroundStyle(.red)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
-                .background(.bar)
+                .workspaceBarBackground()
             }
 
             if details.reference.type == .string
@@ -63,7 +63,7 @@ struct RedisKeyEditorView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
-                    .background(.bar)
+                    .workspaceBarBackground()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

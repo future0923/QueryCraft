@@ -324,7 +324,7 @@ private extension View {
                     )
             )
         } else {
-            background(Color(nsColor: .windowBackgroundColor))
+            background(Color(nsColor: .queryCraftWindowCanvas))
                 .overlay(alignment: .bottom) {
                     Divider()
                 }

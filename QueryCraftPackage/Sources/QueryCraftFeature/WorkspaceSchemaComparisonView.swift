@@ -446,7 +446,7 @@ private struct SchemaComparisonSetupPage: View {
         }
         .frame(minWidth: 860, idealWidth: 940, maxWidth: .infinity,
                minHeight: 480, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color(nsColor: .queryCraftWindowCanvas))
         .task {
             await model.loadProfiles()
             guard !Task.isCancelled else { return }
@@ -743,7 +743,7 @@ struct SchemaComparisonFooterStyle: ViewModifier {
         content
             .padding(.horizontal, 12)
             .frame(height: WorkspaceDataActionControlMetrics.height + 20)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(Color(nsColor: .queryCraftWindowCanvas))
             .modifier(SchemaComparisonActionBarStyle())
     }
 }
