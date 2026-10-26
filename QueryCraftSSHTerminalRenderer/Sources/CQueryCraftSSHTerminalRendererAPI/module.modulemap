@@ -1,0 +1,4 @@
+module CQueryCraftSSHTerminalRendererAPI {
+    header "../../../QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/include/QueryCraftSSHTerminalRenderer.h"
+    export *
+}

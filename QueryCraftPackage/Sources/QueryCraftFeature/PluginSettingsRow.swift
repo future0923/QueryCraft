@@ -1,7 +1,15 @@
 import SwiftUI
 
 struct PluginSettingsRow: View {
-    let item: DatabaseDriverCatalogItem
+    let item: ConnectionPluginPresentation
+    init(item: DatabaseDriverCatalogItem, install: @escaping @MainActor @Sendable () -> Void,
+         update: @escaping @MainActor @Sendable () -> Void, uninstall: @escaping @MainActor @Sendable () -> Void) {
+        self.init(item: ConnectionPluginPresentation(item), install: install, update: update, uninstall: uninstall)
+    }
+    init(item: ConnectionPluginPresentation, install: @escaping @MainActor @Sendable () -> Void,
+         update: @escaping @MainActor @Sendable () -> Void, uninstall: @escaping @MainActor @Sendable () -> Void) {
+        self.item = item; self.install = install; self.update = update; self.uninstall = uninstall
+    }
     let install: @MainActor @Sendable () -> Void
     let update: @MainActor @Sendable () -> Void
     let uninstall: @MainActor @Sendable () -> Void
@@ -12,12 +20,12 @@ struct PluginSettingsRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            DatabaseBrandIcon(databaseType: item.entry.databaseType)
+            ConnectionPluginIcon(databaseType: item.databaseType)
                 .frame(width: 30, height: 30)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 7) {
-                    Text(item.entry.displayName)
+                    Text(item.displayName)
                         .font(.headline)
                     if let installedVersion = item.installedVersion {
                         Text(copy.installedPluginVersion(installedVersion))

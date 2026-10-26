@@ -36,8 +36,18 @@ actor SSHConnectionService {
         self.credentials = credentials ?? KeychainCredentialStore(directory: directory, allowsInteraction: true)
         self.transport = transport
     }
+    var terminalCredentials: any CredentialStore { credentials }
+    func connectionGroups() async throws -> [ConnectionGroup] {
+        try await SQLiteConnectionProfileRepository(databaseURL: directory.appending(path: "QueryCraft.sqlite"))
+            .fetchManagementSnapshot().groups
+    }
     func snapshot() throws -> (profiles: [SSHConnection], policy: MCPPolicy) {
         (try SSHConnectionStore(directory: directory).load(), try MCPPolicyStore(directory: directory).load())
+    }
+    func move(_ profile: SSHConnection, to groupID: UUID?, beforeID: UUID?) throws {
+        let lock = try accountLock(); defer { withExtendedLifetime(lock) {} }
+        try SSHConnectionStore(directory: directory).move(profile, to: groupID, beforeID: beforeID)
+        NotificationCenter.default.post(name: Self.settingsChanged, object: directory.path)
     }
     func save(_ profile: SSHConnection, original: SSHConnection?, secret: String?, access: SSHAccess,
               fileRead: Bool? = nil, fileTransfer: Bool? = nil, fileManagement: Bool? = nil, expectingAccess: SSHAccountAccess? = nil) async throws {
@@ -122,6 +132,21 @@ actor SSHConnectionService {
         let result = try await plugin.execute(request)
         try result.validate()
     }
+    /// Revalidate the reviewed script and the live terminal's pinned route before
+    /// queuing any input. This does not read credentials or start another SSH job.
+    func validateTerminalScript(_ script: ShellScript, endpoints: [SSHConnection]) throws {
+        try Task.checkCancellation()
+        guard let profile = endpoints.last,
+              try ShellScriptStore(directory: directory).load().first(where: { $0.id == script.id }) == script else {
+            throw MCPFailure(AppCopy.current.text("脚本已变化或删除，请重新查看后操作。", "The script changed or was removed. Review it again."), code: .sessionBusy)
+        }
+        let profiles = try SSHConnectionStore(directory: directory).load()
+        guard profiles.contains(profile),
+              try SSHConnectionStore.route(to: profile, in: profiles) + [profile] == endpoints else {
+            throw MCPFailure(AppCopy.current.text("连接配置已变化，请重新连接终端。", "The connection changed. Reconnect the terminal."), code: .sessionBusy)
+        }
+    }
+
     func fingerprint(host: String, port: Int, jumpConnectionID: UUID? = nil) async throws -> String {
         guard !host.isEmpty, !host.hasPrefix("-"), !host.contains(where: { $0.isWhitespace }), !host.contains("\0"),
               (1...65535).contains(port) else { throw MCPFailure("Invalid SSH address or port.") }

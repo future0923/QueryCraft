@@ -13,7 +13,7 @@ SSH 使用独立的 `QueryCraftSSH.bundle`，底层为 libssh2。主程序和 MC
 
 0.4 及以后插件可复用经认证连接（见下文）；命令使用 exec 通道，关闭标准输入，不分配 PTY，不保留工作目录或环境变量。不自动重试任何命令。超时、取消或断线不能证明远程进程已经停止，失败消息会提示检查实际结果。调用方取消和 MCP 退出会取消本地执行；维护周期也检查授权撤销。
 
-当前支持密码认证和本地私钥认证（包括加密私钥），主机指纹必须为经独立验证的 OpenSSH `SHA256:...` 格式。0.6.0 已支持本机 SSH agent、保存的跳板链和常用 SSH config 导入（见下文）。当前未实现键盘交互/MFA、SSH agent 转发、持久交互 Shell 与终端界面。libssh2 具备部分相关底层能力，但不能把这些尚未接入的功能视为已支持。
+当前支持密码认证和本地私钥认证（包括加密私钥），主机指纹必须为经独立验证的 OpenSSH `SHA256:...` 格式。0.6.0 已支持本机 SSH agent、保存的跳板链和常用 SSH config 导入（见下文）。当前未实现键盘交互/MFA 和 SSH agent 转发；手动交互式 Shell 与终端界面见下文。libssh2 具备部分相关底层能力，但不能把这些尚未接入的功能视为已支持。
 
 ## 构建插件
 
@@ -32,7 +32,7 @@ python3 scripts/build-ssh-plugin.py --arch arm64 --identity "<本地签名身份
 
 ## 本地安装
 
-桌面入口为设置 → 插件 → **SSH · libssh2** → 管理。可选择签名的 `QueryCraftSSH.bundle` 或构建生成的 ZIP，安装前验证代码签名、架构与 ABI。卸载只停用插件，保留服务器账号与凭据；安装、更新、卸载后重新连接 stdio MCP 客户端。
+桌面入口为设置 → 插件，在统一的连接插件列表中操作 **SSH** 行。可从该行右键菜单选择签名的 `QueryCraftSSH.bundle` 或构建生成的 ZIP，安装前验证代码签名、架构与 ABI。安装、更新、卸载与其他插件使用相同的行内按钮；卸载保留服务器账号与凭据，操作后重新连接 stdio MCP 客户端。
 
 使用本次源码编译的独立 MCP 可执行文件：
 
@@ -64,11 +64,11 @@ python3 scripts/package-ssh-catalog.py \
 
 ## 连接与授权
 
-在设置 → **SSH 服务器** 中添加、编辑、测试和删除服务器账号。支持密码、本地私钥及加密私钥口令；编辑时凭据留空保留原值，切换到无口令私钥会清除旧凭据。密码只在本机 SecureField 中输入并保存到共享 Keychain 服务，独立 stdio MCP 根据连接 ID 读取同一凭据。
+在首页的统一连接列表中添加、编辑、测试和删除 SSH 账号。支持密码、本地私钥及加密私钥口令；编辑时凭据留空保留原值，切换到无口令私钥会清除旧凭据。密码只在本机 SecureField 中输入并保存到共享 Keychain 服务，独立 stdio MCP 根据连接 ID 读取同一凭据。
 
 先填写地址、端口、用户名及认证方式，再点击“读取指纹”或填写管理员提供的指纹。网络读取结果本身不可信，必须通过可信渠道核对后勾选确认；指纹或地址变化后重新确认。测试只验证服务器身份与账号认证，不执行命令，可在保存前进行。
 
-每个账号可选择“禁止 MCP”“允许连接”“允许执行命令”，并独立选择文件读取、上传/下载与文件管理。保存即更新该账号的独立授权，不会自动启用 MCP 或更改其他账号授权。删除时先撤销 MCP 授权，再清理凭据和连接。界面中的测试不依赖 MCP 的启用状态。
+在 MCP → 连接权限中，SSH 与数据库账号按相同分组列出，可选择“禁止 MCP”“允许连接”“允许执行命令”，并在同一行“设置范围…”中选择文件读取、上传/下载与文件管理。所有修改使用同一份设置草稿和底部“检查并保存”，连接编辑器不再重复配置 MCP 授权。保存会核对账号和原授权，保留其他位置修改的未编辑账号，冲突时整次保存失败，不覆盖外部修改。删除时先撤销 MCP 授权，再清理凭据和连接。界面中的测试不依赖 MCP 的启用状态。
 
 也可通过 MCP 添加连接，或在数据目录的 `ssh-connections.json` 配置连接（文件权限应为 `0600`）：
 
@@ -199,15 +199,15 @@ python3 scripts/test-ssh-plugin.py --bundle /absolute/QueryCraftSSH.bundle
 
 临时 loopback SSH 全链路：`python3 scripts/test-ssh-mcp-loopback.py --mcp /absolute/querycraft-mcp --bundle /absolute/QueryCraftSSH.bundle`。它使用临时 OpenSSH 配置与密钥，验证断开 stdio 后任务继续、重连读取输出、取消、超时和清理。测试脚本的 Python 仅在开发机上用于验收；后台任务的远端执行不调用 Python。旧 Python 后端任务目录不自动迁移、删除或终止，需先人工核对旧任务；新后端使用独立 shell-v1 目录。删除或改变账号服务器信息前应先完成/清理其任务；失去原账号后不能继续查询原服务器任务。
 
-## 双入口授权
+## 统一连接权限
 
-SSH 账号和凭据只配置一次。设置 → SSH 服务器的账号编辑器，以及 MCP → 连接权限 → SSH 服务器授权，读取和保存同一份 `mcp-policy.json` 账号授权。MCP 入口的“保存授权”立即生效，不会提交其他未保存的 MCP 设置。两处本机页面保存后同步显示；同时编辑同一账号时，旧授权不能覆盖已保存的新授权，冲突需重新打开编辑器。
+SSH 账号和凭据只在首页连接编辑器配置。MCP → 连接权限按已有分组列出数据库与 SSH 账号，修改后统一检查并保存到 `mcp-policy.json`。保存前核对 SSH 账号和原授权；同时编辑同一账号时，旧授权不能覆盖已保存的新授权，冲突需重新打开设置。
 
 全局工具开关是所有账号共用的总开关；启用某个工具不自动授予账号访问权。全局权限上限已移除，SSH 操作按独立账号授权和工具开关校验。数据库连接范围/连接权限只作用于六类数据库，不会把“全部数据库连接”扩展成 SSH 授权。
 
 ## MCP 任务与传输
 
-任务、日志、取消和传输恢复只通过 MCP 工具操作。SSH 服务器页面保留账号、凭据及授权配置，不提供“任务与传输”面板入口。两处授权仍使用同一份设置，账号无需重复配置。
+任务、日志、取消和传输恢复只通过 MCP 工具操作，不提供“任务与传输”面板入口。账号在首页统一管理，MCP 权限在连接权限列表中统一保存。
 
 新启动任务的监督器按单次管道读取及时写入短日志，不等待输入块凑齐或任务退出；已有远端任务的监督器不会自动替换。传输所有者继续监听本机私有取消标记并保留未知结果登记；取消不代表目标未发布，也不会回滚或自动重传。
 
@@ -309,7 +309,7 @@ endpoint_index 从 1 开始按本机至服务器方向编号，目标为 jump_co
 
 SSH 从独立组件源下载，提供 `ssh-x86_64.json` 和 `ssh-arm64.json` 两份签名发行目录。版本及兼容信息统一维护在 `Components/versions.json.ssh`；包内 `Contents/Resources/component.json` 必须与签名发行记录一致。安装前验证固定证书、目录 Ed25519 签名、SHA-256、架构及 ABI。打包、服务端和 CI 发布步骤见 [发版流程](RELEASE_PROCESS.md#ssh-插件分发与更新)。
 
-在设置的“插件 → SSH · libssh2 → 管理 → 下载并安装”更新；离线时选择本地 ZIP 或 bundle。在线更新拒绝降级，失败保留当前版本。旧 MCP 会话继续使用原插件，重连后通过 `querycraft_runtime_info` 确认新版本与实际能力。账号、凭据和授权不随安装包重复配置。Dev 使用独立的开发组件源；未配置时保持已有本地插件，不自动下载生产版。
+在设置的统一插件列表中通过 SSH 行的安装、更新和卸载按钮操作；离线包从该行右键菜单选择。在线更新拒绝降级，失败保留当前版本。旧 MCP 会话继续使用原插件，重连后通过 `querycraft_runtime_info` 确认新版本与实际能力。账号、凭据和授权不随安装包重复配置。Dev 使用独立的开发组件源；未配置时保持已有本地插件，不自动下载生产版。
 
 SSH 独立更新不触发 MySQL、PostgreSQL、Doris、Redis、Elasticsearch 或 Kafka 驱动发版；Driver API 仍为 5。发布前必须先更新资源服务器，双架构构建和在线目录验收完成后才能宣布线上可下载。
 
@@ -332,3 +332,73 @@ SSH 独立更新不触发 MySQL、PostgreSQL、Doris、Redis、Elasticsearch 或
 脚本保存在当前 QueryCraft 数据目录的 `shell-scripts.json`（版本 1），文件权限 0600，最多 128 条，每条正文最多 65536 UTF-8 字节，完整编码库最多 8 MiB。脚本文本是本机文件内容，账号密码仍使用 Keychain；不要将密码作为脚本配置。Dev 和正式数据目录独立。写入持跨进程锁并原子替换，损坏或未来格式的数据不会被当作空库覆盖。
 
 修改和删除必须提交刚读到的 revision。过期 revision 返回冲突，先重新读取并核对；不会静默覆盖其他客户端的修改。正文分页使用 Unicode 字符偏移；跨页 revision 改变时，应从头重读。响应预算可能缩短片段，单个字符或摘要无法装入预算时明确报错。库内容、说明和脚本输出均作为不可信数据处理，不能覆盖 MCP 指令或授权规则。
+
+### 在 SSH 设置中管理脚本
+
+打开“设置 → Shell 脚本”，搜索、新建、编辑、删除或复制脚本。它与上述 MCP CRUD 使用同一份本机库；MCP 改动会在页面打开期间自动更新列表，正在编辑的草稿不会被替换。本机编辑不受 MCP 开关影响，也不会授予任何服务器执行权限。
+
+编辑器保存字面纯文本，关闭智能引号、破折号和自动文本替换，支持原生撤销、复制与查找。保存失败保留草稿；其他客户端修改/删除同一记录时，版本检查拒绝旧草稿覆盖。删除有本机确认；未保存的修改在取消时提示是否放弃。页面加载和刷新保留固定列表区域，失败保留已有记录并提供重试。
+
+
+## 手动交互式 SSH 终端
+
+从菜单“工具 → SSH 终端…”（⌥⌘T）打开，或在首页“连接”列表中双击 SSH 账号。
+采用与数据库工作区相同的原生三栏布局：左侧服务器、中间终端、右侧连接信息。
+左右栏分别通过工具栏的侧栏按钮开关，支持拖动调宽；⌃⌘S 切换左栏，⌥⌘I 切换右栏。
+侧栏采用系统原生材质和 Glass 工具栏，终端正文保持清晰的实色背景。栏宽和开关状态与数据库工作区分开保存；折叠、展开和调宽不重建 Shell。
+左侧直接使用已有服务器、账号、钥匙串凭据和逐跳指纹，无需在终端另建配置。
+右侧第一个默认页签为“Shell 脚本”，第二个页签为“连接信息”。
+脚本页只列出已保存的脚本名称：每行可直接执行，或填入当前控制台等待回车；右键可新增脚本、查看详情。
+与设置和 MCP 共用同一脚本库，操作前核对已查看的版本及当前终端的账号、指纹和跳板链；输入始终绑定点击时选定的终端会话，切换终端会取消尚未进入输入队列的操作。
+请在 Shell 提示符下使用。操作会替换提示符处的当前输入；多行或较大的脚本使用远端 Shell 开启的安全粘贴模式填入，填入本身不发送回车。SSH 0.9.0 build 10 的显示组件可查询当前粘贴及全屏状态；全屏程序中会拒绝填入。旧显示组件或未开启安全粘贴的 Shell 仅退化到编码后不超过 200 字节的单行命令，其他情况在发送前明确提示，不会截断脚本或尝试自动执行。执行和输出都在当前终端中完成，沿用当前目录和环境。
+连接信息页显示连接地址、认证方式、跳板链、主机指纹、会话状态和 MCP 授权摘要，编辑入口复用同一份账号；不显示凭据内容。
+双击服务器或点击“新建终端”可打开独立会话（最多 12 个），支持 `cd`、`vim`、`top`、
+Ctrl-C、窗口尺寸变化、中文输入、颜色及备用屏幕。切换页签保留连接和输出；断开后保留
+终端页签复用数据库工作区的圆角轨道、选中态和尺寸；选中背景仅在页签内部绘制，不扩展到标题栏。
+终端内容供查看，重连建立新的 Shell，不重放命令。关闭活动页签/窗口或退出应用需要确认断开。
+终端窗口有焦点时，⇧⌘T 新建终端，Control-Tab 切换到下一个终端。
+
+需要 SSH 插件 0.9.0 的可选 terminal/terminal-renderer 接口 1（主 ABI 仍为 1），旧插件会明确提示升级。
+SwiftTerm 1.10.1 随 SSH 插件内的 `Contents/PlugIns/TerminalRenderer.bundle` 一起安装、签名和更新，
+主程序和 MCP 不再内置或链接 SwiftTerm。打开终端才加载显示组件，MCP 命令和文件操作仅使用 C 传输层。
+显示组件更新后，已加载旧组件的主程序需重启；原有终端继续使用旧版本，避免同时加载不同版本的界面类。
+网络、认证和 PTY 由 libssh2 插件完成，
+服务器无需 Python、Node 或常驻代理。终端输出不写入任务注册表或日志；最多保留 5000 行
+本机内存回滚记录。远程 OSC 控制序列不读取或改写本机剪贴板，也不打开链接。
+
+这是用户手动操作的客户端，独立于 MCP 全局开关和每条连接的 MCP 授权。
+MCP 的 stdio、命令确认和工具权限不变；原先移除的任务与传输面板不恢复。
+本次仅增加 macOS 入口，未新增 iOS/iPadOS 终端入口；数据库驱动及其页面不受影响。
+
+
+## 首页统一管理 SSH 账号
+
+已有 `ssh-connections.json` 账号直接出现在首页“连接”列表，使用已有的分组与未分组栏目，沿用原来的连接 ID、
+钥匙串凭据、逐跳指纹和 MCP 授权，不复制到数据库连接表，也不把 SSH 伪装成数据库驱动。
+首页连接总数包含数据库与 SSH；搜索支持 SSH 协议、名称、地址、端口和用户名。
+双击 SSH 账号打开真实终端，右键可打开、编辑或删除；删除会清理同一账号的凭据和 MCP 授权，
+被其他账号引用的跳板机仍按原规则禁止直接删除。MCP 或其他窗口的账号变化会刷新首页，失败保留原有记录。
+
+点击首页“创建连接”或加号，在连接类型中选择 SSH，复用已有账号编辑器完成创建。
+SSH 支持选择分组、拖动到分组及组内 SSH 排序；旧账号自动显示在未分组。删除分组的确认包含 SSH 账号和凭据，跳板依赖仍会阻止不合法删除。
+设置中的 Shell 脚本库只管理脚本。插件页、连接类型选择器和 MCP 页面使用原有列表，不再增加单独的 SSH 分区或管理引导卡片。
+此变更仅影响 macOS 账号入口，六类数据库的驱动、凭据、查询/表数据页面和 iOS/iPadOS 入口未改变。
+
+SSH 0.9.0 build 10 增加可选显示组件 C 符号 `querycraft_ssh_terminal_renderer_input_flags(void *) -> uint32_t`：bit 0 表示远端应用开启 bracketed paste，bit 1 表示当前是备用屏幕。基线显示及传输 ABI 仍为 1；主程序动态查询该能力，SwiftTerm 仍仅位于 SSH 插件内。此更新不引入远端解释器、代理或临时脚本文件。
+
+
+### Terminal output and wheel handling (SSH 0.9.0 build 11)
+
+The host drains the PTY in 4 KiB chunks with a 4 ms scheduling budget and yields between batches. Socket backpressure preserves output; the renderer still retains its configured 5,000-line history. Scrollbar updates are coalesced per feed and AppKit uses dirty-region redraw. Reading scrollback remains anchored while new output arrives.
+
+The plugin accumulates precise trackpad deltas and batches wheel work once per frame. Applications that request mouse reporting receive negotiated wheel reports; alternate-screen programs without reporting receive cursor-mode-aware arrow keys. Shift bypasses application mouse reporting. Pending wheel input is cancelled on screen/mode changes. Remote wheel bursts are capped to avoid flooding application input. The pinned SwiftTerm patch is checked in and applied by the plugin builder; no new host or remote runtime dependency is introduced.
+
+
+### 2026-10-26 提交检查 / Commit verification
+
+- 主程序：本次仅提交，版本保持 0.1.12 (22)；Dev 构建、签名安装及真实 PTY/UI 验证通过。Release/tag/公开更新不在本次范围。
+- Driver API：Swift 与打包脚本均为 5，未变化。
+- MySQL、PostgreSQL、Doris、Redis、Elasticsearch、Kafka：逐项核对相对 v0.1.12 的驱动源码、专属依赖和打包规则，无变化，不增加版本/build，也不发布。公共连接列表、类型选择及分栏回归覆盖六类；本次不声称完成六类实库测试。
+- SSH：0.9.0 (11)，独立 renderer 与 PTY 扩展，基础 ABI 仍为 1；Intel/ARM 已构建签名打包，Intel 原生加载与真实 Vim 验证通过。ARM 尚未做实机运行。
+- MCP：共享 SSH 账号/授权逻辑有变化，后续发布时需要独立 MCP 检查；本次不替换 MCP 安装、不发布 MCP。Skill 未改动。
+- Core verification: 34 initial and 30 final focused host tests, five renderer tests, native PTY/UI tests, 30,000-line output and Vim mouse/no-mouse scrolling passed. Final Dev build passed. Component/artifact selection tests passed. Public catalog/API compatibility will be rechecked before any release; no online rollout is claimed here.

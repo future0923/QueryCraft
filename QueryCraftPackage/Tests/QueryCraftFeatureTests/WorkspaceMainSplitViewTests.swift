@@ -75,6 +75,39 @@ struct WorkspaceMainSplitViewTests {
         #expect(abs(next.splitViewItems[2].viewController.view.frame.width - draggedWidth) < 2)
     }
 
+    @Test
+    func independentLayoutReportsSidebarCollapseAndDoesNotWriteDatabaseWidth() async {
+        let key = "QueryCraftWorkspaceInspectorLastWidth"
+        let previous = UserDefaults.standard.object(forKey: key)
+        let namespace = "qc-ssh-layout-test-" + UUID().uuidString
+        defer {
+            UserDefaults.standard.removeObject(forKey: namespace + ".inspectorLastWidth")
+            UserDefaults.standard.removeObject(forKey: namespace + ".sidebarLastWidth")
+        }
+        var changes: [Bool] = []
+        let controller = WorkspaceMainSplitViewController(
+            sidebar: AnyView(Color.clear), detail: AnyView(Color.clear), inspector: AnyView(Color.clear),
+            showsSidebar: true, showsInspector: true, layoutIdentifier: namespace,
+            onSidebarVisibilityChange: { changes.append($0) },
+            sidebarMinimumWidth: 180, sidebarMaximumWidth: 600, detailMinimumWidth: 520, inspectorMinimumWidth: 240)
+        controller.view.frame = NSRect(x: 0, y: 0, width: 1400, height: 700)
+        #expect(controller.splitView.autosaveName == nil)
+        controller.splitView.autosaveName = nil
+        update(controller, showsInspector: true)
+        await Task.yield()
+        controller.splitViewItems[0].isCollapsed = true
+        controller.splitView.layoutSubtreeIfNeeded()
+        #expect(changes == [false])
+        // The reported state can be overridden by a later explicit show request.
+        update(controller, showsInspector: true)
+        await Task.yield()
+        #expect(controller.splitViewItems[0].isCollapsed == false)
+        controller.splitView.setPosition(800, ofDividerAt: 1)
+        controller.splitView.layoutSubtreeIfNeeded()
+        #expect(UserDefaults.standard.object(forKey: namespace + ".inspectorLastWidth") != nil)
+        #expect(String(describing: UserDefaults.standard.object(forKey: key)) == String(describing: previous))
+    }
+
     private func makeController(
         showsInspector: Bool = true
     ) -> WorkspaceMainSplitViewController {

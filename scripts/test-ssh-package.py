@@ -44,12 +44,25 @@ def main():
             dependency = line.strip().split(' (',1)[0]
             assert dependency == '@rpath/QueryCraftSSH' or dependency.startswith(('/usr/lib/','/System/Library/')), dependency
         library = ctypes.CDLL(str(binary))
-        for name in ['version','file_version','file_management_version','pool_version','progress_version','route_version','diagnostic_version']:
+        for name in ['version','file_version','file_management_version','pool_version','progress_version','route_version','diagnostic_version','terminal_version']:
             function = getattr(library, 'querycraft_ssh_plugin_' + name)
             function.restype = ctypes.c_uint32
             assert function() == 1, name
-        for name in ['create','run','cancel','destroy','file_create','pool_create','pool_run','pool_invalidate','pool_prune','pool_destroy','set_progress','set_route','diagnostic']:
+        for name in ['create','run','cancel','destroy','file_create','pool_create','pool_run','pool_invalidate','pool_prune','pool_destroy','set_progress','set_route','diagnostic','set_terminal','terminal_resize','terminal_ready']:
             assert getattr(library,'querycraft_ssh_plugin_'+name)
+        renderer = bundle / 'Contents/PlugIns/TerminalRenderer.bundle'
+        ui_binary = renderer / 'Contents/MacOS/QueryCraftSSHTerminalRenderer'
+        module('ui_signer', ROOT / 'scripts/code-signing.py').verify(renderer)
+        assert subprocess.check_output(['lipo','-archs',str(ui_binary)],text=True).strip() == arch
+        info = __import__('plistlib').loads((renderer / 'Contents/Info.plist').read_bytes())
+        assert info['QCSSHTerminalRendererABIVersion'] == 1 and info['QCSwiftTermVersion'] == '1.10.1'
+        assert b'MIT' in (renderer / 'Contents/Resources/SwiftTerm-LICENSE.txt').read_bytes() or b'Permission' in (renderer / 'Contents/Resources/SwiftTerm-LICENSE.txt').read_bytes()
+        dependencies = subprocess.check_output(['otool','-L',str(binary)],text=True)
+        assert 'AppKit' not in dependencies and 'TerminalRenderer' not in dependencies and 'SwiftTerm' not in dependencies
+        # Loading the C transport must not pull the UI into a headless client.
+        dyld = ctypes.CDLL(None); dyld._dyld_image_count.restype = ctypes.c_uint32
+        dyld._dyld_get_image_name.argtypes = [ctypes.c_uint32]; dyld._dyld_get_image_name.restype = ctypes.c_char_p
+        assert not any(b'QueryCraftSSHTerminalRenderer' in (dyld._dyld_get_image_name(i) or b'') for i in range(dyld._dyld_image_count()))
     print(f'PASS {arch}: signed SSH package identity, native load, ABI/capabilities and self-contained dependencies')
 
 if __name__ == '__main__': main()

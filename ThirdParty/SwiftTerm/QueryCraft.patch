@@ -1,0 +1,19 @@
+diff --git a/Sources/SwiftTerm/Terminal.swift b/Sources/SwiftTerm/Terminal.swift
+--- a/Sources/SwiftTerm/Terminal.swift
++++ b/Sources/SwiftTerm/Terminal.swift
+@@ -5270,5 +5270,6 @@
+     func setViewYDisp (_ newValue: Int)
+     {
++        userScrolling = newValue < buffer.yBase
+         buffer.yDisp = newValue
+         synchronizedOutputBuffer?.yDisp = newValue
+     }
+diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
+--- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
++++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
+@@ -1198,4 +1198,4 @@
+-    public override func scrollWheel(with event: NSEvent) {
++    open override func scrollWheel(with event: NSEvent) {
+         if event.deltaY == 0 {
+             return
+         }

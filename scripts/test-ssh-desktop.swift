@@ -128,10 +128,10 @@ func requireSSH(_ condition: Bool, _ message: String) throws {
         for dark in [false, true] {
             let suffix = dark ? "dark" : "light"
             try await render(SSHSettingsPane(model: previewModel), dark: dark, width: 500, height: 730, to: output.appending(path: "servers-\(suffix).png"))
-            try await render(Form { MCPSSHAccessSection(directory: root) }.formStyle(.grouped), dark: dark,
-                width: 650, height: 430, to: output.appending(path: "mcp-ssh-access-\(suffix).png"))
-            try await render(SSHAccessEditor(profile: fixture, service: service), dark: dark,
-                width: 540, height: 480, to: output.appending(path: "access-editor-\(suffix).png"))
+            let permissions = MCPSettingsModel(directory: root)
+            permissions.didLoad = true; permissions.sshProfiles = [fixture]; permissions.policy = previewModel.policy
+            try await render(Form { MCPPermissionsSettingsSections(model: permissions) }.formStyle(.grouped), dark: dark,
+                width: 650, height: 430, to: output.appending(path: "mcp-connections-\(suffix).png"))
             let draft = SSHConnectionDraft(profile: fixture, policy: previewModel.policy)
             try await render(SSHConnectionEditor(draft: draft, service: service), dark: dark, width: 620, height: 730, to: output.appending(path: "password-\(suffix).png"))
             try await render(SSHConnectionEditor(draft: draft, service: service), dark: dark, width: 620, height: 730, to: output.appending(path: "permissions-\(suffix).png"), bottom: true)
@@ -144,7 +144,7 @@ func requireSSH(_ condition: Bool, _ message: String) throws {
             let importing = SSHConfigImportModel(); importing.path = config.path
             await importing.load(service: service); importing.selection = "app"
             try await render(SSHConfigImportPane(service: service, model: importing), dark: dark, width: 780, height: 650, to: output.appending(path: "config-import-\(suffix).png"))
-            try await render(Form { SSHPluginSettingsSection(model: pluginModel) }.formStyle(.grouped), dark: dark,
+            try await render(Form { Section("Plugins") { PluginSettingsRow(item: ConnectionPluginPresentation(pluginModel), install: {}, update: {}, uninstall: {}) } }.formStyle(.grouped), dark: dark,
                 width: 500, height: 420, to: output.appending(path: "plugin-\(suffix).png"))
         }
         try SSHConnectionStore(directory: root).remove(id: previewJump.id)

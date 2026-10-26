@@ -44,6 +44,25 @@ def inspect_package(source, arch, metadata):
             magic, cpu = struct.unpack('<II', binary.read(8))
         if magic != 0xfeedfacf or cpu != {'x86_64': 0x01000007, 'arm64': 0x0100000c}[arch]:
             raise ValueError('SSH package must contain exactly the requested native architecture')
+        # SSH 0.9+ carries its optional local UI as nested signed code. Validate
+        # it without loading AppKit/Swift or executing an untrusted binary.
+        if tuple(map(int, metadata['version'].split('.'))) >= (0, 9, 0):
+            renderer = root + 'Contents/PlugIns/TerminalRenderer.bundle/'
+            ui = plistlib.loads(archive.read(renderer + 'Contents/Info.plist'))
+            if (info.get('QCSSHTerminalRendererABIVersion') != 1
+                    or build.get('terminal_renderer_abi') != 1 or build.get('swiftterm') != '1.10.1'
+                    or ui.get('CFBundleIdentifier') != 'io.github.future0923.QueryCraft.SSH.TerminalRenderer'
+                    or ui.get('CFBundleExecutable') != 'QueryCraftSSHTerminalRenderer'
+                    or ui.get('QCSSHTerminalRendererABIVersion') != 1 or ui.get('QCSwiftTermVersion') != '1.10.1'
+                    or (ui.get('CFBundleShortVersionString'), ui.get('CFBundleVersion')) != (metadata['version'], metadata['build'])):
+                raise ValueError('SSH terminal renderer identity/ABI/version differs')
+            with archive.open(renderer + 'Contents/MacOS/QueryCraftSSHTerminalRenderer') as binary:
+                ui_magic, ui_cpu = struct.unpack('<II', binary.read(8))
+            if ui_magic != magic or ui_cpu != cpu:
+                raise ValueError('SSH terminal renderer has a different native architecture')
+            for name in ['Contents/_CodeSignature/CodeResources', 'Contents/Resources/SwiftTerm-LICENSE.txt']:
+                if not archive.getinfo(renderer + name).file_size:
+                    raise ValueError('SSH terminal renderer signature or license is missing')
         for name in ['Contents/_CodeSignature/CodeResources', 'Contents/Resources/Licenses/libssh2.txt',
                      'Contents/Resources/Licenses/OpenSSL.txt']:
             if not archive.getinfo(root + name).file_size:

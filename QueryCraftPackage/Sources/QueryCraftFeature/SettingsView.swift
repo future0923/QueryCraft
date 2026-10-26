@@ -27,8 +27,7 @@ struct SettingsView: View {
                 tab: navigation.selectedTab,
                 preferences: preferences,
                 mcpModel: mcpModel,
-                sshModel: sshModel,
-                openSSH: { navigation.selectedTab = .ssh }
+                sshModel: sshModel
             )
         }
         .navigationTitle(copy.settings)

@@ -6,6 +6,7 @@ final class ConnectionProfilesOutlineNode: NSObject {
         case ungrouped
         case group(ConnectionGroup)
         case profile(ConnectionProfile)
+        case ssh(SSHConnection)
     }
 
     let id: String

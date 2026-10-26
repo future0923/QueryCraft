@@ -33,7 +33,7 @@ struct SettingsCopy {
         case .plugins:
             text("插件", "Plugins")
         case .ssh:
-            text("SSH 服务器", "SSH Servers")
+            text("Shell 脚本", "Shell Scripts")
         }
     }
 

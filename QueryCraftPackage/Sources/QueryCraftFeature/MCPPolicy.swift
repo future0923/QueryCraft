@@ -183,6 +183,36 @@ struct MCPPolicyStore: Sendable {
             current.ssh = ssh
         }
     }
+    /// One settings draft and save action, while retaining grants changed by another process.
+    func saveSettings(_ draft: MCPPolicy, originalSSH: MCPSSHPolicy?, sshProfiles: [SSHConnection]) throws -> MCPPolicy {
+        let root = url.deletingLastPathComponent()
+        let accountLock = try MCPComponentLock(directory: root.appending(path: "SSHAccountOperations"))
+        defer { withExtendedLifetime(accountLock) {} }
+        var original = MCPPolicy(); original.ssh = originalSSH
+        let ids = (originalSSH?.connectionIDs ?? []).union(draft.ssh?.connectionIDs ?? [])
+        let edited = ids.filter { SSHAccountAccess(id: $0, policy: draft) != SSHAccountAccess(id: $0, policy: original) }
+        if !edited.isEmpty {
+            let currentProfiles = try SSHConnectionStore(directory: root).load()
+            for id in edited {
+                if SSHAccess.current(id: id, policy: draft) == .denied { continue }
+                guard let expected = sshProfiles.first(where: { $0.id == id }), currentProfiles.contains(expected) else {
+                    throw MCPFailure(AppCopy.current.text("连接已变化，请重新检查后再保存。", "A connection changed. Recheck before saving."))
+                }
+            }
+        }
+        var saved = draft
+        try update { current in
+            for id in edited {
+                guard SSHAccountAccess(id: id, policy: current) == SSHAccountAccess(id: id, policy: original) else {
+                    throw MCPFailure(AppCopy.current.text("连接权限已在其他位置修改，请重新打开设置后再保存。", "Connection access changed elsewhere. Reopen settings before saving."))
+                }
+                SSHAccountAccess(id: id, policy: draft).apply(id: id, to: &current)
+            }
+            saved.ssh = current.ssh
+            current = saved
+        }
+        return saved
+    }
     private func write(_ policy: MCPPolicy) throws {
         try policy.validate()
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])

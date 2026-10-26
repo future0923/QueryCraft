@@ -5,13 +5,15 @@ extension MCPSettingsModel {
         let knownIDs = Set(groups.map(\.id))
         var result = groups.map { group in
             MCPPermissionGroup(groupID: group.id, name: group.name,
-                               profiles: profiles.filter { $0.groupID == group.id })
+                               profiles: profiles.filter { $0.groupID == group.id },
+                               sshProfiles: sshProfiles.filter { $0.groupID == group.id })
         }
         let ungrouped = profiles.filter { profile in
             profile.groupID.map { !knownIDs.contains($0) } ?? true
         }
-        if !ungrouped.isEmpty {
-            result.append(.init(groupID: nil, name: AppCopy.current.text("未分组", "Ungrouped"), profiles: ungrouped))
+        let ungroupedSSH = sshProfiles.filter { $0.groupID.map { !knownIDs.contains($0) } ?? true }
+        if !ungrouped.isEmpty || !ungroupedSSH.isEmpty {
+            result.append(.init(groupID: nil, name: AppCopy.current.text("未分组", "Ungrouped"), profiles: ungrouped, sshProfiles: ungroupedSSH))
         }
         return result
     }
@@ -19,8 +21,10 @@ extension MCPSettingsModel {
     var visiblePermissionGroups: [MCPPermissionGroup] {
         guard !search.isEmpty else { return permissionGroups }
         let matches = Set(filteredProfiles.map(\.id))
+        let sshMatches = Set(filteredSSHProfiles.map(\.id))
         return permissionGroups.filter { group in
             group.name.localizedCaseInsensitiveContains(search) || group.profiles.contains { matches.contains($0.id) }
+                || group.sshProfiles.contains { sshMatches.contains($0.id) }
         }
     }
 
@@ -108,12 +112,16 @@ extension MCPSettingsModel {
         policy.allConnections = false
         policy.groupIDs = []
         policy.connectionIDs = []
+        for id in policy.ssh?.connectionIDs ?? [] { SSHAccess.denied.apply(id: id, to: &policy) }
     }
 
     func allowSearchResultsReadOnly() {
         for profile in permissionGroups.flatMap({ visibleProfiles(in: $0) }) where !policy.includesConnection(profile) {
             policy.connectionIDs.insert(profile.id)
             updateRule(for: profile.id) { $0.mode = .readOnly }
+        }
+        for profile in permissionGroups.flatMap({ visibleSSHProfiles(in: $0) }) where SSHAccess.current(id: profile.id, policy: policy) == .denied {
+            updateSSHAccess(for: profile.id) { $0.access = .connect; $0.fileRead = true }
         }
     }
 

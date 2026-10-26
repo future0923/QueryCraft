@@ -29,7 +29,6 @@ struct MCPPermissionsSettingsPane: View {
         case "execution": MCPExecutionSettingsSections(model: model)
         case "tuning": MCPOptimizationSettingsSections(model: model)
         default:
-            MCPSSHAccessSection(directory: model.directory)
             MCPPermissionsSettingsSections(model: model)
         }
     }

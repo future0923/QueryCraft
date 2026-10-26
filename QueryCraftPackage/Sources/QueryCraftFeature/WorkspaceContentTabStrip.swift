@@ -300,7 +300,7 @@ private struct WorkspaceContentTabDropReset: DropDelegate {
     }
 }
 
-private extension View {
+extension View {
     @ViewBuilder
     func workspaceTabTrackClipShape() -> some View {
         if #available(macOS 26.0, *) {

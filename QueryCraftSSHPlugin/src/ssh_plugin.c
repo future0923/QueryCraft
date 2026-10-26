@@ -25,6 +25,8 @@ struct qc_ssh_task {
     atomic_bool cancelled;
     qc_ssh_result result;
     double deadline;
+    int terminal_fd;
+    atomic_uint terminal_dimensions, terminal_ready;
     qc_ssh_file_request file;
     int session_reusable;
     qc_ssh_progress_callback progress;
@@ -232,7 +234,8 @@ EXPORT qc_ssh_task *querycraft_ssh_plugin_create(const qc_ssh_request *request) 
         || request->timeout_ms > 300000 || !request->maximum_output_bytes
         || request->maximum_output_bytes > 1048576) return NULL;
     qc_ssh_task *t = calloc(1, sizeof(*t)); if (!t) return NULL;
-    atomic_init(&t->cancelled, 0); t->request = *request;
+    atomic_init(&t->cancelled, 0); t->terminal_fd = -1;
+    atomic_init(&t->terminal_dimensions, 0); atomic_init(&t->terminal_ready, 0); t->request = *request;
     t->request.host = strdup(request->host); t->request.username = strdup(request->username);
     t->request.host_fingerprint = strdup(request->host_fingerprint);
     t->request.private_key_path = request->private_key_path ? strdup(request->private_key_path) : NULL;
@@ -270,10 +273,11 @@ EXPORT qc_ssh_task *querycraft_ssh_plugin_file_create(const qc_ssh_file_request 
 #include "ssh_files.inc"
 #include "ssh_pool.inc"
 #include "ssh_routes.inc"
+#include "ssh_terminal.inc"
 static const qc_ssh_result *run_task(qc_ssh_task *t, qc_ssh_pool *pool, const char *scope) {
     int fd = -1, rc, status = QC_SSH_OK, slot = -1;
     route_context route = {0};
-    if (t->has_route) pool = NULL;
+    if (t->has_route || t->terminal_fd >= 0) pool = NULL;
     char *key_bytes = NULL; size_t key_length = 0;
     LIBSSH2_SESSION *session = NULL; LIBSSH2_CHANNEL *channel = NULL;
     t->deadline = monotonic_time() + t->request.timeout_ms / 1000.0;
@@ -326,6 +330,7 @@ static const qc_ssh_result *run_task(qc_ssh_task *t, qc_ssh_pool *pool, const ch
 authenticated:
     if (t->file.operation || t->request.command) diagnostic_phase(t, t->file.operation ? QC_SSH_PHASE_SFTP : QC_SSH_PHASE_COMMAND);
     if ((status = check(t))) goto done;
+    if (t->terminal_fd >= 0) { diagnostic_phase(t, QC_SSH_PHASE_COMMAND); status = run_terminal(t, fd, session); goto done; }
     if (t->file.operation) { status = run_file(t, fd, session); goto done; }
     if (!t->request.command) goto done;
     do {
@@ -387,6 +392,7 @@ EXPORT const qc_ssh_result *querycraft_ssh_plugin_pool_run(qc_ssh_pool *pool, qc
 EXPORT void querycraft_ssh_plugin_cancel(qc_ssh_task *t) { atomic_store(&t->cancelled, 1); }
 EXPORT void querycraft_ssh_plugin_destroy(qc_ssh_task *t) {
     if (!t) return;
+    if (t->terminal_fd >= 0) close(t->terminal_fd);
     free((void *)t->request.host); free((void *)t->request.username); free((void *)t->request.host_fingerprint);
     free((void *)t->request.private_key_path);
     if (t->request.secret) { qc_ssh_wipe((void *)t->request.secret, strlen(t->request.secret)); free((void *)t->request.secret); }

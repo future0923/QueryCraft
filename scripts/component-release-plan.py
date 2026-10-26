@@ -19,7 +19,7 @@ def meaningful(base,head,path):
         return '\n'.join(line for line in text.splitlines() if not re.match(r'\s*(driver_version|driver_build)=',line))
     return normalize(read(base,path))!=normalize(read(head,path))
 def component_paths(kind):
-    if kind=='ssh':return ['QueryCraftSSHPlugin/**','QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/**','scripts/build-ssh-plugin.py','scripts/package-ssh-catalog.py']
+    if kind=='ssh':return ['QueryCraftSSHPlugin/**','QueryCraftSSHTerminalRenderer/**','ThirdPartyLicenses/SWIFTTERM-LICENSE.txt','ThirdParty/SwiftTerm/**','scripts/patch-swiftterm.py','QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/**','scripts/build-ssh-plugin.py','scripts/package-ssh-catalog.py']
     if kind=='skill':return ['Components/Skill/**','scripts/package-components.py']
     ssh_runtime = ['SSHAccountAccess','SSHConnection','SSHConnectionService','SSHDiagnostic','SSHFileRequest',
       'SSHPlugin','SSHPluginInstallation','SSHPluginManager','SSHRouteRequest','SSHTask','SSHTransfer','SSHTransferProgress']

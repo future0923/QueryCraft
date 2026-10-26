@@ -109,7 +109,7 @@ def main():
     licenses.mkdir(parents=True)
     header = ROOT / 'QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/include'
     exports = architecture / 'exports.txt'
-    exports.write_text(''.join('_querycraft_ssh_plugin_' + name + '\n' for name in ['version', 'create', 'run', 'cancel', 'destroy', 'file_version', 'file_create', 'file_management_version', 'pool_version', 'pool_create', 'pool_run', 'pool_invalidate', 'pool_prune', 'pool_destroy', 'progress_version', 'set_progress', 'route_version', 'set_route', 'diagnostic_version', 'diagnostic']))
+    exports.write_text(''.join('_querycraft_ssh_plugin_' + name + '\n' for name in ['version', 'create', 'run', 'cancel', 'destroy', 'file_version', 'file_create', 'file_management_version', 'pool_version', 'pool_create', 'pool_run', 'pool_invalidate', 'pool_prune', 'pool_destroy', 'progress_version', 'set_progress', 'route_version', 'set_route', 'diagnostic_version', 'diagnostic', 'terminal_version', 'set_terminal', 'terminal_resize', 'terminal_ready']))
     run(['clang', '-arch', args.arch, '-mmacosx-version-min=15.0', '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
          '-fvisibility=hidden', '-dynamiclib', '-I', header, '-I', install / 'include',
          ROOT / 'QueryCraftSSHPlugin/src/ssh_plugin.c', install / 'lib/libssh2.a', crypto / 'lib/libcrypto.a',
@@ -118,12 +118,43 @@ def main():
     dependencies = subprocess.check_output(['otool', '-L', str(binary)], text=True)
     if any(line.strip().startswith(('/usr/local/', '/opt/homebrew/', str(build))) for line in dependencies.splitlines()[1:]):
         raise RuntimeError('Plugin leaked a development dependency')
+    # Build the UI in an independent package: the transport never links AppKit or SwiftTerm.
+    renderer_scratch = build / 'renderer' / args.arch
+    swiftterm_checkout = renderer_scratch / 'checkouts/SwiftTerm'
+    if not swiftterm_checkout.exists():
+        run(['swift', 'package', '--package-path', ROOT / 'QueryCraftSSHTerminalRenderer',
+             '--scratch-path', renderer_scratch, 'resolve'], log, env=env)
+    run(['python3', ROOT / 'scripts/patch-swiftterm.py', swiftterm_checkout], log, env=env)
+    run(['swift', 'build', '--package-path', ROOT / 'QueryCraftSSHTerminalRenderer',
+         '--scratch-path', renderer_scratch, '--configuration', 'release',
+         '--triple', args.arch + '-apple-macosx15.0', '--disable-automatic-resolution', '--product', 'QueryCraftSSHTerminalRenderer', '-j', jobs], log, env=env)
+    renderer_product = renderer_scratch / (args.arch + '-apple-macosx') / 'release/libQueryCraftSSHTerminalRenderer.dylib'
+    if not renderer_product.is_file():
+        raise RuntimeError('Terminal renderer build product was not found')
+    renderer = bundle / 'Contents/PlugIns/TerminalRenderer.bundle'
+    renderer_binary = renderer / 'Contents/MacOS/QueryCraftSSHTerminalRenderer'
+    renderer_binary.parent.mkdir(parents=True)
+    shutil.copy2(renderer_product, renderer_binary)
+    renderer_resources = renderer / 'Contents/Resources'
+    renderer_resources.mkdir()
+    shutil.copy2(ROOT / 'ThirdPartyLicenses/SWIFTTERM-LICENSE.txt', renderer_resources / 'SwiftTerm-LICENSE.txt')
+    renderer_dependencies = subprocess.check_output(['otool', '-L', str(renderer_binary)], text=True)
+    for line in renderer_dependencies.splitlines()[2:]:
+        dependency = line.strip().split(' (', 1)[0]
+        if not dependency.startswith(('/usr/lib/', '/System/Library/', '@rpath/libswift')):
+            raise RuntimeError('Terminal renderer leaked a non-system runtime dependency: ' + dependency)
     metadata = json.loads((ROOT / 'Components/versions.json').read_text())['ssh']
+    (renderer / 'Contents/Info.plist').write_bytes(plistlib.dumps({
+        'CFBundleIdentifier': 'io.github.future0923.QueryCraft.SSH.TerminalRenderer',
+        'CFBundleName': 'QueryCraft SSH Terminal Renderer', 'CFBundlePackageType': 'BNDL',
+        'CFBundleExecutable': 'QueryCraftSSHTerminalRenderer', 'CFBundleShortVersionString': metadata['version'],
+        'CFBundleVersion': metadata['build'], 'QCSSHTerminalRendererABIVersion': 1,
+        'QCSwiftTermVersion': '1.10.1', 'LSMinimumSystemVersion': '15.0'}))
     descriptor = dict(metadata, component='ssh', architectures=[args.arch])
     (bundle / 'Contents/Resources/component.json').write_text(json.dumps(descriptor, sort_keys=True) + '\n')
     info = {'CFBundleIdentifier': 'io.github.future0923.QueryCraft.SSH', 'CFBundleName': 'QueryCraftSSH',
             'CFBundleExecutable': 'QueryCraftSSH', 'CFBundlePackageType': 'BNDL', 'CFBundleShortVersionString': metadata['version'],
-            'CFBundleVersion': metadata['build'], 'QCSSHPluginABIVersion': 1, 'QCSSHFileABIVersion': 1, 'LSMinimumSystemVersion': '15.0'}
+            'CFBundleVersion': metadata['build'], 'QCSSHPluginABIVersion': 1, 'QCSSHFileABIVersion': 1, 'QCSSHTerminalRendererABIVersion': 1, 'LSMinimumSystemVersion': '15.0'}
     (bundle / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copyfile(ssh / 'COPYING', licenses / 'libssh2.txt')
     if args.openssl_prefix:
@@ -133,12 +164,14 @@ def main():
     shutil.copyfile(crypto_license, licenses / 'OpenSSL.txt')
     (bundle / 'Contents/Resources/build.json').write_text(json.dumps({
         'abi': 1, 'architecture': args.arch, 'libssh2': SOURCES['libssh2'][0],
+        'terminal_renderer_abi': 1, 'swiftterm': '1.10.1',
         'openssl': subprocess.check_output([str(crypto / 'bin/openssl'), 'version'], text=True).strip()
             if (crypto / 'bin/openssl').exists() else SOURCES['openssl'][0],
         'local_crypto_override': bool(args.openssl_prefix),
     }, indent=2) + '\n')
     signing = ['codesign', '--force', '--sign', args.identity]
     signing += ['--timestamp', '--options', 'runtime'] if args.identity.startswith('Developer ID Application:') else ['--timestamp=none']
+    run(signing + [renderer], log)
     run(signing + [bundle], log)
     run(['codesign', '--verify', '--deep', '--strict', bundle], log)
     archive = args.output / f'QueryCraftSSH-{args.arch}.zip'

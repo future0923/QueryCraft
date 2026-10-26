@@ -17,6 +17,7 @@ final class ConnectionProfileTableRowView: NSTableRowView {
         if let hostingView = view as? ConnectionProfileHostingView {
             hostingView.setSelectedAppearance(isSelected)
         }
+        if let hostingView = view as? SSHConnectionHostingView { hostingView.setSelectedAppearance(isSelected) }
         for subview in view.subviews {
             updateHostedSelection(in: subview)
         }

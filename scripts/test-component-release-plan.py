@@ -42,6 +42,16 @@ class ReleasePlanTests(unittest.TestCase):
         self.write('QueryCraftSSHPlugin/src/ssh_plugin.c','int plugin;')
         result=self.result();self.assertEqual([k for k,v in result['components'].items() if v['changed']],['ssh'])
         self.assertFalse(any(item['changed'] for item in result['drivers'].values()))
+    def test_renderer_change_only_selects_ssh(self):
+        self.write('QueryCraftSSHTerminalRenderer/Sources/QueryCraftSSHTerminalRenderer/TerminalRenderer.swift','struct Renderer {}')
+        result=self.result();self.assertEqual([k for k,v in result['components'].items() if v['changed']],['ssh'])
+        self.assertFalse(any(item['changed'] for item in result['drivers'].values()))
+    def test_renderer_patch_selects_ssh(self):
+        self.write('ThirdParty/SwiftTerm/QueryCraft.patch','viewport correction')
+        result=self.result();self.assertEqual([k for k,v in result['components'].items() if v['changed']],['ssh'])
+    def test_renderer_patch_applier_selects_ssh(self):
+        self.write('scripts/patch-swiftterm.py','verify and apply pinned patch')
+        result=self.result();self.assertEqual([k for k,v in result['components'].items() if v['changed']],['ssh'])
     def test_ssh_settings_only_does_not_select_components(self):
         self.write('QueryCraftPackage/Sources/QueryCraftFeature/SSHPluginSettingsSection.swift','struct View {}')
         self.assertFalse(any(v['changed'] for v in self.result()['components'].values()))

@@ -30,11 +30,15 @@ class SSHDistributionTests(unittest.TestCase):
         self.metadata=json.loads((ROOT/'Components/versions.json').read_text())['ssh']
     def package(self, transform=lambda entries:None):
         root='QueryCraftSSH.bundle/'
-        entries={root+'Contents/Info.plist':plistlib.dumps(dict(CFBundleIdentifier='io.github.future0923.QueryCraft.SSH',QCSSHPluginABIVersion=1,CFBundleShortVersionString=self.metadata['version'],CFBundleVersion=self.metadata['build'])),
-          root+'Contents/Resources/build.json':json.dumps(dict(architecture='x86_64',abi=1,local_crypto_override=False)).encode(),
+        entries={root+'Contents/Info.plist':plistlib.dumps(dict(CFBundleIdentifier='io.github.future0923.QueryCraft.SSH',QCSSHPluginABIVersion=1,QCSSHTerminalRendererABIVersion=1,CFBundleShortVersionString=self.metadata['version'],CFBundleVersion=self.metadata['build'])),
+          root+'Contents/Resources/build.json':json.dumps(dict(architecture='x86_64',abi=1,local_crypto_override=False,terminal_renderer_abi=1,swiftterm='1.10.1')).encode(),
           root+'Contents/Resources/component.json':json.dumps(dict(self.metadata,component='ssh',architectures=['x86_64'])).encode(),
           root+'Contents/MacOS/QueryCraftSSH':struct.pack('<II',0xfeedfacf,0x01000007),
           root+'Contents/_CodeSignature/CodeResources':b'fixture',root+'Contents/Resources/Licenses/libssh2.txt':b'license',root+'Contents/Resources/Licenses/OpenSSL.txt':b'license'}
+        ui=root+'Contents/PlugIns/TerminalRenderer.bundle/'
+        entries.update({ui+'Contents/Info.plist':plistlib.dumps(dict(CFBundleIdentifier='io.github.future0923.QueryCraft.SSH.TerminalRenderer',CFBundleExecutable='QueryCraftSSHTerminalRenderer',QCSSHTerminalRendererABIVersion=1,QCSwiftTermVersion='1.10.1',CFBundleShortVersionString=self.metadata['version'],CFBundleVersion=self.metadata['build'])),
+          ui+'Contents/MacOS/QueryCraftSSHTerminalRenderer':struct.pack('<II',0xfeedfacf,0x01000007),
+          ui+'Contents/_CodeSignature/CodeResources':b'fixture',ui+'Contents/Resources/SwiftTerm-LICENSE.txt':b'MIT fixture'})
         transform(entries)
         path=self.directory/'package.zip'
         with zipfile.ZipFile(path,'w') as archive:
@@ -58,6 +62,17 @@ class SSHDistributionTests(unittest.TestCase):
         with zipfile.ZipFile(path,'a') as archive:
             link=zipfile.ZipInfo('QueryCraftSSH.bundle/link');link.create_system=3;link.external_attr=0o120777<<16;archive.writestr(link,'/tmp')
         with self.assertRaisesRegex(ValueError,'symbolic'):CATALOG.inspect_package(path,'x86_64',self.metadata)
+    def test_missing_or_mixed_renderer_is_rejected(self):
+        ui='QueryCraftSSH.bundle/Contents/PlugIns/TerminalRenderer.bundle/'
+        for name in ['Contents/Info.plist','Contents/_CodeSignature/CodeResources','Contents/Resources/SwiftTerm-LICENSE.txt']:
+            with self.assertRaises(KeyError): CATALOG.inspect_package(self.package(lambda e:e.pop(ui+name)), 'x86_64', self.metadata)
+        with self.assertRaisesRegex(ValueError, 'native architecture'):
+            CATALOG.inspect_package(self.package(lambda e:e.update({ui+'Contents/MacOS/QueryCraftSSHTerminalRenderer':struct.pack('<II',0xfeedfacf,0x0100000c)})), 'x86_64', self.metadata)
+        def incompatible(entries):
+            info=plistlib.loads(entries[ui+'Contents/Info.plist']); info['QCSSHTerminalRendererABIVersion']=99
+            entries[ui+'Contents/Info.plist']=plistlib.dumps(info)
+        with self.assertRaisesRegex(ValueError, 'renderer identity/ABI'):
+            CATALOG.inspect_package(self.package(incompatible), 'x86_64', self.metadata)
     def records(self, architectures=('x86_64','arm64'), version=None):
         for arch in architectures:
             name=f'querycraft-ssh-fixture-{arch}.zip'

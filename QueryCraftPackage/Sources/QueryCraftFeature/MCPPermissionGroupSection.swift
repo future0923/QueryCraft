@@ -24,6 +24,7 @@ struct MCPPermissionGroupSection: View {
 
     var body: some View {
         Section {
+            if !group.profiles.isEmpty {
             HStack {
                 Text(copy("本组默认权限", "Default access for this group"))
                 Spacer(minLength: 8)
@@ -35,7 +36,8 @@ struct MCPPermissionGroupSection: View {
             }
             Text(copy("连接或对象已单独设置权限时，优先使用其设置；未设置时才继承本组权限。", "Explicit connection or object access takes precedence. This group default applies only when no more specific access is set."))
                 .font(MCPSettingsType.detail).foregroundStyle(.secondary)
-            if !model.visibleProfiles(in: group).isEmpty {
+            }
+            if !model.visibleProfiles(in: group).isEmpty || !model.visibleSSHProfiles(in: group).isEmpty {
                 Group {
                     if !compact {
                         HStack(spacing: 12) {
@@ -57,14 +59,18 @@ struct MCPPermissionGroupSection: View {
                 MCPConnectionPermissionRow(model: model, profile: profile)
                     .id(profile.id.uuidString)
             }
-            if let id = group.groupID {
+            ForEach(model.visibleSSHProfiles(in: group)) { profile in
+                MCPSSHConnectionPermissionRow(model: model, profile: profile)
+                    .id("ssh-" + profile.id.uuidString)
+            }
+            if let id = group.groupID, !group.profiles.isEmpty {
                 Toggle(copy("以后加入本组的连接也自动授权", "Automatically authorize future group members"), isOn: Binding(
                     get: { model.policy.allConnections || model.policy.groupIDs.contains(id) },
                     set: { model.setGroupAutomaticGrant($0, for: group) }))
                 .toggleStyle(.checkbox).disabled(model.policy.allConnections)
                 .font(MCPSettingsType.detail)
                 .id("group-future-" + group.id)
-            } else {
+            } else if !group.profiles.isEmpty {
                 Text(copy("未分组的新增连接默认不授权；“全部连接”模式除外。", "New ungrouped connections remain unauthorized unless all connections are allowed."))
                     .font(MCPSettingsType.detail).foregroundStyle(.secondary)
             }
@@ -73,7 +79,9 @@ struct MCPPermissionGroupSection: View {
                 Text(group.name)
                 Spacer()
                 let allowed = group.profiles.filter { model.policy.includesConnection($0) }.count
-                Text(copy("\(allowed) / \(group.profiles.count) 个连接已授权", "\(allowed) / \(group.profiles.count) authorized"))
+                    + group.sshProfiles.filter { SSHAccess.current(id: $0.id, policy: model.policy) != .denied }.count
+                let count = group.profiles.count + group.sshProfiles.count
+                Text(copy("\(allowed) / \(count) 个连接已授权", "\(allowed) / \(count) authorized"))
                     .foregroundStyle(.secondary)
             }
         }

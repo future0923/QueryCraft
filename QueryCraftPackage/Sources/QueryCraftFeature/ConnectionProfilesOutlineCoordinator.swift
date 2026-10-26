@@ -16,6 +16,12 @@ final class ConnectionProfilesOutlineCoordinator:
     private weak var outlineView: NSOutlineView?
     private var groups: [ConnectionGroup] = []
     private var profiles: [ConnectionProfile] = []
+    private var sshProfiles: [SSHConnection] = []
+    private var openSSH: ((SSHConnection) -> Void)?
+    private var createSSH: (() -> Void)?
+    private var editSSH: ((SSHConnection) -> Void)?
+    private var deleteSSH: ((SSHConnection) -> Void)?
+    private var moveSSH: ((SSHConnection, UUID?, UUID?) -> Void)?
     private var nodeCache: [String: ConnectionProfilesOutlineNode] = [:]
     private var contextNode: ConnectionProfilesOutlineNode?
     private var collapsedSectionIDs: Set<String> = []
@@ -44,6 +50,8 @@ final class ConnectionProfilesOutlineCoordinator:
     }
 
     func update(from view: ConnectionProfilesOutlineView) {
+        openSSH = view.openSSH; createSSH = view.createSSH; editSSH = view.editSSH; deleteSSH = view.deleteSSH
+        moveSSH = view.moveSSH
         openProfile = view.openProfile
         createProfile = view.createProfile
         editProfile = view.editProfile
@@ -54,13 +62,14 @@ final class ConnectionProfilesOutlineCoordinator:
         moveProfile = view.moveProfile
         moveGroup = view.moveGroup
 
-        guard groups != view.groups || profiles != view.profiles
+        guard groups != view.groups || profiles != view.profiles || sshProfiles != view.sshProfiles
             || searchQuery != view.searchQuery || showsUngrouped != view.showsUngrouped
         else {
             return
         }
         groups = view.groups
         profiles = view.profiles
+        sshProfiles = view.sshProfiles
         searchQuery = view.searchQuery
         showsUngrouped = view.showsUngrouped
         reload()
@@ -122,10 +131,10 @@ final class ConnectionProfilesOutlineCoordinator:
             groupID = nil
         case .group(let group):
             groupID = group.id
-        case .profile:
+        case .profile, .ssh:
             return []
         }
-        return profiles
+        let databaseNodes = profiles
             .filter { $0.groupID == groupID }
             .map { profile in
                 node(
@@ -133,6 +142,12 @@ final class ConnectionProfilesOutlineCoordinator:
                     kind: .profile(profile)
                 )
             }
+        let knownGroups = Set(groups.map(\.id))
+        let servers = sshProfiles.filter { profile in
+            let effectiveGroup = profile.groupID.flatMap { knownGroups.contains($0) ? $0 : nil }
+            return effectiveGroup == groupID
+        }.sorted { ($0.sortIndex ?? Int.max) < ($1.sortIndex ?? Int.max) }
+        return databaseNodes + servers.map { node(id: "ssh:\($0.id)", kind: .ssh($0)) }
     }
 
     private func sectionNode(
@@ -181,7 +196,7 @@ final class ConnectionProfilesOutlineCoordinator:
         switch node.kind {
         case .ungrouped, .group:
             return !childNodes(of: node).isEmpty
-        case .profile:
+        case .profile, .ssh:
             return false
         }
     }
@@ -198,17 +213,19 @@ final class ConnectionProfilesOutlineCoordinator:
         case .ungrouped:
             return groupHostingView(
                 title: AppCopy.current.text("未分组", "Ungrouped"),
-                profileCount: profiles(in: nil).count,
+                profileCount: childNodes(of: node).count,
                 systemImage: "tray.full",
                 accessibilityIdentifier: "connectionGroup.ungrouped"
             )
         case .group(let group):
             return groupHostingView(
                 title: group.name,
-                profileCount: profiles(in: group.id).count,
+                profileCount: childNodes(of: node).count,
                 systemImage: "folder.fill",
                 accessibilityIdentifier: "connectionGroup.\(group.id)"
             )
+        case .ssh(let profile):
+            return SSHConnectionHostingView(profile: profile)
         case .profile(let profile):
             let hostingView = ConnectionProfileHostingView(
                 profile: profile
@@ -228,7 +245,7 @@ final class ConnectionProfilesOutlineCoordinator:
             return false
         }
         switch node.kind {
-        case .profile, .group:
+        case .profile, .group, .ssh:
             return true
         case .ungrouped:
             return false
@@ -246,7 +263,7 @@ final class ConnectionProfilesOutlineCoordinator:
         switch node.kind {
         case .ungrouped, .group:
             rowView.selectionHighlightStyle = .none
-        case .profile:
+        case .profile, .ssh:
             let rowView = ConnectionProfileTableRowView()
             rowView.selectionHighlightStyle = .regular
             return rowView
@@ -261,10 +278,7 @@ final class ConnectionProfilesOutlineCoordinator:
         guard let node = item as? ConnectionProfilesOutlineNode else {
             return 28
         }
-        if case .profile = node.kind {
-            return 44
-        }
-        return 28
+        switch node.kind { case .profile, .ssh: return 44; default: return 28 }
     }
 
     private func groupHostingView(
@@ -300,9 +314,15 @@ final class ConnectionProfilesOutlineCoordinator:
         else {
             return
         }
+        activate(node)
+    }
+
+    func activate(_ node: ConnectionProfilesOutlineNode) {
         switch node.kind {
         case .profile(let profile):
             openProfile?(profile)
+        case .ssh(let profile):
+            openSSH?(profile)
         case .ungrouped, .group:
             break
         }
@@ -356,6 +376,8 @@ final class ConnectionProfilesOutlineCoordinator:
                 kind: .group,
                 id: group.id
             )
+        case .ssh(let profile):
+            dragItem = ConnectionDragItem(kind: .ssh, id: profile.id)
         case .ungrouped:
             return nil
         }
@@ -388,7 +410,7 @@ final class ConnectionProfilesOutlineCoordinator:
             return []
         }
         switch dragItem.kind {
-        case .profile:
+        case .profile, .ssh:
             return validateProfileDrop(
                 outlineView,
                 proposedItem: item,
@@ -420,6 +442,12 @@ final class ConnectionProfilesOutlineCoordinator:
                 node,
                 dropChildIndex: childIndex
             )
+            return .move
+        case .ssh(let profile):
+            let groupID = profile.groupID.flatMap { id in groups.contains(where: { $0.id == id }) ? id : nil }
+            guard let section = sectionNode(for: groupID),
+                  let childIndex = childNodes(of: section).firstIndex(where: { $0.id == node.id }) else { return [] }
+            outlineView.setDropItem(section, dropChildIndex: childIndex)
             return .move
         case .profile(let profile):
             guard
@@ -476,6 +504,22 @@ final class ConnectionProfilesOutlineCoordinator:
             return false
         }
         switch dragItem.kind {
+        case .ssh:
+            guard let profile = sshProfiles.first(where: { $0.id == dragItem.id }),
+                  let section = item as? ConnectionProfilesOutlineNode, let moveSSH else { return false }
+            let groupID: UUID?
+            switch section.kind {
+            case .ungrouped: groupID = nil
+            case .group(let group): groupID = group.id
+            default: return false
+            }
+            let children = childNodes(of: section)
+            let before = children.dropFirst(min(max(0, index), children.count)).compactMap { node -> UUID? in
+                if case .ssh(let candidate) = node.kind, candidate.id != profile.id { return candidate.id }
+                return nil
+            }.first
+            moveSSH(profile, groupID, before)
+            return true
         case .profile:
             return acceptProfileDrop(
                 id: dragItem.id,
@@ -502,7 +546,7 @@ final class ConnectionProfilesOutlineCoordinator:
             targetGroupID = nil
         case .group(let group):
             targetGroupID = group.id
-        case .profile:
+        case .profile, .ssh:
             return false
         }
 
@@ -578,6 +622,11 @@ final class ConnectionProfilesOutlineCoordinator:
         }
         contextNode = node
         switch node.kind {
+        case .ssh:
+            addMenuItem(to: menu, title: AppCopy.current.text("在新窗口中打开", "Open in New Window"), systemImage: "terminal", action: #selector(openContextSSH))
+            menu.addItem(.separator())
+            addMenuItem(to: menu, title: AppCopy.current.text("编辑", "Edit"), systemImage: "pencil", action: #selector(editContextSSH))
+            addMenuItem(to: menu, title: AppCopy.current.text("删除", "Delete"), systemImage: "trash", action: #selector(deleteContextSSH))
         case .profile:
             addMenuItem(
                 to: menu,
@@ -654,6 +703,11 @@ final class ConnectionProfilesOutlineCoordinator:
         menu.addItem(item)
     }
 
+    @objc private func createContextSSH() { createSSH?() }
+    @objc private func openContextSSH() { if case .ssh(let profile) = contextNode?.kind { openSSH?(profile) } }
+    @objc private func editContextSSH() { if case .ssh(let profile) = contextNode?.kind { editSSH?(profile) } }
+    @objc private func deleteContextSSH() { if case .ssh(let profile) = contextNode?.kind { deleteSSH?(profile) } }
+
     @objc private func openContextProfile() {
         withContextProfile(openProfile)
     }
@@ -689,7 +743,7 @@ final class ConnectionProfilesOutlineCoordinator:
             createProfile?(nil)
         case .group(let group):
             createProfile?(group.id)
-        case .profile:
+        case .profile, .ssh:
             break
         }
     }
