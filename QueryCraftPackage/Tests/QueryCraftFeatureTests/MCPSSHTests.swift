@@ -10,7 +10,7 @@ struct MCPSSHTests {
     }
     private func root() -> URL { FileManager.default.temporaryDirectory.appending(path: "qc-ssh-" + UUID().uuidString) }
     private func policy(_ profile: SSHConnection, execution: Bool = false) -> MCPPolicy {
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = MCPSSHPolicy(connectionIDs: [profile.id], executionConnectionIDs: execution ? [profile.id] : [])
         return policy
     }
@@ -22,7 +22,7 @@ struct MCPSSHTests {
         let directory = root(); defer { try? FileManager.default.removeItem(at: directory) }
         let profile = profile(), transport = RecordingSSHTransport()
         try SSHConnectionStore(directory: directory).insert(profile)
-        var permission = MCPPolicy(); permission.enabled = true; permission.mode = .fullAccess; permission.allConnections = true
+        var permission = MCPPolicy(); permission.enabled = true; permission.allConnections = true
         try MCPPolicyStore(directory: directory).save(permission)
         let runtime = MCPRuntime(directory: directory, sshTransport: transport)
         let list = try await runtime.call("querycraft_ssh_list_connections", arguments: [:])
@@ -36,7 +36,7 @@ struct MCPSSHTests {
         await runtime.shutdown()
     }
 
-    @Test func executeRequiresGrantModeAndConfirmationThroughBothRoutes() async throws {
+    @Test func executeRequiresAccountGrantToolEnabledAndConfirmationThroughBothRoutes() async throws {
         let directory = root(); defer { try? FileManager.default.removeItem(at: directory) }
         let profile = profile(), transport = RecordingSSHTransport()
         try SSHConnectionStore(directory: directory).insert(profile)
@@ -47,9 +47,9 @@ struct MCPSSHTests {
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_ssh_execute", arguments: command) }
         let indirect: [String: MCPJSONValue] = ["plugin_id": "ssh", "tool": "ssh_execute", "arguments": .object(command)]
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_plugin_call", arguments: indirect) }
-        permission.mode = .dataWrite; try MCPPolicyStore(directory: directory).save(permission)
+        permission.ssh?.executionConnectionIDs = []; try MCPPolicyStore(directory: directory).save(permission)
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_ssh_execute", arguments: args(profile)) }
-        permission.mode = .fullAccess; permission.disabledTools = ["ssh_execute"]
+        permission.ssh?.executionConnectionIDs = [profile.id]; permission.disabledTools = ["ssh_execute"]
         try MCPPolicyStore(directory: directory).save(permission)
         await #expect(throws: MCPFailure.self) {
             _ = try await runtime.call("querycraft_plugin_call", arguments: ["plugin_id": "ssh", "tool": "ssh_execute", "arguments": .object(args(profile))])
@@ -66,7 +66,7 @@ struct MCPSSHTests {
     @Test func savedSecretsStayOutOfConfigurationAndAuthorization() async throws {
         let directory = root(); defer { try? FileManager.default.removeItem(at: directory) }
         let profile = profile(), credentials = InMemoryCredentialStore()
-        var permission = MCPPolicy(); permission.enabled = true; permission.mode = .fullAccess; permission.allConnections = true
+        var permission = MCPPolicy(); permission.enabled = true; permission.allConnections = true
         try MCPPolicyStore(directory: directory).save(permission)
         let runtime = MCPRuntime(directory: directory, credentials: credentials, sshTransport: RecordingSSHTransport())
         let result = try await runtime.call("querycraft_ssh_add_connection", arguments: [

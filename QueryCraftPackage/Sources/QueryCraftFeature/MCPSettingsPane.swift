@@ -110,7 +110,6 @@ struct MCPSettingsPane: View {
             Text(compact ? copy("工具", "Tools") : copy("工具开关", "Tools")).tag("tools")
             Text(compact ? copy("执行", "Limits") : copy("执行限制", "Limits")).tag("execution")
             Text(compact ? copy("性能", "Perf.") : copy("发现与性能", "Performance")).tag("tuning")
-            Text(compact ? copy("上限", "Cap") : copy("全局上限", "Global limit")).tag("ceiling")
             Text(compact ? copy("记录", "Logs") : copy("调用记录", "Activity")).tag("activity")
         }
         .pickerStyle(.segmented).labelsHidden()

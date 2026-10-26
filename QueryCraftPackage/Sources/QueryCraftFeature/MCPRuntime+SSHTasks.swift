@@ -3,7 +3,7 @@ import Foundation
 extension MCPRuntime {
     func callSSHTask(_ tool: String, args: [String: MCPJSONValue], profile: SSHConnection) async throws -> MCPJSONValue {
         let policy = try store.load()
-        guard sshPermitted(profile, tool: tool, policy: policy) else { throw MCPFailure("This task operation requires the connection's explicit execution grant; writes also require full access.", code: .accessDenied) }
+        guard sshPermitted(profile, tool: tool, policy: policy) else { throw MCPFailure("This task operation requires the connection's explicit execution grant.", code: .accessDenied) }
         let records = SSHTaskStore(directory: store.url.deletingLastPathComponent())
         if tool == "ssh_list_tasks" {
             return .array(try records.load().filter { $0.matches(profile) }.sorted { $0.createdAt > $1.createdAt }.map(\.value))

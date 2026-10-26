@@ -73,7 +73,7 @@ struct SSHDiagnosticsTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let profile = profile()
         try SSHConnectionStore(directory: root).insert(profile)
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [profile.id], executionConnectionIDs: [profile.id], fileReadConnectionIDs: [profile.id], fileTransferConnectionIDs: [profile.id])
         try MCPPolicyStore(directory: root).save(policy)
         let runtime = MCPRuntime(directory: root, sshTransport: DiagnosticFailureTransport(profile: profile))

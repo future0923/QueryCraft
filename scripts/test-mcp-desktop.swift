@@ -37,7 +37,6 @@ func check(_ condition: Bool, _ message: String) throws {
                     host: "127.0.0.1", port: 3306, username: "test", defaultDatabase: nil, tlsMode: .disabled,
                     storesCredential: false, createdAt: Date())
             }
-            model.policy.mode = .fullAccess
             model.policy.groupIDs = Set(model.groups.map(\.id))
             for (index, group) in model.groups.enumerated() {
                 model.policy.groupModes[group.id.uuidString] = MCPExecutionMode.allCases[index]
@@ -348,7 +347,6 @@ func check(_ condition: Bool, _ message: String) throws {
             model.policy.connections[profile.id.uuidString] = .init(databases: ["demo"], mode: .dataWrite,
                 databaseModes: ["demo": .readOnly], databaseAccess: .selected)
         }
-        model.policy.mode = .fullAccess
         model.policy.disabledTools = ["remove_connection"]
         model.save()
         let reopened = MCPSettingsModel(directory: root, installation: installer, service: service, skillHomeDirectory: root.appending(path: "SkillHome"), clientRegistrar: MCPClientRegistration(home: root.appending(path: "ClientHome"), environment: [:]), skillInstaller: MCPSkillInstallation(source: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appending(path: "Components/Skill/querycraft")))
@@ -403,7 +401,7 @@ func check(_ condition: Bool, _ message: String) throws {
         host.layoutSubtreeIfNeeded()
         var timings: [[String: Any]] = []
         print("BEGIN grouped permission layout measurement pid=\(ProcessInfo.processInfo.processIdentifier)")
-        for step in ["tools", "execution", "tuning", "ceiling", "tools"] {
+        for step in ["tools", "execution", "tuning", "tools"] {
             let start = Date()
             model.authorizationStep = step
             host.needsLayout = true; host.layoutSubtreeIfNeeded()
@@ -423,12 +421,12 @@ func check(_ condition: Bool, _ message: String) throws {
         model.authorizationStep = "tools"
         let probe = MCPToolCatalog.definitions[0].name
         model.policy.disabledTools.insert(probe)
-        model.policy.mode = .dataWrite
+        model.policy.maximumRows = 123
         model.section = "access"
         host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield()
         model.section = "permissions"
         host.needsLayout = true; host.layoutSubtreeIfNeeded(); await Task.yield()
-        try check(model.policy.disabledTools.contains(probe) && model.policy.mode == .dataWrite,
+        try check(model.policy.disabledTools.contains(probe) && model.policy.maximumRows == 123,
                   "settings navigation overwrote unsaved permission edits")
         model.policy = originalPolicy
         print("PASS complete settings navigation preserves policy and unsaved permission edits")
@@ -553,7 +551,7 @@ func check(_ condition: Bool, _ message: String) throws {
         try FileManager.default.createDirectory(at: previews, withIntermediateDirectories: true)
         let scenarios = [("access", "connections", "stdio"), ("access", "connections", "http"),
             ("permissions", "connections", "stdio"), ("permissions", "objects", "stdio"),
-            ("permissions", "ceiling", "stdio"), ("permissions", "tools", "stdio"),
+            ("permissions", "tools", "stdio"),
             ("permissions", "execution", "stdio"), ("permissions", "tuning", "stdio"),
             ("activity", "connections", "stdio")]
         for (section, step, transport) in scenarios {
@@ -584,7 +582,7 @@ func check(_ condition: Bool, _ message: String) throws {
         try await render(model, dark: false, width: 490, height: 700,
                          url: previews.appending(path: "narrow-objects.png"))
         model.section = "permissions"
-        for step in ["tools", "execution", "tuning", "ceiling"] {
+        for step in ["tools", "execution", "tuning"] {
             model.authorizationStep = step
             try await render(model, dark: false, width: 490, height: 500, url: previews.appending(path: "narrow-\(step).png"), scrollFraction: 1)
         }

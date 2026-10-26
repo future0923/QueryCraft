@@ -40,7 +40,7 @@ def main():
     secret = '' if args.private_key_path else getpass.getpass('SSH password (hidden): ')
     with tempfile.TemporaryDirectory(prefix='querycraft-ssh-mcp-') as temporary:
         root = Path(temporary)
-        settings = protocol.policy(5226); settings['mode'] = 'high_risk_write'
+        settings = protocol.policy(5226)
         settings['disabledTools'] = []
 
         def save():
@@ -281,10 +281,10 @@ def main():
                 output = success('ssh_task_output', dict(selector, task_id=task, max_bytes=10, offset=1))
                 assert base64.b64decode(output['content_base64']) == b'ersistent-', output
                 assert success('ssh_task_output', dict(selector, task_id=task, stream='stderr'))['display_text'] == 'task-error\n'
-                settings['mode'] = 'read_only'; save()
+                settings['disabledTools'] = ['ssh_cancel_task']; save()
                 success('ssh_task_status', dict(selector, task_id=task))
                 failure('ssh_cancel_task', dict(selector, task_id=task, confirm_high_risk=True), 'ACCESS_DENIED')
-                settings['mode'] = 'high_risk_write'; save()
+                settings['disabledTools'] = []; save()
                 active = start('sleep 60')
                 failure('ssh_remove_task', dict(selector, task_id=active, confirm_high_risk=True), 'DRIVER_FAILURE')
                 failure('ssh_cancel_task', dict(selector, task_id=active, confirm_high_risk=False), 'CONFIRMATION_REQUIRED')
@@ -322,13 +322,12 @@ def main():
             assert success('ssh_list_connections', {}) == []
             print(json.dumps({'host': args.host, 'passed': ['signed installation', 'mutated package rejection with old version retained',
                 'MCP handshake/tool schemas/plugin routes', ('key authentication' if args.private_key_path else 'Keychain credential save/read/delete'), 'independent SSH grants',
-                ('private-key authentication' if args.private_key_path else 'password authentication'), 'full-access execution gate', 'exact-command confirmation gate',
+                ('private-key authentication' if args.private_key_path else 'password authentication'), 'per-account execution grant', 'exact-command confirmation gate',
                 'remote stdout/stderr/exit status', 'indirect execution/exit 7', 'timeout/unknown outcome',
                 'host fingerprint mismatch', 'no secrets in JSON', 'connection cleanup']}, indent=2))
         finally:
             if connection and process.poll() is None:
                 try:
-                    settings['mode'] = 'high_risk_write'
                     settings['ssh'] = {'connectionIDs': [connection], 'executionConnectionIDs': [connection]}; save()
                     for task in tasks:
                         try:

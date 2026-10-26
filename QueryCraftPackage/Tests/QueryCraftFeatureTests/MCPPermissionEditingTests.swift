@@ -38,7 +38,7 @@ struct MCPPermissionEditingTests {
     }
 
     @Test(arguments: [DatabaseType.mysql, .postgresql, .doris, .redis, .elasticsearch, .kafka])
-    func groupEditsPreserveCeilingsObjectScopesAndUnrelatedRules(_ type: DatabaseType) throws {
+    func groupDefaultsPreserveExplicitOverridesObjectScopesAndUnrelatedRules(_ type: DatabaseType) throws {
         let model = makeModel(type: type)
         let group = try #require(model.permissionGroups.first)
         let p = try #require(group.profiles.first)
@@ -48,12 +48,9 @@ struct MCPPermissionEditingTests {
         let originalRule = model.rule(for: p.id)
         model.setGroupSelection(.fullAccess, for: group)
         #expect(model.policy.includesConnection(p))
-        #expect(model.policy.mode == .readOnly)
         #expect(model.policy.effectiveMode(p, database: "allowed") == .readOnly)
         #expect(model.rule(for: p.id) == originalRule)
         #expect(model.policy.disabledTools == ["remove_connection"])
-        model.setGlobalCeilingEnabled(false)
-        #expect(model.policy.mode == .fullAccess)
         #expect(model.policy.effectiveMode(p, database: "allowed") == .readOnly)
         #expect(model.policy.effectiveMode(p, database: "other") == .dataWrite)
         model.setGroupSelection(.denied, for: group)
@@ -99,10 +96,35 @@ struct MCPPermissionEditingTests {
         #expect(model.policy.includesConnection(profile(type: .mysql, group: group.groupID)))
     }
 
+    @Test(arguments: DatabaseType.allCases)
+    func explicitConnectionAndObjectAccessOverridesGroupUntilCleared(_ type: DatabaseType) throws {
+        let model = makeModel(type: type)
+        let group = try #require(model.permissionGroups.first)
+        let p = try #require(group.profiles.first)
+        model.setGroupSelection(.readOnly, for: group)
+        #expect(model.connectionSelection(p) == .inherited)
+        #expect(model.policy.effectiveMode(p, database: "allowed") == .readOnly)
+        model.setConnectionSelection(.fullAccess, for: p)
+        #expect(model.policy.effectiveMode(p, database: "allowed") == .fullAccess)
+        var draft = model.rule(for: p.id)
+        draft.databaseAccess = .selected; draft.databases = ["allowed"]
+        draft.databaseModes["allowed"] = .dataWrite
+        model.applyObjectScope(draft, for: p.id)
+        model.setGroupSelection(.dataWrite, for: group)
+        #expect(model.connectionSelection(p) == .fullAccess)
+        #expect(model.policy.effectiveMode(p, database: "allowed") == .dataWrite)
+        model.setConnectionSelection(.readOnly, for: p)
+        #expect(model.policy.effectiveMode(p, database: "allowed") == .dataWrite)
+        draft.databaseModes.removeValue(forKey: "allowed")
+        model.applyObjectScope(draft, for: p.id)
+        #expect(model.policy.effectiveMode(p, database: "allowed") == .readOnly)
+        model.setConnectionSelection(.inherited, for: p)
+        #expect(model.policy.effectiveMode(p, database: "allowed") == .dataWrite)
+    }
+
     @Test func directoryNavigationAndSummaryNeverMutateStoredPolicy() throws {
         let model = makeModel()
         model.policy.allConnections = true
-        model.policy.mode = .dataWrite
         model.policy.groupModes[model.groups[0].id.uuidString] = .readOnly
         model.policy.connections[model.profiles[0].id.uuidString] = .init(databases: ["allowed"],
             databaseModes: ["allowed": .readOnly], databaseAccess: MCPDatabaseAccess.none)
@@ -119,12 +141,12 @@ struct MCPPermissionEditingTests {
             }
             #expect(model.policy == policy)
         }
-        for page in ["access", "connections", "tools", "execution", "tuning", "ceiling", "activity"] {
+        for page in ["access", "connections", "tools", "execution", "tuning", "activity"] {
             model.selectSettingsPage(page)
             #expect(model.selectedSettingsPage == page)
             #expect(model.policy == policy)
         }
-        #expect(MCPSettingsDestination.allCases.count == 36)
+        #expect(MCPSettingsDestination.allCases.count == 35)
         #expect(model.transport == "stdio")
         #expect(model.showsHTTPSettings)
         model.navigate(to: .connectionSearch)
@@ -147,7 +169,6 @@ struct MCPPermissionEditingTests {
     func manualObjectNamesRetainRulesAcrossAllScopeModes(_ type: DatabaseType) throws {
         let model = makeModel(type: type), p = model.profiles[0]
         model.policy.connectionIDs.insert(p.id)
-        model.policy.mode = .fullAccess
         model.updateRule(for: p.id) {
             $0.databases = ["old"]
             $0.databaseModes = ["old": .readOnly]
@@ -182,7 +203,6 @@ struct MCPPermissionEditingTests {
         model.applyObjectScope(draft, for: profile.id)
         #expect(!model.policy.includesConnection(profile))
         #expect(model.rule(for: profile.id).mode == .readOnly)
-        #expect(model.policy.mode == original.mode)
         #expect(model.rule(for: profile.id).scope == .selected)
         #expect(model.rule(for: profile.id).databases == ["new"])
         #expect(model.rule(for: profile.id).databaseModes == ["new": .readOnly])
@@ -200,7 +220,6 @@ struct MCPPermissionEditingTests {
         model.setGroupSelection(.dataWrite, for: group)
         let rule = model.rule(for: p.id)
         #expect(model.groupSelection(group) == .dataWrite)
-        #expect(model.policy.mode == .readOnly)
         model.revokeAllConnectionGrants()
         #expect(model.policy.includesConnection(p) == false)
         #expect(model.rule(for: p.id) == rule)

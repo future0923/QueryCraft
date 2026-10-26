@@ -8,7 +8,7 @@ struct SSHTransferProgressTests {
         let profile = SSHConnection(id: UUID(), name: "progress fixture", host: "localhost", port: 22, username: "fixture",
             hostFingerprint: "SHA256:" + Data(repeating: 1, count: 32).base64EncodedString().replacingOccurrences(of: "=", with: ""), privateKeyPath: "/fixture/key", storesCredential: false)
         try SSHConnectionStore(directory: root).insert(profile)
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [profile.id], fileReadConnectionIDs: [profile.id], fileTransferConnectionIDs: [profile.id])
         try MCPPolicyStore(directory: root).save(policy)
         let transport = ProgressTransport(progress: progress)
@@ -89,7 +89,7 @@ struct SSHTransferProgressTests {
         await runtime.shutdown()
         #expect(await runtime.sshTransfers.isEmpty)
         #expect(await runtime.sshOperations.isEmpty)
-        policy.mode = .readOnly; try policyStore.save(policy)
+        policy.disabledTools = ["ssh_start_transfer", "ssh_cancel_transfer"]; try policyStore.save(policy)
         let reader = MCPRuntime(directory: root, sshTransport: ProgressTransport(progress: false))
         let state = try await reader.call("querycraft_ssh_transfer_status", arguments: ["connection_id": .string(profile.id.uuidString), "transfer_id": .string(id)])
         #expect(state.objectValue?["state"] == "cancelled")

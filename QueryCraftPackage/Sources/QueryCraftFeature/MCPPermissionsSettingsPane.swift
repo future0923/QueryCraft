@@ -28,7 +28,6 @@ struct MCPPermissionsSettingsPane: View {
         case "tools": MCPToolsExecutionSettingsSections(model: model)
         case "execution": MCPExecutionSettingsSections(model: model)
         case "tuning": MCPOptimizationSettingsSections(model: model)
-        case "ceiling", "overrides": MCPPermissionCeilingSection(model: model)
         default:
             MCPSSHAccessSection(directory: model.directory)
             MCPPermissionsSettingsSections(model: model)

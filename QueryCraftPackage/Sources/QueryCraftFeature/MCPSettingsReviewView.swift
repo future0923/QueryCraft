@@ -18,7 +18,8 @@ struct MCPSettingsReviewView: View {
             Form {
                 Section(copy("全局设置", "Global settings")) {
                     LabeledContent("MCP", value: policy.enabled ? copy("已启用", "Enabled") : copy("已关闭", "Disabled"))
-                    LabeledContent(copy("全局权限上限", "Global permission ceiling"), value: policy.mode.title)
+                    Text(copy("权限按对象、连接、分组依次继承；均未设置时为只读。", "Access inherits from object to connection to group, defaulting to read only when none is set."))
+                        .font(MCPSettingsType.detail).foregroundStyle(.secondary)
                     LabeledContent(copy("授权范围", "Connection grants"), value: policy.allConnections
                         ? copy("全部连接，含以后新增", "All connections, including future ones")
                         : copy("指定分组与连接", "Selected groups and connections"))

@@ -96,7 +96,7 @@ private struct SSHActivityDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let snapshot = model.snapshot, !snapshot.policyEnabled || !snapshot.pluginAvailable {
-                Text(!snapshot.pluginAvailable ? copy("请先安装 SSH 插件，再重新打开面板。", "Install SSH, then reopen this panel.") : copy("MCP 当前未启用。远程操作沿用 MCP 的工具开关、账号授权和全局上限。", "MCP is disabled. Remote actions use its tool switches, account grants and global limit."))
+                Text(!snapshot.pluginAvailable ? copy("请先安装 SSH 插件，再重新打开面板。", "Install SSH, then reopen this panel.") : copy("MCP 当前未启用。远程操作沿用 MCP 的工具开关和账号授权。", "MCP is disabled. Remote actions use its tool switches and account grants."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let selection = model.selection {

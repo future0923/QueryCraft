@@ -19,7 +19,7 @@ struct SSHFilesTasksTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let profile = profile(), transport = FileFixtureTransport()
         try SSHConnectionStore(directory: directory).insert(profile)
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [profile.id], executionConnectionIDs: [profile.id])
         let store = MCPPolicyStore(directory: directory); try store.save(policy)
         let runtime = MCPRuntime(directory: directory, sshTransport: transport)
@@ -30,9 +30,9 @@ struct SSHFilesTasksTests {
         #expect(stat.objectValue?["size_bytes"] == 3)
         let transfer: [String: MCPJSONValue] = ["connection_id": .string(profile.id.uuidString), "local_path": "/local", "remote_path": "/remote", "confirm_high_risk": true]
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_ssh_download_file", arguments: transfer) }
-        policy.ssh?.fileTransferConnectionIDs = [profile.id]; policy.mode = .readOnly; try store.save(policy)
+        policy.disabledTools = ["ssh_download_file"]; policy.ssh?.fileTransferConnectionIDs = [profile.id]; try store.save(policy)
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_ssh_download_file", arguments: transfer) }
-        policy.mode = .fullAccess; try store.save(policy)
+        policy.disabledTools = []; try store.save(policy)
         _ = try await runtime.call("querycraft_ssh_download_file", arguments: transfer)
         policy.ssh?.fileReadConnectionIDs = []; try store.save(policy)
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_ssh_download_file", arguments: transfer) }
@@ -79,7 +79,7 @@ struct SSHFilesTasksTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let profile = profile()
         try SSHConnectionStore(directory: directory).insert(profile)
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [profile.id], executionConnectionIDs: [profile.id])
         try MCPPolicyStore(directory: directory).save(policy)
         let arguments: [String: MCPJSONValue] = ["connection_id": .string(profile.id.uuidString), "command": "sleep 10", "confirm_high_risk": true]

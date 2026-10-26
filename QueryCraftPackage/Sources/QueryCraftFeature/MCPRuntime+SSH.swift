@@ -4,7 +4,6 @@ extension MCPRuntime {
     struct SSHReuseConfiguration: Equatable {
         let profiles: [SSHConnection]
         let enabled: Bool
-        let mode: MCPExecutionMode
         let grants: MCPSSHPolicy?
         let disabledTools: Set<String>
     }
@@ -21,7 +20,7 @@ extension MCPRuntime {
             let policy = try? store.load(), profiles = try? sshConnections.load()
             let configuration = policy.flatMap { policy in profiles.map {
                 SSHReuseConfiguration(profiles: $0.sorted { $0.id.uuidString < $1.id.uuidString }, enabled: policy.enabled,
-                    mode: policy.mode, grants: policy.ssh, disabledTools: policy.disabledTools)
+                    grants: policy.ssh, disabledTools: policy.disabledTools)
             } }
             guard configuration != sshReuseConfiguration else { return }
             sshReuseConfiguration = configuration
@@ -68,17 +67,17 @@ extension MCPRuntime {
     }
     func sshPermitted(_ profile: SSHConnection, tool: String, policy: MCPPolicy) -> Bool {
         guard policy.enabled, !policy.disabledTools.contains(tool), policy.ssh?.connectionIDs.contains(profile.id) == true else { return false }
-        if MCPToolCatalog.sshFileWrites.contains(tool) { return policy.mode == .fullAccess && policy.ssh?.fileManagementConnectionIDs.contains(profile.id) == true }
+        if MCPToolCatalog.sshFileWrites.contains(tool) { return policy.ssh?.fileManagementConnectionIDs.contains(profile.id) == true }
         if MCPToolCatalog.sshRecoveryReads.contains(tool) { return policy.ssh?.fileTransferConnectionIDs.contains(profile.id) == true }
-        if MCPToolCatalog.sshRecoveryWrites.contains(tool) { return policy.mode == .fullAccess && policy.ssh?.fileTransferConnectionIDs.contains(profile.id) == true }
+        if MCPToolCatalog.sshRecoveryWrites.contains(tool) { return policy.ssh?.fileTransferConnectionIDs.contains(profile.id) == true }
         if MCPToolCatalog.sshFileReads.contains(tool) { return policy.ssh?.fileReadConnectionIDs.contains(profile.id) == true }
         if MCPToolCatalog.sshTransfers.contains(tool) {
-            return policy.mode == .fullAccess && policy.ssh?.fileTransferConnectionIDs.contains(profile.id) == true
+            return policy.ssh?.fileTransferConnectionIDs.contains(profile.id) == true
                 && (tool != "ssh_download_file" || policy.ssh?.fileReadConnectionIDs.contains(profile.id) == true)
         }
         if MCPToolCatalog.sshTaskReads.contains(tool) { return policy.ssh?.executionConnectionIDs.contains(profile.id) == true }
         if tool == "ssh_execute" || MCPToolCatalog.sshTaskWrites.contains(tool) {
-            return policy.mode == .fullAccess && policy.ssh?.executionConnectionIDs.contains(profile.id) == true
+            return policy.ssh?.executionConnectionIDs.contains(profile.id) == true
         }
         return true
     }
@@ -91,7 +90,6 @@ extension MCPRuntime {
         if tool == "ssh_add_connection" {
             let lock = try MCPComponentLock(directory: store.url.deletingLastPathComponent().appending(path: "SSHAccountOperations"))
             defer { withExtendedLifetime(lock) {} }
-            guard policy.mode == .fullAccess else { throw MCPFailure("Adding SSH connections requires global full access.", code: .accessDenied) }
             let secret = args.string("password") ?? args.string("passphrase")
             let key = args.string("private_key_path")
             let authentication: SSHAuthentication?
@@ -120,11 +118,10 @@ extension MCPRuntime {
             do {
                 guard !stopped else { throw MCPFailure("MCP runtime is shutting down.") }
                 let current = try store.load(); try current.authorize(tool: tool)
-                guard current.mode == .fullAccess else { throw MCPFailure("SSH connection editing was revoked.", code: .accessDenied) }
                 try sshConnections.insert(profile)
             } catch { if secret != nil { try? await credentials.delete(for: profile.id) }; throw error }
             return .object(["connection_id": .string(profile.id.uuidString), "authorized": false,
-                            "next_step": "Grant this connection explicitly in mcp-policy.json ssh.connectionIDs; command execution also requires ssh.executionConnectionIDs and global full access."])
+                            "next_step": "Grant this connection explicitly in mcp-policy.json ssh.connectionIDs; command execution also requires ssh.executionConnectionIDs."])
         }
         guard let id = UUID(uuidString: try args.requiredString("connection_id")),
               let profile = try sshConnections.load().first(where: { $0.id == id }) else {
@@ -143,8 +140,8 @@ extension MCPRuntime {
         if tool == "ssh_remove_connection" {
             let lock = try MCPComponentLock(directory: store.url.deletingLastPathComponent().appending(path: "SSHAccountOperations"))
             defer { withExtendedLifetime(lock) {} }
-            guard policy.mode == .fullAccess, policy.ssh?.connectionIDs.contains(id) == true else {
-                throw MCPFailure("Removing an SSH connection requires an explicit connection grant and global full access.", code: .accessDenied)
+            guard policy.ssh?.connectionIDs.contains(id) == true else {
+                throw MCPFailure("Removing an SSH connection requires an explicit connection grant.", code: .accessDenied)
             }
             guard args.flag("confirm_high_risk") else { throw MCPFailure("Removing an SSH connection requires confirm_high_risk=true.", code: .confirmationRequired) }
             guard try !sshConnections.load().contains(where: { $0.jumpConnectionID == id }) else { throw MCPFailure("This server is used as a jump host. Update its dependent connections first.") }
@@ -158,7 +155,7 @@ extension MCPRuntime {
             return .object(["removed": true])
         }
         guard sshPermitted(profile, tool: tool, policy: policy) else {
-            throw MCPFailure("SSH access is not authorized. Commands require an explicit execution grant and global full access.", code: .accessDenied)
+            throw MCPFailure("SSH access is not authorized. Commands require an explicit execution grant.", code: .accessDenied)
         }
         if execution && !args.flag("confirm_high_risk") {
             throw MCPFailure("Remote shell execution requires confirm_high_risk=true after confirming the exact command.", code: .confirmationRequired)

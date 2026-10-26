@@ -2,7 +2,6 @@ import Foundation
 
 extension MCPRuntime {
     func addConnection(_ args: [String: MCPJSONValue], policy: MCPPolicy) async throws -> MCPJSONValue {
-        guard policy.mode == .fullAccess else { throw MCPFailure("Adding connections requires global full access.", code: .accessDenied) }
         guard let type = DatabaseType(rawValue: try args.requiredString("type")) else { throw MCPFailure("Unsupported database driver.") }
         let port = args.integer("port", default: 0)
         guard (1...65535).contains(port) else { throw MCPFailure("Invalid port.") }

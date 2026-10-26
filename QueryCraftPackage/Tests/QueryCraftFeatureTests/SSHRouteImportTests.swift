@@ -62,7 +62,7 @@ struct SSHRouteImportTests {
         let jump = profile("jump"), target = profile("target", parent: jump.id), credentials = RouteCredentials(), transport = RouteTransport()
         let accounts = SSHConnectionStore(directory: root); try accounts.insert(jump); try accounts.insert(target)
         try await credentials.save(password: "jump-secret", for: jump.id); try await credentials.save(password: "target-secret", for: target.id)
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [target.id], executionConnectionIDs: [target.id])
         let policies = MCPPolicyStore(directory: root); try policies.save(policy)
         let runtime = MCPRuntime(directory: root, credentials: credentials, sshTransport: transport)
@@ -88,7 +88,7 @@ struct SSHRouteImportTests {
         let jump = profile("jump"), target = profile("target", parent: jump.id), credentials = RouteCredentials(gated: true), transport = RouteTransport()
         let accounts = SSHConnectionStore(directory: root); try accounts.insert(jump); try accounts.insert(target)
         try await credentials.save(password: "jump", for: jump.id); try await credentials.save(password: "target", for: target.id)
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [jump.id, target.id], executionConnectionIDs: [target.id])
         let policies = MCPPolicyStore(directory: root); try policies.save(policy)
         let runtime = MCPRuntime(directory: root, credentials: credentials, sshTransport: transport)
@@ -106,7 +106,7 @@ struct SSHRouteImportTests {
         let jump = profile("jump"), target = profile("target", parent: jump.id), credentials = RouteCredentials(), transport = BlockingRouteTransport()
         let accounts = SSHConnectionStore(directory: root); try accounts.insert(jump); try accounts.insert(target)
         try await credentials.save(password: "jump", for: jump.id); try await credentials.save(password: "target", for: target.id)
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [jump.id, target.id], executionConnectionIDs: [target.id])
         let policies = MCPPolicyStore(directory: root); try policies.save(policy)
         let runtime = MCPRuntime(directory: root, credentials: credentials, sshTransport: transport)

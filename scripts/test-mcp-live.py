@@ -58,7 +58,7 @@ try:
   root=Path(temp)
   api=plistlib.loads((next(drivers.glob('*.querycraftdriver'))/'Contents/Info.plist').read_bytes())['QCDriverAPIVersion']
   shutil.copytree(drivers,root/f'DriverAPI-{api}'/'Drivers',symlinks=True,ignore=shutil.ignore_patterns('*.zip','*.json'))
-  settings=mod.policy(5227);settings.update(mode='high_risk_write',allConnections=True,disabledTools=[],queryTimeoutSeconds=15)
+  settings=mod.policy(5227);settings.update(allConnections=True,disabledTools=[],queryTimeoutSeconds=15)
   def save():(root/'mcp-policy.json').write_text(json.dumps(settings))
   save()
   checked=subprocess.run([str(EXE),'--check-drivers','--data-dir',temp],capture_output=True,text=True,check=True,timeout=30)
@@ -77,7 +77,9 @@ try:
     return r
    assert not r.get('isError'),(name,r)
    return json.loads(r['content'][0]['text'])
-  def mode(value):settings['mode']=value;save()
+  def mode(value):
+   for rule in settings['connections'].values():rule['mode']=value
+   save()
   try:
    mod.send(p,mod.INIT);mod.send(p,{'jsonrpc':'2.0','method':'notifications/initialized'},False)
    for kind,typ,internal,user,db in [('mysql','mysql',3306,'root','qc_mcp'),('pg','postgresql',5432,'postgres','postgres'),('redis','redis',6379,'','0'),('es','elasticsearch',9200,'',None),('kafka','kafka',9092,'',None),('doris','doris',9030,'root','qc_mcp')]:
@@ -85,6 +87,7 @@ try:
     start(kind)
     mode('high_risk_write')
     cid=call('add_connection',{'name':'Integration '+typ,'type':typ,'host':'127.0.0.1','port':port(kind,internal),'username':user,'tls_mode':'disabled',**({'database':db} if db else {})})['connection_id']
+    settings['connections'][cid]={'mode':'high_risk_write','databaseModes':{}};save()
     base={'connection_id':cid}
     if db:base['database']=db
     def c(name,**args):return call(name,{**base,**args})
@@ -149,7 +152,7 @@ try:
      print('PASS kafka live produce, peek, groups and readonly denial',flush=True)
     settings['connections'][cid]={'databaseAccess':'none','databaseModes':{}};save();call('list_tables',base,error=True)
     if args.stress and kind in ['mysql','doris']:
-     del settings['connections'][cid];save();stress_connections[kind]=base
+     settings['connections'][cid]={'mode':'safe_write','databaseModes':{}};save();stress_connections[kind]=base
     else:
      docker('rm','-f','-v',containers[kind]);del containers[kind]
    if args.stress:

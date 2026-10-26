@@ -4,7 +4,6 @@ import Darwin
 
 enum MCPExecutionMode: String, Codable, CaseIterable, Sendable {
     case readOnly = "read_only", dataWrite = "safe_write", fullAccess = "high_risk_write"
-    var rank: Int { Self.allCases.firstIndex(of: self)! }
     var title: String {
         switch self {
         case .readOnly: AppCopy.current.text("只读", "Read only")
@@ -73,7 +72,6 @@ struct MCPPolicy: Codable, Equatable, Sendable {
     var allConnections = false
     var connectionIDs: Set<UUID> = []
     var groupIDs: Set<UUID> = []
-    var mode: MCPExecutionMode = .readOnly
     var groupModes: [String: MCPExecutionMode] = [:]
     var connections: [String: MCPConnectionPolicy] = [:]
     var disabledTools: Set<String> = []
@@ -108,9 +106,11 @@ struct MCPPolicy: Codable, Equatable, Sendable {
     }
     func effectiveMode(_ profile: ConnectionProfile, database: String?) -> MCPExecutionMode {
         let rule = connectionRule(profile)
-        let ceilings = [mode, profile.groupID.flatMap { groupModes[$0.uuidString] },
-                        rule.mode, database.flatMap { rule.databaseModes[$0] }].compactMap { $0 }
-        return ceilings.min(by: { $0.rank < $1.rank }) ?? mode
+        // The nearest explicit rule wins. Missing rules inherit; the final default is read-only.
+        return database.flatMap { rule.databaseModes[$0] }
+            ?? rule.mode
+            ?? profile.groupID.flatMap { groupModes[$0.uuidString] }
+            ?? .readOnly
     }
     func authorize(tool: String, profile: ConnectionProfile? = nil, database: String? = nil) throws {
         guard version == 1, enabled else { throw MCPFailure("MCP is disabled. Enable it in QueryCraft Settings → MCP.", code: .accessDenied) }

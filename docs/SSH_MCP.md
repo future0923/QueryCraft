@@ -6,7 +6,7 @@ SSH 使用独立的 `QueryCraftSSH.bundle`，底层为 libssh2。主程序和 MC
 
 - `querycraft_ssh_list_connections`：列出明确授权的 SSH 连接。
 - `querycraft_ssh_add_connection`：保存连接，密码或私钥口令存入现有 Keychain 凭据服务；不自动授权。
-- `querycraft_ssh_remove_connection`：删除已授权连接及其保存凭据，要求完整访问及明确确认，活动命令期间拒绝删除。
+- `querycraft_ssh_remove_connection`：删除已授权连接及其保存凭据，要求账号连接授权及明确确认，活动命令期间拒绝删除。
 - `querycraft_ssh_test_connection`：验证固定主机指纹并完成认证，不执行命令。
 - `querycraft_ssh_execute`：执行一个远程命令，返回 stdout、stderr、退出码和截断状态。
 - `querycraft_plugin_list` 包含已加载的 SSH 插件。`querycraft_plugin_tools` / `querycraft_plugin_call` 通过 `plugin_id: "ssh"` 发现和调用上述工具，权限与直接调用一致。
@@ -68,7 +68,7 @@ python3 scripts/package-ssh-catalog.py \
 
 先填写地址、端口、用户名及认证方式，再点击“读取指纹”或填写管理员提供的指纹。网络读取结果本身不可信，必须通过可信渠道核对后勾选确认；指纹或地址变化后重新确认。测试只验证服务器身份与账号认证，不执行命令，可在保存前进行。
 
-每个账号可选择“禁止 MCP”“允许连接”“允许执行命令”，并独立选择文件读取、上传/下载与文件管理。保存即更新该账号的独立授权，不会自动启用 MCP 或提高全局上限。删除时先撤销 MCP 授权，再清理凭据和连接。界面中的测试不依赖 MCP 的启用状态。
+每个账号可选择“禁止 MCP”“允许连接”“允许执行命令”，并独立选择文件读取、上传/下载与文件管理。保存即更新该账号的独立授权，不会自动启用 MCP 或更改其他账号授权。删除时先撤销 MCP 授权，再清理凭据和连接。界面中的测试不依赖 MCP 的启用状态。
 
 也可通过 MCP 添加连接，或在数据目录的 `ssh-connections.json` 配置连接（文件权限应为 `0600`）：
 
@@ -103,7 +103,7 @@ python3 scripts/package-ssh-catalog.py \
 }
 ```
 
-`connectionIDs` 允许发现和测试该服务器；`executionConnectionIDs` 额外允许执行命令。执行还要求现有全局 `mode` 为 `high_risk_write`（完整访问），并在确认具体命令后传 `confirm_high_risk: true`。任意 Shell 命令不会通过关键词猜测降级成只读操作。数据库的 `allConnections`、分组授权和连接名单均不会授予 SSH 权限。旧策略没有 `ssh` 字段时默认拒绝 SSH 访问。桌面通过 SSH 服务器页管理这些独立字段；MCP 设置的保存会合并最新 SSH 授权，避免不同页面互相覆盖。
+`connectionIDs` 允许发现和测试该服务器；`executionConnectionIDs` 额外允许执行命令。执行须在确认具体命令后传 `confirm_high_risk: true`。任意 Shell 命令不会通过关键词猜测降级成只读操作。数据库的 `allConnections`、分组授权和连接名单均不会授予 SSH 权限。旧策略没有 `ssh` 字段时默认拒绝 SSH 访问。桌面通过 SSH 服务器页管理这些独立字段；MCP 设置的保存会合并最新 SSH 授权，避免不同页面互相覆盖。
 
 调用示例：
 
@@ -131,8 +131,8 @@ python3 scripts/package-ssh-catalog.py \
 | `ssh_list_files` | 分页浏览目录，返回名称与真实属性 | 连接 + 文件读取 |
 | `ssh_stat_file` | 查看文件/目录/符号链接属性 | 连接 + 文件读取 |
 | `ssh_read_file` | 按字节偏移读取，支持 UTF-8 / base64 | 连接 + 文件读取 |
-| `ssh_upload_file` | 本机普通文件流式上传 | 连接 + 传输 + 完整访问 + 确认 |
-| `ssh_download_file` | 远程普通文件流式下载到本机 | 连接 + 文件读取 + 传输 + 完整访问 + 确认 |
+| `ssh_upload_file` | 本机普通文件流式上传 | 连接 + 传输 + 确认 |
+| `ssh_download_file` | 远程普通文件流式下载到本机 | 连接 + 文件读取 + 传输 + 确认 |
 
 `fileReadConnectionIDs` 与 `fileTransferConnectionIDs` 默认空，升级不会扩大原有账号权限。文件读取不需要任意命令执行授权；读取范围为该 SSH 账号有权访问的路径，不是目录沙箱。执行授权本身不代替 SFTP 文件授权，但任意 Shell 命令仍可访问该账号的文件。
 
@@ -154,15 +154,15 @@ python3 scripts/package-ssh-catalog.py \
 | `ssh_cleanup_transfer` | 核对 token 后只清理该记录的临时文件并移除登记，始终不修改目标文件 |
 | `ssh_forget_task` | 经明确确认只移除本机任务登记，不终止任何进程，也不删除远端文件 |
 
-文件管理采用独立 `ssh.fileManagementConnectionIDs`，升级默认为空。可在 SSH 账号和 MCP 连接权限的同一份授权中开启。原有上传下载权限不会自动获得任意文件删除权限。三种管理操作均要求完整访问及确认具体路径；拒绝根目录、尾随斜线、空路径组件和 `.`/`..`。最终符号链接的移动/删除作用于链接本身，不访问其目标；路径不是目录沙箱，中间组件仍按服务器文件系统解析。
+文件管理采用独立 `ssh.fileManagementConnectionIDs`，升级默认为空。可在 SSH 账号和 MCP 连接权限的同一份授权中开启。原有上传下载权限不会自动获得任意文件删除权限。三种管理操作均要求独立文件管理授权及确认具体路径；拒绝根目录、尾随斜线、空路径组件和 `.`/`..`。最终符号链接的移动/删除作用于链接本身，不访问其目标；路径不是目录沙箱，中间组件仍按服务器文件系统解析。
 
-传输恢复使用既有传输授权，清理自身已登记的临时文件不需要任意文件管理授权。完整访问和 `confirm_high_risk=true`、`acknowledge_outcome_unknown=true` 仍然必须提供。`ssh_list_transfers` 支持 offset（0–512）、max_records（1–100，默认 20），受结果字节预算约束。权限按精确账号和服务器指纹绑定，不可查看其他账号的记录。
+传输恢复使用既有传输授权，清理自身已登记的临时文件不需要任意文件管理授权。传输授权和 `confirm_high_risk=true`、`acknowledge_outcome_unknown=true` 仍然必须提供。`ssh_list_transfers` 支持 offset（0–512）、max_records（1–100，默认 20），受结果字节预算约束。权限按精确账号和服务器指纹绑定，不可查看其他账号的记录。
 
 0.3 宿主与插件对上传、下载先写入本机 `ssh-transfers.json`（0600，最多 512 条），生成同目录独占的 `.querycraft-<UUID>.transfer` 临时路径，早期宿主成功后移除登记；当前宿主保留成功结果，失败或客户端崩溃保留待核对登记（见下文进度与结果查询）。上传临时路径位于服务器，下载临时路径位于运行 MCP 的本机。原插件 0.2 继续支持传输，但不生成可管理的下载临时路径；历史未登记文件不自动扫描或批量清理。
 
 清理流程为：列出记录 → 核对临时/目标信息 → 明确未知的目标结果不能据此判定失败 → 使用返回的 token 确认清理。正在进行的传输持有跨进程锁，核对/清理均拒绝。元数据变化时必须重新核对，临时路径变为目录、符号链接或特殊文件时拒绝清理。远端 SFTP 不提供条件删除原语，因此 token 是操作前元数据核对，不是远端事务快照；用户不应同时手动改写同一个临时路径。目标摘要和完整性未自动验证，禁止因清理完成而自动重跑传输。
 
-未知任务仍须人工核实。确认不再需要本机跟踪时，可调用 `ssh_forget_task` 并传 `acknowledge_task_may_be_running=true`，要求执行授权、完整访问和逐次确认。该方法不会向服务器发信号，返回 `remote_task_stopped=false`、`remote_files_removed=false`。正在进行的本机任务操作持有锁，不能同时忘记其记录。已确认结束的任务继续使用 `ssh_remove_task` 清理远端日志与登记。
+未知任务仍须人工核实。确认不再需要本机跟踪时，可调用 `ssh_forget_task` 并传 `acknowledge_task_may_be_running=true`，要求执行授权和逐次确认。该方法不会向服务器发信号，返回 `remote_task_stopped=false`、`remote_files_removed=false`。正在进行的本机任务操作持有锁，不能同时忘记其记录。已确认结束的任务继续使用 `ssh_remove_task` 清理远端日志与登记。
 
 ## 长任务（使用服务器已有 Shell）
 
@@ -175,7 +175,7 @@ python3 scripts/package-ssh-catalog.py \
 | `ssh_cancel_task` | 请求终止受监督的进程组，再查询实际状态 |
 | `ssh_remove_task` | 清理已结束任务的日志和登记，拒绝运行中/未知任务 |
 
-六个工具都要求连接与显式命令执行授权；启动、取消和清理还需要完整访问与 `confirm_high_risk: true`。全局只读模式可以查询已授权任务的状态和日志，不可启动或取消。任务使用服务器已有的 `/bin/bash` 及标准系统工具（nohup、base64、dd、wc、grep、date、sleep、mkfifo 等），通过 `/bin/sh` 执行命令。无需 Python、额外安装包或下载远端运行时；没有监听端口、PTY 或交互输入。启动前检查工具是否已经可用，缺少时明确返回不支持，不会自动安装。普通 SSH 与 SFTP 不依赖后台任务工具链。
+六个工具都要求连接与显式命令执行授权；启动、取消和清理还需要 `confirm_high_risk: true`。可通过工具开关分别禁用任务启动、取消或清理，保留状态和日志查询。任务使用服务器已有的 `/bin/bash` 及标准系统工具（nohup、base64、dd、wc、grep、date、sleep、mkfifo 等），通过 `/bin/sh` 执行命令。无需 Python、额外安装包或下载远端运行时；没有监听端口、PTY 或交互输入。启动前检查工具是否已经可用，缺少时明确返回不支持，不会自动安装。普通 SSH 与 SFTP 不依赖后台任务工具链。
 
 监督器、命令和日志位于服务器账号的 `~/.querycraft-ssh-tasks/shell-v1/<任务UUID>`（0700）。默认工作目录为账号 home，也可指定绝对路径。MCP 断开不结束任务；服务器重启、监督器被杀或命令主动退出会影响任务。超过 10 秒未更新心跳时状态按 unknown 返回，不据此杀进程或自动重启。默认执行上限 3600 秒，最多 86400 秒，与单次 SSH RPC 超时独立。stdout/stderr 合计默认最多保留 4 MiB，可设 1 KiB–64 MiB，超出继续排空并标记截断。取消/超时向监督器创建的进程组发送 SIGKILL；脱离该进程组的进程可能继续运行。主命令退出后最多额外排空 2 秒，后台后代继续持有管道时标记输出不完整。
 
@@ -203,7 +203,7 @@ python3 scripts/test-ssh-plugin.py --bundle /absolute/QueryCraftSSH.bundle
 
 SSH 账号和凭据只配置一次。设置 → SSH 服务器的账号编辑器，以及 MCP → 连接权限 → SSH 服务器授权，读取和保存同一份 `mcp-policy.json` 账号授权。MCP 入口的“保存授权”立即生效，不会提交其他未保存的 MCP 设置。两处本机页面保存后同步显示；同时编辑同一账号时，旧授权不能覆盖已保存的新授权，冲突需重新打开编辑器。
 
-全局工具开关是所有账号共用的总开关；启用某个工具不自动授予账号访问权。全局上限继续约束账号授权。数据库连接范围/连接权限只作用于六类数据库，不会把“全部数据库连接”扩展成 SSH 授权。
+全局工具开关是所有账号共用的总开关；启用某个工具不自动授予账号访问权。全局权限上限已移除，SSH 操作按独立账号授权和工具开关校验。数据库连接范围/连接权限只作用于六类数据库，不会把“全部数据库连接”扩展成 SSH 授权。
 
 ## MCP 任务与传输
 
@@ -219,7 +219,7 @@ SSH 账号和凭据只配置一次。设置 → SSH 服务器的账号编辑器�
 
 每个运行时的 SSH transport 持有独立连接池，最多 8 条连接，每次租用由一个工作线程独占，多个命令不同时操作同一个 libssh2 session；各个 stdio 进程之间不共享。空闲 60 秒或总寿命 5 分钟后回收，维护周期内清理空闲连接，退出时关闭；并发达到池上限时返回容量错误，遵守已有的全局并发上限。
 
-缓存身份包含连接 UUID、地址/端口、用户名、固定指纹、认证方式、密码/口令及私钥实际内容。每次调用仍读取当前凭据并核对授权，不能借已认证连接绕过新密码、口令或私钥认证。空闲条目只保存带池内随机盐的认证摘要，不保存明文密码或私钥。账号/授权/工具开关/全局访问上限变化时在下次 SSH 调用及维护中失效连接池；正在使用的旧连接标记为不再缓存，撤销的活动调用按既有维护链路取消。
+缓存身份包含连接 UUID、地址/端口、用户名、固定指纹、认证方式、密码/口令及私钥实际内容。每次调用仍读取当前凭据并核对授权，不能借已认证连接绕过新密码、口令或私钥认证。空闲条目只保存带池内随机盐的认证摘要，不保存明文密码或私钥。账号、授权或工具开关变化时在下次 SSH 调用及维护中失效连接池；正在使用的旧连接标记为不再缓存，撤销的活动调用按既有维护链路取消。
 
 只有成功并完成通道/子系统清理的连接才可回收。错误、超时、取消、未知结果及清理不完整的连接直接关闭。操作前发现空闲 TCP 已关闭，可以先新建连接；若提交后断线，则返回本次失败/未知结果，绝不重放命令或传输。下一次明确调用建立新连接。连接复用不会保证命令跨网络故障继续运行；后台任务仍通过已有 task_id 查询实际状态。
 
@@ -233,7 +233,7 @@ SSH 账号和凭据只配置一次。设置 → SSH 服务器的账号编辑器�
 | --- | --- |
 | `ssh_start_transfer` | direction 为 upload/download，立即返回 transfer_id；其余路径、覆盖、大小、超时和确认规则与同步上传/下载一致 |
 | `ssh_transfer_status` | 按精确账号和 transfer_id 读取本机持久进度及最终结果；可从另一个 MCP 进程查询，不发起 SSH 请求 |
-| `ssh_cancel_transfer` | 完整访问、传输授权和明确确认后请求取消；继续查询实际结果 |
+| `ssh_cancel_transfer` | 传输授权和明确确认后请求取消；继续查询实际结果 |
 | `ssh_forget_transfer` | 明确确认后仅移除已完成的本机结果记录，不操作目标或网络 |
 
 异步启动还需允许对应 `ssh_upload_file` / `ssh_download_file`，下载仍要求独立文件读取授权。禁用启动工具、底层工具、撤销授权或更改账号会阻止/取消正在执行的操作。每个 MCP 进程至多 8 个后台传输，仍受全局连接容量、结果预算及最长 300 秒单次请求限制。同步上传/下载也返回 transfer_id，并保留相同结果。
@@ -325,7 +325,7 @@ SSH 独立更新不触发 MySQL、PostgreSQL、Doris、Redis、Elasticsearch 或
 | `querycraft_shell_update` | 用 `script_id`、`expected_revision` 修改名称、说明或正文，至少提供一个待改字段 |
 | `querycraft_shell_delete` | 用 `script_id`、`expected_revision` 删除该本机记录 |
 
-也可通过 `plugin_tools(plugin_id="shell")` 发现工具，再通过 `plugin_call` 调用。工具开关位于 MCP 的“连接与驱动”分组。查询遵守 MCP 启用与工具开关；新增、修改和删除还要求全局完整访问。可在不同 SSH 服务器间复用同一个脚本，保存时不绑定或授予连接权限。
+也可通过 `plugin_tools(plugin_id="shell")` 发现工具，再通过 `plugin_call` 调用。工具开关位于 MCP 的“连接与驱动”分组。查询遵守 MCP 启用与工具开关；新增、修改和删除同样按各自工具开关校验。可在不同 SSH 服务器间复用同一个脚本，保存时不绑定或授予连接权限。
 
 例如先创建 `{ "name": "查看磁盘", "script": "df -h\n" }`。需要运行时，获取并核对完整正文，再将正文作为现有 `ssh_execute.command` 或 `ssh_start_task.command`；选择已授权的连接，并按原规则确认命令。保存、编辑、删除均不执行脚本、不上传远程文件，也不改变已经运行的任务。
 

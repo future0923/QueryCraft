@@ -1,6 +1,6 @@
 import Foundation
 
-/// Presentation only. Persisted policies continue to use the existing v1 grant/ceiling fields.
+/// Presentation of explicit access and inherited defaults; connection grants are independent.
 enum MCPPermissionSelection: String, CaseIterable, Identifiable {
     case denied, inherited, readOnly, dataWrite, fullAccess, custom
 

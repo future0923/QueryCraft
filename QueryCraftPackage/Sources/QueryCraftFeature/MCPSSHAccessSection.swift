@@ -106,7 +106,7 @@ struct SSHAccessControls: View {
             Toggle(copy("允许浏览和读取远程文件", "Allow browsing and reading remote files"), isOn: $fileRead).disabled(access == .denied)
             Toggle(copy("允许上传和下载文件", "Allow file uploads and downloads"), isOn: $fileTransfer).disabled(access == .denied)
             Toggle(copy("允许创建、移动和删除文件/空目录", "Allow creating, moving and deleting files or empty directories"), isOn: $fileManagement).disabled(access == .denied)
-            Text(copy("与 MCP 连接权限页双向同步。文件权限单独授权；下载同时需要读取和传输权限。执行命令、传输及文件管理仍受全局完整访问和逐次确认约束。", "Shared with MCP Connections. File grants are independent; downloads need read and transfer access. Commands, transfers and file management still require global Full access and per-call confirmation."))
+            Text(copy("与 MCP 连接权限页双向同步。文件权限单独授权；下载同时需要读取和传输权限。执行命令、传输及文件管理仍需各自的账号授权和逐次确认。", "Shared with MCP Connections. File grants are independent; downloads need read and transfer access. Commands, transfers and file management still require their respective account grants and per-call confirmation."))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

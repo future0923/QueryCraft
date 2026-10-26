@@ -19,7 +19,7 @@ def main():
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='qc-shell-stdio-') as temporary:
         root = Path(temporary)
-        policy = protocol.policy(18788); policy['mode'] = 'high_risk_write'
+        policy = protocol.policy(18788)
         settings = root / 'mcp-policy.json'
         def save(): settings.write_text(json.dumps(policy))
         save()
@@ -69,12 +69,12 @@ def main():
         try:
             persisted = call(p,'shell_get',{'script_id':script_id,'max_chars':65536})
             assert persisted['script'] == body and persisted['revision'] == 2
-            policy['mode']='read_only'; save()
+            policy['disabledTools']=['shell_create']; save()
             call(p,'shell_list')
             call(p,'shell_create',{'name':'blocked','script':'false'},error='ACCESS_DENIED')
             policy['disabledTools'] = ['shell_get']; save()
             call(p,'plugin_call',{'plugin_id':'shell','tool':'shell_get','arguments':{'script_id':script_id}},error='ACCESS_DENIED')
-            policy['mode']='high_risk_write'; policy['disabledTools']=[]; save()
+            policy['disabledTools']=[]; save()
             call(p,'plugin_call',{'plugin_id':'shell','tool':'shell_delete','arguments':{'script_id':script_id,'expected_revision':2}})
             assert call(p,'shell_list')['scripts'] == []
             assert not (root/'Plugins/SSH').exists()

@@ -4,8 +4,8 @@ import Testing
 
 struct ShellScriptTests {
     private func root() -> URL { FileManager.default.temporaryDirectory.appending(path: "qc-shell-" + UUID().uuidString) }
-    private func policy(_ root: URL, full: Bool = true) throws {
-        var value = MCPPolicy(); value.enabled = true; value.mode = full ? .fullAccess : .readOnly
+    private func policy(_ root: URL, allowUpdate: Bool = true) throws {
+        var value = MCPPolicy(); value.enabled = true; value.disabledTools = allowUpdate ? [] : ["shell_update"]
         try MCPPolicyStore(directory: root).save(value)
     }
     @Test func persistenceRevisionConflictsAndPrivateAtomicWrites() throws {
@@ -54,7 +54,7 @@ struct ShellScriptTests {
         #expect(read.objectValue?["script"] == "printf ok\n")
         let schemas = try await runtime.call("querycraft_plugin_tools", arguments: ["plugin_id": "shell"])
         #expect(schemas.arrayValue?.count == 5)
-        try policy(root, full: false)
+        try policy(root, allowUpdate: false)
         _ = try await runtime.call("querycraft_shell_list", arguments: [:])
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_shell_update", arguments: ["script_id": .string(id), "expected_revision": 1, "script": "false"]) }
         var settings = try MCPPolicyStore(directory: root).load(); settings.disabledTools = ["shell_get"]

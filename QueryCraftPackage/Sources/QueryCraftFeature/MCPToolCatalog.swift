@@ -50,7 +50,7 @@ enum MCPToolCatalog {
     of database grants. File reads and transfers require separate per-account grants. Transfers need
     exact local/remote paths and explicit overwrite confirmation. Use base64 for binary file reads.
     Long tasks use the existing remote shell and system tools; keep task_id and inspect it after an unknown launch.
-    Poll task_status/task_output and never relaunch automatically. Arbitrary shell commands require full access, an explicit execution
+    Poll task_status/task_output and never relaunch automatically. Arbitrary shell commands require an explicit execution
     grant and confirm_high_risk after confirming the exact command. Each call has an independent
     SSH connection, no persistent working directory and closed stdin. Use bounded commands;
     never automatically retry commands after cancellation, timeout or an unknown outcome.
@@ -137,7 +137,7 @@ enum MCPToolCatalog {
         definition("peek_messages", "Read bounded Kafka messages without committing offsets.", ["topic": string("Topic name."), "partition": integer("Optional partition."), "offset": integer("Starting offset; requires partition."), "max_rows": integer("Maximum messages.")], required: ["connection_id", "topic"]),
         definition("send_message", "Produce a Kafka message; returns broker-confirmed partition and offset. Do not retry unconfirmed writes automatically.", ["topic": string("Topic name."), "partition": integer("Optional partition."), "key": string("Optional message key."), "value": string("Message value.")], required: ["connection_id", "topic", "value"]),
         definition("consumer_groups", "Read Kafka consumer groups and topic lag without changing offsets.", ["topic": string("Topic name.")], required: ["connection_id", "topic"]),
-        definition("add_connection", "Save a new connection. Requires global full access. Does not automatically authorize it. TLS defaults to verified encryption; explicitly choose disabled only for a trusted plaintext server.", ["name": string("Display name."), "type": string("mysql, postgresql, doris, redis, elasticsearch or kafka"), "host": string("Hostname"), "port": integer("Port"), "username": string("Username"), "password": string("Optional password or Elasticsearch API key stored in Keychain"),
+        definition("add_connection", "Save a new connection. Requires this tool enabled. Does not automatically authorize it. TLS defaults to verified encryption; explicitly choose disabled only for a trusted plaintext server.", ["name": string("Display name."), "type": string("mysql, postgresql, doris, redis, elasticsearch or kafka"), "host": string("Hostname"), "port": integer("Port"), "username": string("Username"), "password": string("Optional password or Elasticsearch API key stored in Keychain"),
             "authentication": .object(["type": "string", "enum": .array(["usernamePassword", "apiKey", "none"]), "description": "Defaults to none for credential-free Kafka/Elasticsearch, otherwise usernamePassword. apiKey is Elasticsearch only."]),
             "tls_mode": .object(["type": "string", "enum": .array(["disabled", "required", "verifyCA", "verifyIdentity"])]),
             "kafka_sasl_mechanism": .object(["type": "string", "enum": .array(["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"])])], required: ["name", "type", "host", "port"]),
@@ -150,7 +150,7 @@ enum MCPToolCatalog {
         .init(name: "runtime_info", description: "Inspect the running host and loaded SSH plugin versions, actual capabilities and installed identity changes requiring client reconnection. Reads local metadata only; no credentials, server connection or automatic retry.", properties: [:], required: []),
         .init(name: "plugin_list", description: "List installed QueryCraft database/SSH plugins and the local saved Shell script library with their MCP tool routes.", properties: [:], required: []),
         .init(name: "ssh_list_connections", description: "List explicitly authorized saved SSH server connections. Database grants do not authorize SSH.", properties: [:], required: []),
-        .init(name: "ssh_add_connection", description: "Save an SSH connection without authorizing it. Requires global full access. Verify the host's exact SHA256 fingerprint outside MCP first. Secrets are saved in Keychain.", properties: [
+        .init(name: "ssh_add_connection", description: "Save an SSH connection without authorizing it. Requires this tool enabled. Verify the host's exact SHA256 fingerprint outside MCP first. Secrets are saved in Keychain.", properties: [
             "name": string("Display name."), "host": string("Server hostname or IP."), "port": integer("SSH port, default 22."),
             "username": string("SSH username."), "host_fingerprint": string("Verified OpenSSH SHA256:base64 host fingerprint, without padding."),
             "private_key_path": string("Absolute local private-key path; otherwise password authentication."),
@@ -160,13 +160,13 @@ enum MCPToolCatalog {
             "password": string("Password saved in Keychain. Do not combine with a private key."),
             "passphrase": string("Optional private-key passphrase saved in Keychain.")
         ], required: ["name", "host", "username", "host_fingerprint"]),
-        .init(name: "ssh_remove_connection", description: "Delete a saved SSH connection and its credential. Requires an explicit connection grant, global full access, confirm_high_risk and no active command.", properties: [
+        .init(name: "ssh_remove_connection", description: "Delete a saved SSH connection and its credential. Requires an explicit connection grant, confirm_high_risk and no active command.", properties: [
             "connection_id": string("Exact SSH connection UUID."), "confirm_high_risk": .object(["type": "boolean"])
         ], required: ["connection_id"]),
         .init(name: "ssh_test_connection", description: "Verify the pinned host key and authenticate using the saved SSH connection. No command is executed.", properties: [
             "connection_id": string("Exact SSH connection UUID."), "timeout_seconds": integer("Total connection/authentication timeout, 1–300 seconds; default 30, bounded by MCP timeout.")
         ], required: ["connection_id"]),
-        .init(name: "ssh_execute", description: "Execute one command over a fresh SSH exec channel with closed stdin, no PTY and no automatic retries. Requires explicit execution grant, global full access and confirm_high_risk. Returns stdout/stderr and exit_code; excess output is drained and discarded.", properties: [
+        .init(name: "ssh_execute", description: "Execute one command over a fresh SSH exec channel with closed stdin, no PTY and no automatic retries. Requires explicit execution grant and confirm_high_risk. Returns stdout/stderr and exit_code; excess output is drained and discarded.", properties: [
             "connection_id": string("Exact SSH connection UUID."), "command": string("Remote shell command; maximum 65536 UTF-8 bytes."),
             "confirm_high_risk": .object(["type": "boolean"]), "timeout_seconds": integer("Total timeout, 1–300 seconds, default 30; bounded by MCP timeout. Timeout/cancel does not prove the remote process stopped."),
             "max_output_bytes": integer("Combined stdout/stderr byte cap, 1–1048576, default 16384; also bounded by MCP result limit. Invalid UTF-8 is replaced for display.")

@@ -33,7 +33,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: root) }
         let profile = profile(), transport = ActivityTransport()
         try SSHConnectionStore(directory: root).insert(profile)
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [profile.id], fileTransferConnectionIDs: [profile.id])
         try MCPPolicyStore(directory: root).save(policy)
         let runtime = MCPRuntime(directory: root, sshTransport: transport)
@@ -75,7 +75,7 @@ import Testing
         try records.insert(legacy)
         let lock = try records.operationLock(id); defer { withExtendedLifetime(lock) {} }
         #expect(throws: MCPFailure.self) { try records.requestCancellation(legacy) }
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .readOnly
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [profile.id], fileTransferConnectionIDs: [profile.id])
         try MCPPolicyStore(directory: root).save(policy)
         let service = SSHActivityService(directory: root, profile: profile, transport: ActivityTransport())

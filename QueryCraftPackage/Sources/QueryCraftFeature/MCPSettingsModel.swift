@@ -67,7 +67,6 @@ final class MCPSettingsModel {
     var showsHTTPSettings = false
     var databaseNameDrafts: [UUID: String] = [:]
     var databaseSearches: [UUID: String] = [:]
-    var lastRestrictedMode: MCPExecutionMode = .readOnly
     var settingsScrollTarget: String?
     var settingsNavigationRevision = 0
     private let store: MCPPolicyStore
@@ -182,7 +181,6 @@ final class MCPSettingsModel {
             let (snapshot, executable) = try await (loaded, path)
             try Task.checkCancellation()
             policy = snapshot.policy; profiles = snapshot.connections.profiles; groups = snapshot.connections.groups
-            if policy.mode != .fullAccess { lastRestrictedMode = policy.mode }
             self.executable = executable
             didLoad = true; error = nil
         } catch is CancellationError {

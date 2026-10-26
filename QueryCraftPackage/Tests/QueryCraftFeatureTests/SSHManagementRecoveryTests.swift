@@ -15,14 +15,14 @@ struct SSHManagementRecoveryTests {
         let old = try JSONSerialization.data(withJSONObject: ["connectionIDs": [profile.id.uuidString], "executionConnectionIDs": [profile.id.uuidString], "fileTransferConnectionIDs": [profile.id.uuidString]])
         let decoded = try JSONDecoder().decode(MCPSSHPolicy.self, from: old)
         #expect(decoded.fileManagementConnectionIDs.isEmpty)
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess; policy.ssh = decoded
+        var policy = MCPPolicy(); policy.enabled = true; policy.ssh = decoded
         let store = MCPPolicyStore(directory: root); try store.save(policy)
         let runtime = MCPRuntime(directory: root, sshTransport: transport)
         let arguments: [String: MCPJSONValue] = ["connection_id": .string(profile.id.uuidString), "path": "/source", "destination_path": "/destination", "confirm_high_risk": true]
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_ssh_move_path", arguments: arguments) }
-        policy.ssh?.fileManagementConnectionIDs = [profile.id]; policy.mode = .readOnly; try store.save(policy)
+        policy.disabledTools = ["ssh_move_path"]; policy.ssh?.fileManagementConnectionIDs = [profile.id]; try store.save(policy)
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_ssh_move_path", arguments: arguments) }
-        policy.mode = .fullAccess; try store.save(policy)
+        policy.disabledTools = []; try store.save(policy)
         var unconfirmed = arguments; unconfirmed["confirm_high_risk"] = false
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_ssh_move_path", arguments: unconfirmed) }
         #expect(await transport.files.isEmpty)
@@ -45,7 +45,7 @@ struct SSHManagementRecoveryTests {
         let records = SSHTransferStore(directory: root)
         try records.insert(.init(id: transferID, connectionID: profile.id, binding: SSHTaskRecord.binding(profile), upload: false,
             remotePath: "/remote/source", localPath: destination.path, stagingPath: staging, createdAt: Date()))
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [profile.id], fileTransferConnectionIDs: [profile.id])
         try MCPPolicyStore(directory: root).save(policy)
         let runtime = MCPRuntime(directory: root, sshTransport: ManagementFixtureTransport())
@@ -88,7 +88,7 @@ struct SSHManagementRecoveryTests {
             try records.insert(.init(id: id, connectionID: owner.id, binding: SSHTaskRecord.binding(owner), upload: false,
                 remotePath: "/remote/file", localPath: path, stagingPath: SSHTransferRecord.stagingPath(destination: path, id: id), createdAt: Date()))
         }
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .readOnly
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [profile.id], fileTransferConnectionIDs: [profile.id])
         try MCPPolicyStore(directory: root).save(policy)
         let runtime = MCPRuntime(directory: root, sshTransport: ManagementFixtureTransport())
@@ -109,7 +109,7 @@ struct SSHManagementRecoveryTests {
         try SSHConnectionStore(directory: root).insert(profile)
         let records = SSHTaskStore(directory: root)
         try records.insert(.init(id: taskID, connectionID: profile.id, binding: SSHTaskRecord.binding(profile), createdAt: Date()))
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [profile.id], executionConnectionIDs: [profile.id])
         try MCPPolicyStore(directory: root).save(policy)
         let runtime = MCPRuntime(directory: root, sshTransport: transport)

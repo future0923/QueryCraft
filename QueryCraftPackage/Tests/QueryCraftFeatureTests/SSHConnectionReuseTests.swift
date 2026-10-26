@@ -8,7 +8,7 @@ struct SSHConnectionReuseTests {
             hostFingerprint: "SHA256:" + Data(repeating: 1, count: 32).base64EncodedString().replacingOccurrences(of: "=", with: ""),
             privateKeyPath: "/fixture/key", storesCredential: false)
         try SSHConnectionStore(directory: root).insert(profile)
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         policy.ssh = .init(connectionIDs: [profile.id], executionConnectionIDs: [profile.id])
         try MCPPolicyStore(directory: root).save(policy)
         return profile
@@ -21,10 +21,10 @@ struct SSHConnectionReuseTests {
         _ = try await runtime.call("querycraft_ssh_execute", arguments: args)
         _ = try await runtime.call("querycraft_ssh_execute", arguments: args)
         #expect(await transport.events == ["invalidate", "execute", "execute"])
-        try MCPPolicyStore(directory: root).update { $0.mode = .readOnly }
+        try MCPPolicyStore(directory: root).update { $0.ssh?.executionConnectionIDs = [] }
         await #expect(throws: MCPFailure.self) { _ = try await runtime.call("querycraft_ssh_execute", arguments: args) }
         #expect(await transport.events == ["invalidate", "execute", "execute", "invalidate"])
-        try MCPPolicyStore(directory: root).update { $0.mode = .fullAccess }
+        try MCPPolicyStore(directory: root).update { $0.ssh?.executionConnectionIDs = [profile.id] }
         var changed = profile; changed.host = "changed-host"
         try SSHConnectionStore(directory: root).replace(changed, expecting: profile)
         _ = try await runtime.call("querycraft_ssh_execute", arguments: args)

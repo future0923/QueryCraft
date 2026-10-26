@@ -3,9 +3,6 @@ import Foundation
 extension MCPRuntime {
     func callShellScript(_ tool: String, args: [String: MCPJSONValue], policy: MCPPolicy) throws -> MCPJSONValue {
         let scripts = ShellScriptStore(directory: store.url.deletingLastPathComponent())
-        if !MCPToolCatalog.shellReads.contains(tool), policy.mode != .fullAccess {
-            throw MCPFailure("Editing the local Shell script library requires global full access.", code: .accessDenied)
-        }
         if tool == "shell_create" {
             return try scripts.create(name: args.requiredString("name"), description: args.string("description") ?? "", script: args.requiredString("script")).receipt
         }

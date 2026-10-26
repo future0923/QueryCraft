@@ -4,8 +4,7 @@ extension MCPSettingsModel {
     var selectedSettingsPage: String {
         guard section == "permissions" else { return section }
         switch authorizationStep {
-        case "objects": return "connections"
-        case "overrides": return "ceiling"
+        case "objects", "overrides", "ceiling": return "connections"
         default: return authorizationStep
         }
     }
@@ -13,7 +12,7 @@ extension MCPSettingsModel {
     func selectSettingsPage(_ page: String) {
         switch page {
         case "access", "activity": section = page
-        case "connections", "tools", "execution", "tuning", "ceiling":
+        case "connections", "tools", "execution", "tuning":
             section = "permissions"
             authorizationStep = page
         default: return
@@ -38,7 +37,6 @@ extension MCPSettingsModel {
         case .tools: showPermissionPage("tools"); return
         case .queryTimeout, .results, .sessions: showPermissionPage("execution"); return
         case .discovery, .metadataCache: showPermissionPage("tuning"); return
-        case .ceiling: showPermissionPage("ceiling"); return
         case .connection:
             search = ""
             settingsScrollTarget = profiles.first(where: { $0.id == selectedConnection })?.id.uuidString
