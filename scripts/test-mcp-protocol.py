@@ -20,7 +20,7 @@ INIT = {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {
 
 def policy(port):
     return {'version': 1, 'enabled': True, 'allConnections': False, 'connectionIDs': [], 'groupIDs': [],
-            'mode': 'read_only', 'groupModes': {}, 'connections': {}, 'disabledTools': ['remove_connection'],
+            'groupModes': {}, 'connections': {}, 'disabledTools': ['remove_connection'],
             'queryTimeoutSeconds': 3, 'maximumRows': 1000, 'maximumResultBytes': 4194304,
             'sessionIdleSeconds': 1800, 'maximumSessions': 32,
             'http': {'host': '127.0.0.1', 'port': port, 'path': '/mcp', 'allowsRemote': False,

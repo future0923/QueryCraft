@@ -25,7 +25,7 @@ struct MCPPermissionGroupSection: View {
     var body: some View {
         Section {
             HStack {
-                Text(copy("本组批量设置", "Set access for this group"))
+                Text(copy("本组默认权限", "Default access for this group"))
                 Spacer(minLength: 8)
                 MCPPermissionPicker(selection: selection, choices: [.custom] + MCPPermissionSelection.accessChoices,
                     accessibilityLabel: copy("\(group.name)权限", "\(group.name) access")) {
@@ -33,14 +33,8 @@ struct MCPPermissionGroupSection: View {
                     }
                     .frame(width: MCPPermissionLayout.controlWidth, height: 22, alignment: .trailing)
             }
-            if let mode = selection.mode, mode.rank > model.policy.mode.rank {
-                HStack(alignment: .top, spacing: 10) {
-                    Text(copy("全局上限为“\(model.policy.mode.title)”，本组实际权限仍受该上限约束。", "The global ceiling is \(model.policy.mode.title); this group remains subject to that limit."))
-                        .font(MCPSettingsType.detail).foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                    Button(copy("查看限制", "View limit")) { model.showPermissionPage("ceiling") }.fixedSize()
-                }
-            }
+            Text(copy("连接或对象已单独设置权限时，优先使用其设置；未设置时才继承本组权限。", "Explicit connection or object access takes precedence. This group default applies only when no more specific access is set."))
+                .font(MCPSettingsType.detail).foregroundStyle(.secondary)
             if !model.visibleProfiles(in: group).isEmpty {
                 Group {
                     if !compact {

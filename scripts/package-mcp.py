@@ -14,6 +14,8 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
+import datetime
+import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -115,9 +117,16 @@ def package(build, output, development=False, archive_enabled=True, architecture
             'CFBundleName': 'QueryCraft Dev MCP' if development else 'QueryCraft MCP',
             'CFBundleDisplayName': 'QueryCraft Dev MCP' if development else 'QueryCraft MCP', 'CFBundleExecutable': 'querycraft-mcp', 'CFBundlePackageType': 'APPL',
             'CFBundleShortVersionString': version, 'CFBundleVersion': metadata['build'], 'QCMCPVersion': version, 'LSMinimumSystemVersion': '15.0',
+            'QCRuntimeBuild': datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8],
             'LSUIElement': True, 'QCAppVersion': app_version, 'QCCredentialHelperRequired': True, 'QCSharedCredentialHelperRequired': True,
             'QCComponentCatalogBaseURL': 'https://querycraft.debug-tools.cc/components/',
             'QCComponentPublicKey': '8dcu6cE1Vh6kUXtkeuDsSEWIy6sLbuHaqdnnZhE3rP8='}
+    # Drivers use the same user-selected HTTP/TLS endpoints in both hosts.
+    # URLSession enforces the executable bundle's policy, not Feature's policy.
+    desktop_info = plistlib.loads((source_app / 'Contents/Info.plist').read_bytes())
+    for key in ['NSAppTransportSecurity', 'NSLocalNetworkUsageDescription']:
+        if key in desktop_info:
+            info[key] = desktop_info[key]
     (output/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     spec = importlib.util.spec_from_file_location('signer', ROOT/'scripts/code-signing.py')
     signer = importlib.util.module_from_spec(spec); spec.loader.exec_module(signer)

@@ -8,7 +8,7 @@ import Security
         if arguments == ["--credential-protocol"] { print("2"); return nil }
         if arguments == ["--version"] { print(Bundle.main.object(forInfoDictionaryKey: "QCMCPVersion") as? String ?? "0.1.0"); return nil }
         if arguments == ["--help"] {
-            print("querycraft-mcp [--stdio | --http] [--data-dir PATH]\nComponents: --check-updates | --update | --rollback | --update-skill --skill-target shared|codex|claude.\nSettings and credentials are managed in QueryCraft → Settings → MCP.")
+            print("querycraft-mcp [--stdio | --http] [--data-dir PATH]\nComponents: --check-updates | --update | --rollback | --update-skill --skill-target shared|codex|claude.\nSSH: --install-ssh-plugin /absolute/QueryCraftSSH.bundle | --check-ssh-plugin\nSettings and credentials are managed in QueryCraft → Settings → MCP.")
             return nil
         }
         var directory = QueryCraftStorageLocation.applicationSupportDirectory
@@ -18,9 +18,16 @@ import Security
         var componentAction: String?
         var skillDestination: URL?
         var skillTarget: MCPSkillTarget?
+        var sshSource: URL?
+        var checkSSH = false
         var index = 0
         while index < arguments.count {
             switch arguments[index] {
+            case "--install-ssh-plugin":
+                index += 1
+                guard index < arguments.count, arguments[index].hasPrefix("/") else { throw MCPFailure("--install-ssh-plugin requires an absolute bundle path.") }
+                sshSource = URL(fileURLWithPath: arguments[index], isDirectory: true)
+            case "--check-ssh-plugin": checkSSH = true
             case "--check-updates", "--update", "--rollback", "--update-skill": componentAction = arguments[index]
             case "--skill-destination":
                 index += 1
@@ -41,6 +48,16 @@ import Security
             default: throw MCPFailure("Unknown argument: \(arguments[index])")
             }
             index += 1
+        }
+        if let sshSource {
+            let installed = try SSHPluginInstallation.install(source: sshSource, directory: directory)
+            print("SSH plugin installed: \(installed.path)\nReconnect MCP clients to use it. SSH connections require explicit authorization.")
+            return nil
+        }
+        if checkSSH {
+            let plugin = try SSHPlugin(bundleURL: SSHPlugin.bundleURL(in: directory))
+            withExtendedLifetime(plugin) { print("SSH plugin ABI 1 OK") }
+            return nil
         }
         if skillDestination == nil, let skillTarget {
             skillDestination = skillTarget.directory(in: FileManager.default.homeDirectoryForCurrentUser, identity: MCPServerIdentity(directory: directory))

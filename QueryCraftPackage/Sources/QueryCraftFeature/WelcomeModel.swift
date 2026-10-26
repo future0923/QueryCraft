@@ -47,7 +47,7 @@ final class WelcomeModel {
         )
 
         if profile.storesCredential {
-            try await credentialStore.save(password: draft.password, for: profile.id)
+            try await applyCredential(password: draft.password, storesCredential: true, profileID: profile.id)
         }
 
         do {
@@ -92,23 +92,26 @@ final class WelcomeModel {
             sortIndex: sortIndex,
             createdAt: profile.createdAt
         )
-        let previousPassword = try await credentialStore.password(
-            for: profile.id
-        )
-
-        try await applyCredential(
-            password: draft.password,
-            storesCredential: updatedProfile.storesCredential,
-            profileID: profile.id
-        )
+        // The user may be restoring an inaccessible legacy password. Persist the
+        // profile first so rollback never requires reading that old secret.
+        try await repository.update(updatedProfile)
         do {
-            try await repository.update(updatedProfile)
-        } catch {
-            try? await restoreCredential(
-                password: previousPassword,
+            try await applyCredential(
+                password: draft.password,
+                storesCredential: updatedProfile.storesCredential,
                 profileID: profile.id
             )
-            throw error
+        } catch {
+            let credentialError = error
+            do { try await repository.update(profile) }
+            catch {
+                throw NSError(domain: "QueryCraft.ConnectionProfile", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: AppCopy.current.text(
+                        "密码未保存，恢复原连接配置也失败。请重新打开连接检查配置后重试。",
+                        "The password was not saved, and the original connection settings could not be restored. Reopen the connection, check its settings, and retry.")
+                ])
+            }
+            throw credentialError
         }
         try await refresh()
     }
@@ -454,27 +457,19 @@ final class WelcomeModel {
         storesCredential: Bool,
         profileID: ConnectionProfile.ID
     ) async throws {
-        if storesCredential {
-            try await credentialStore.save(
-                password: password,
-                for: profileID
-            )
-        } else {
-            try await credentialStore.delete(for: profileID)
-        }
-    }
-
-    private func restoreCredential(
-        password: String?,
-        profileID: ConnectionProfile.ID
-    ) async throws {
-        if let password {
-            try await credentialStore.save(
-                password: password,
-                for: profileID
-            )
-        } else {
-            try await credentialStore.delete(for: profileID)
+        do {
+            if storesCredential {
+                try await credentialStore.save(password: password, for: profileID)
+            } else {
+                try await credentialStore.delete(for: profileID)
+            }
+        } catch {
+            let systemError = error as NSError
+            if systemError.domain == NSOSStatusErrorDomain,
+               let status = Int32(exactly: systemError.code) {
+                throw KeychainError(status: status)
+            }
+            throw error
         }
     }
 

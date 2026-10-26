@@ -41,11 +41,16 @@ enum MCPFailureCode: String, Codable, Sendable {
 struct MCPFailure: LocalizedError, Sendable {
     let message: String
     let code: MCPFailureCode
-    init(_ message: String, code: MCPFailureCode = .invalidArgument) { self.message = message; self.code = code }
+    let details: MCPJSONValue?
+    init(_ message: String, code: MCPFailureCode = .invalidArgument, details: MCPJSONValue? = nil) {
+        self.message = message; self.code = code; self.details = details
+    }
     var errorDescription: String? { "[\(code.rawValue)] \(message)" }
     var value: MCPJSONValue {
-        .object(["error": .object(["code": .string(code.rawValue), "message": .string(message),
-                                  "recovery": .string(code.recovery), "automatic_retry": false])])
+        var error: [String: MCPJSONValue] = ["code": .string(code.rawValue), "message": .string(message),
+                                           "recovery": .string(code.recovery), "automatic_retry": false]
+        if let details { error["details"] = details }
+        return .object(["error": .object(error)])
     }
     static func normalized(_ error: any Error) -> MCPFailure {
         if let failure = error as? MCPFailure { return failure }

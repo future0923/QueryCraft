@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Bindable var navigation: SettingsNavigation
     @State private var preferences = ApplicationPreferences.shared
     @State private var mcpModel = MCPSettingsModel()
+    @State private var sshModel = SSHSettingsModel()
     let updateWindowTitle: (String) -> Void
 
     private var copy: SettingsCopy {
@@ -27,7 +28,9 @@ struct SettingsView: View {
             SettingsDetailView(
                 tab: navigation.selectedTab,
                 preferences: preferences,
-                mcpModel: mcpModel
+                mcpModel: mcpModel,
+                sshModel: sshModel,
+                openSSH: { navigation.selectedTab = .ssh }
             )
             .background(Color(nsColor: .queryCraftCanvas))
         }

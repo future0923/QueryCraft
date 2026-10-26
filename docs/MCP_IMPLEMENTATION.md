@@ -59,10 +59,13 @@ No Superpowers skills are used. User documentation is in [MCP.md](MCP.md).
 - The helper serializes the entire Keychain read/modify/write with a cross-process
   file lock. The lock contains no secrets. Insert-only imports and deletion markers
   prevent concurrent password edits or deletion from being overwritten by migration.
-- The desktop authorizer first reads every selected usable saved credential without
-  interaction, then imports into the vault, verifies availability and removes the
-  migrated legacy copies using their original helper. Read failures do not start
-  migration. Later write/cleanup failures report failure and can be retried safely.
+- The desktop authorizer first snapshots selected usable saved credentials, reports
+  inaccessible/missing passwords separately, and imports the readable subset into
+  the vault. All readable passwords are collected before any import; unavailable
+  items are never changed. It verifies availability before removing migrated legacy
+  copies through their original helper. Cancellation stops before import; later
+  write/cleanup failures report failure and can be retried safely. The lower-level
+  strict authorizer still fails before any import when a source read fails.
 - Normal desktop reads can still use readable legacy credentials without opening
   per-item dialogs. New saves use the vault, with best-effort removal of obsolete
   legacy copies; explicit deletion reports failure if an inaccessible legacy copy
@@ -70,7 +73,15 @@ No Superpowers skills are used. User documentation is in [MCP.md](MCP.md).
   or restoring the password in the connection editor; old ACLs cannot be silently
   bypassed. No user Keychain ACL is broadened to arbitrary applications.
 - The settings action checks `--credential-protocol` before migration and asks for
-  both app/runtime updates when necessary. The standalone authorizer validates the
+  both app/runtime updates when necessary. Explicit desktop authorization allows
+  the shared vault's system access prompt; legacy reads and cleanup remain silent.
+  Errors identify the connection and whether reading, importing, verification or
+  cleanup failed, rather than labeling every access denial as a legacy-read failure.
+  Partial source availability reports the authorized count and the remaining
+  connection names/hosts, so one historical ACL cannot block unrelated connections.
+  When a legacy password cannot be read, recovery requires re-entering and saving
+  it in the connection editor; merely testing an existing session is insufficient.
+  The standalone authorizer validates the
   vault without interaction. A v2 MCP never falls back to stale legacy passwords.
 - This affects credentials for MySQL, PostgreSQL, Doris, Redis, Elasticsearch and
   Kafka uniformly; it changes no driver implementation or Driver API. Table and SQL
@@ -94,6 +105,49 @@ Before the feature commit, the 13 component/optimization regressions also passed
 The shared vault source is included in MCP release-scope detection; the associated
 release/workflow fixture suite passed all 15 tests. Release decisions and bilingual
 pending notes are recorded in `docs/releases/pending-shared-credentials.md`.
+
+2026-10-22 authorization recovery regression: 39 selected credential, MCP and
+settings-loading tests passed, including all six credential types and separate
+import/verification/cleanup failures, unavailable-item isolation, and cancellation
+before import. The signed disposable-vault integration
+also passed and removed its temporary Keychain items. Production's existing MCP
+reports credential protocol 2 and loads its installed MySQL/Doris/Kafka drivers;
+PostgreSQL/Redis/Elasticsearch are not installed in that production API 5 directory.
+The local production Release build was installed at `/Applications/QueryCraft.app`
+with the pinned signature and coverage disabled. The running bundled framework
+matched the staged hash; all 10 connection profiles remained. Native settings
+authorization migrated four SQL credentials and reported the two Redis profiles
+and production Elasticsearch profile as unavailable without changing their items.
+A subsequent real MCP `list_databases` call against the saved test MySQL connection
+succeeded. Desktop/input shielding was removed after native verification. The old
+app, SQLite database and policy backup are in
+`.build/production-app-backups/20261022-105650/`.
+
+Subsequent connection-save recovery removes the old-password read from profile
+updates. The profile metadata is persisted first and restored if writing the new
+credential fails; Keychain write errors are labeled as Keychain errors. The final
+production Release build passed and was installed. Editing and saving through the
+native form was left to the user's requested manual verification.
+
+The standalone MCP package now inherits the desktop's App Transport Security and
+local-network declarations. Previously, a saved HTTP Elasticsearch endpoint worked
+in the desktop but failed in MCP with `NSURLErrorDomain -1022`, hidden behind
+`DRIVER_FAILURE`. Package validation now checks these declarations match the desktop.
+The signed local production MCP passed relocation, stdio/HTTP transport, token
+rotation, helper caller rejection and startup checks. Through the installed fixed
+launcher, production Elasticsearch `GET /` returned HTTP 200 and production Redis
+DB 8 `PING` returned `PONG`. Existing MCP sessions must reconnect to load the new
+immutable runtime. This supersedes the earlier Redis/Elasticsearch installation
+status above; no database configuration or data was changed by this repair.
+
+Commit scope: desktop credential recovery and MCP packaging only. Driver API stays
+at 5. MySQL, PostgreSQL, Doris, Redis, Elasticsearch and Kafka implementations,
+dependencies and driver packages are unchanged, so no driver version/build changes
+or driver releases are needed. MySQL/PostgreSQL/Doris/Redis/Kafka use their existing
+driver transports; HTTP Elasticsearch benefits from the host's matching policy.
+This is a local repair and source commit, not a public release; no component/app
+version, tag or remote resource is changed. Native ARM and all-six-driver live
+database verification were not repeated for this repair.
 
 ## Independent distribution (2026-10-15)
 

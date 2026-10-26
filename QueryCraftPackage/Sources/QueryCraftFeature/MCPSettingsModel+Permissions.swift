@@ -32,12 +32,12 @@ extension MCPSettingsModel {
 
     func groupSelection(_ group: MCPPermissionGroup) -> MCPPermissionSelection {
         if let id = group.groupID, policy.allConnections || policy.groupIDs.contains(id) {
-            return .init(policy.groupModes[id.uuidString] ?? policy.mode)
+            return .init(policy.groupModes[id.uuidString] ?? .readOnly)
         }
         let included = group.profiles.filter { policy.includesConnection($0) }
         guard !included.isEmpty else { return .denied }
         if group.groupID == nil, included.count == group.profiles.count {
-            let modes = Set(included.map { policy.connectionRule($0).mode ?? policy.mode })
+            let modes = Set(included.map { policy.effectiveMode($0, database: nil) })
             if modes.count == 1, let mode = modes.first { return .init(mode) }
         }
         return .custom
@@ -75,7 +75,7 @@ extension MCPSettingsModel {
                 updated.connections[profile.id.uuidString] = rule
             }
         }
-        // Existing connection/database restrictions and the global ceiling are intentionally retained.
+        // More specific connection and object rules remain explicit overrides of this default.
     }
 
     func connectionSelection(_ profile: ConnectionProfile) -> MCPPermissionSelection {
@@ -147,11 +147,4 @@ extension MCPSettingsModel {
         settingsNavigationRevision += 1
     }
 
-    func setGlobalCeilingEnabled(_ enabled: Bool) {
-        if enabled { policy.mode = lastRestrictedMode }
-        else {
-            if policy.mode != .fullAccess { lastRestrictedMode = policy.mode }
-            policy.mode = .fullAccess
-        }
-    }
 }

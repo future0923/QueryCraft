@@ -7,6 +7,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case query
     case data
     case plugins
+    case ssh
     case mcp
 
     var id: Self { self }
@@ -35,6 +36,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
             "network"
         case .plugins:
             "puzzlepiece.extension"
+        case .ssh:
+            "server.rack"
         }
     }
 }

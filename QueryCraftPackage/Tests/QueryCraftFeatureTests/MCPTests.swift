@@ -33,7 +33,7 @@ struct MCPTests {
     @Test func connectionCreationPreservesTransportAndAuthentication() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        var policy = MCPPolicy(); policy.enabled = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true
         try MCPPolicyStore(directory: root).save(policy)
         let runtime = MCPRuntime(directory: root)
         let args: [String: MCPJSONValue] = ["name": "Kafka", "type": "kafka", "host": "localhost", "port": 9092, "tls_mode": "disabled"]
@@ -71,18 +71,6 @@ struct MCPTests {
         #expect(throws: MCPFailure.self) { try policy.authorize(tool: "execute_query", profile: p, database: "other") }
         policy.disabledTools.insert("execute_query")
         #expect(throws: MCPFailure.self) { try policy.authorize(tool: "execute_query", profile: p, database: "allowed") }
-    }
-    @Test func exceptionsOnlyNarrowGlobalPermissions() {
-        let group = UUID(); let p = profile(group: group); var policy = MCPPolicy()
-        policy.enabled = true; policy.groupIDs.insert(group); policy.groupModes[group.uuidString] = .dataWrite
-        #expect(policy.permits(p)); #expect(policy.effectiveMode(p, database: "allowed") == .readOnly)
-        policy.mode = .fullAccess
-        policy.connections[p.id.uuidString] = .init(mode: .fullAccess, databaseModes: ["allowed": .readOnly])
-        #expect(policy.effectiveMode(p, database: "allowed") == .readOnly)
-        #expect(policy.effectiveMode(p, database: "other") == .dataWrite)
-        policy.connections[p.id.uuidString]?.mode = .readOnly
-        policy.connections[p.id.uuidString]?.databaseModes["allowed"] = .fullAccess
-        #expect(policy.effectiveMode(p, database: "allowed") == .readOnly)
     }
     @Test(arguments: [DatabaseType.mysql, .postgresql, .doris, .redis, .elasticsearch, .kafka])
     func databaseScopeRetainsSelectionsAndDeniesEveryDriver(_ type: DatabaseType) throws {
@@ -182,7 +170,7 @@ struct MCPTests {
         }
     }
     @Test func sqlDataWriteRejectsUnboundedDeletionAndRawTransactions() async throws {
-        let p = profile(); var policy = MCPPolicy(); policy.mode = .dataWrite
+        let p = profile(); var policy = MCPPolicy(); policy.connections[p.id.uuidString] = .init(mode: .dataWrite)
         await #expect(throws: MCPFailure.self) { _ = try await MCPSQLAuthorization.statements("DELETE FROM users", profile: p, database: "allowed", policy: policy) }
         await #expect(throws: MCPFailure.self) { _ = try await MCPSQLAuthorization.statements("BEGIN", profile: p, database: "allowed", policy: policy) }
     }
@@ -206,12 +194,12 @@ struct MCPTests {
     }
     @Test(arguments: ["DELETE FROM t WHERE 1=1", "DELETE FROM t WHERE id=id", "DELETE FROM t WHERE id=1 OR TRUE", "DELETE FROM t WHERE id=1 /* bypass */ OR 1=1"])
     func dataWriteRejectsIneffectiveFilters(_ sql: String) async throws {
-        var policy = MCPPolicy(); policy.mode = .dataWrite
-        await #expect(throws: (any Error).self) { _ = try await MCPSQLAuthorization.statements(sql, profile: profile(), database: "allowed", policy: policy) }
+        let p = profile(); var policy = MCPPolicy(); policy.connections[p.id.uuidString] = .init(mode: .dataWrite)
+        await #expect(throws: (any Error).self) { _ = try await MCPSQLAuthorization.statements(sql, profile: p, database: "allowed", policy: policy) }
     }
     @Test func dataWriteAllowsConcreteFilter() async throws {
-        var policy = MCPPolicy(); policy.mode = .dataWrite
-        let statements = try await MCPSQLAuthorization.statements("UPDATE users SET name='test' WHERE id=42 AND tenant_id=7", profile: profile(), database: "allowed", policy: policy)
+        let p = profile(); var policy = MCPPolicy(); policy.connections[p.id.uuidString] = .init(mode: .dataWrite)
+        let statements = try await MCPSQLAuthorization.statements("UPDATE users SET name='test' WHERE id=42 AND tenant_id=7", profile: p, database: "allowed", policy: policy)
         #expect(statements.count == 1)
     }
     @Test(arguments: ["SELECT evil_function()", "SELECT LOAD_FILE('/etc/passwd')", "WITH x AS (DELETE FROM users RETURNING *) SELECT * FROM x", "EXPLAIN ANALYZE DELETE FROM users", "SELECT 1 /*!; DELETE FROM users */"])
@@ -274,11 +262,12 @@ struct MCPTests {
     @Test func destructiveSQLRequiresExplicitConfirmationBeforeDriverInvocation() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        var policy = MCPPolicy(); policy.enabled = true; policy.allConnections = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true; policy.allConnections = true
         try MCPPolicyStore(directory: directory).save(policy)
         let runtime = MCPRuntime(directory: directory)
+        let p = profile(); policy.connections[p.id.uuidString] = .init(mode: .fullAccess)
         do {
-            _ = try await runtime.execute("execute_query", args: ["sql": "DROP TABLE users"], profile: profile(), database: "allowed",
+            _ = try await runtime.execute("execute_query", args: ["sql": "DROP TABLE users"], profile: p, database: "allowed",
                 connection: UnavailableDatabaseWorkspaceSession(error: MCPFailure("driver invoked")), policy: policy, inTransaction: false)
             Issue.record("Destructive SQL should require explicit confirmation")
         } catch let error as MCPFailure { #expect(error.message.contains("confirm_high_risk")) }

@@ -56,7 +56,7 @@ struct MCPConnectionScopeEditor: View {
                         Text(draft.scope == .all
                              ? copy("允许访问此连接的全部对象", "Allow all objects in this connection")
                              : copy("不允许访问此连接的任何对象", "Deny all objects in this connection"))
-                        Text(copy("仍受连接权限、全局上限和数据库账号权限限制。", "Connection access, the global limit and database account privileges still apply."))
+                        Text(copy("未单独设置权限的对象依次继承连接、分组权限，均未设置时为只读。数据库账号权限仍然生效。", "Objects without explicit access inherit from the connection, then the group, then read only. Database account privileges still apply."))
                             .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -116,7 +116,7 @@ struct MCPConnectionScopeEditor: View {
             HStack {
                 Text(copy("允许", "Allow")).frame(width: 40, alignment: .leading)
                 Text(copy("名称", "Name")).frame(maxWidth: .infinity, alignment: .leading)
-                Text(copy("权限限制", "Access limit")).frame(width: 165, alignment: .trailing)
+                Text(copy("访问权限", "Access")).frame(width: 165, alignment: .trailing)
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10).frame(height: 30)
             Divider()
             ScrollView {
@@ -161,7 +161,7 @@ struct MCPConnectionScopeEditor: View {
                  ? copy("正在加载，保留当前选择…", "Loading; current selections are preserved…")
                  : draft.databases?.isEmpty != false
                  ? copy("尚未选择对象，应用后此连接将无法访问。", "No objects selected. Applying will deny access to this connection.")
-                 : copy("仅勾选的名称可访问；单项权限只能进一步收紧。", "Only checked names are accessible. Per-object limits can only narrow access.")))
+                 : copy("仅勾选的名称可访问；单项权限优先，未设置时继承连接权限。", "Only checked names are accessible. Explicit object access takes precedence; otherwise it inherits connection access.")))
                 .font(.caption).foregroundStyle(model.databaseChoiceErrors[profile.id] == nil ? Color.secondary : .red)
                 .lineLimit(2).help(model.databaseChoiceErrors[profile.id] ?? "")
                 .frame(maxWidth: .infinity, alignment: .leading)

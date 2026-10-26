@@ -10,11 +10,11 @@ enum MCPPermissionSummary {
         if rule.scope == .selected, let names = rule.allowedDatabases {
             let modes = Set(names.map { policy.effectiveMode(profile, database: $0) })
             if modes.count == 1, let mode = modes.first { return mode.title }
-            return copy.text("按对象分别限制", "Per-object limits")
+            return copy.text("按对象分别设置", "Per-object access")
         }
         let base = policy.effectiveMode(profile, database: nil)
-        if rule.databaseModes.values.contains(where: { $0.rank < base.rank }) {
-            return copy.text("\(base.title)，部分对象单独限制", "\(base.title), with object limits")
+        if rule.databaseModes.values.contains(where: { $0 != base }) {
+            return copy.text("\(base.title)，部分对象单独设置", "\(base.title), with object overrides")
         }
         return base.title
     }

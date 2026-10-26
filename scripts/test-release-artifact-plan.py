@@ -70,6 +70,8 @@ class ArtifactPlanTests(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/release.yml').read_text()
         runtime = workflow.split('\n  verify_runtime:', 1)[1].split('\n  publish:', 1)[0]
         self.assertNotIn("source_run_id == ''", runtime)
+        self.assertIn('ref: ${{ needs.metadata.outputs.build_ref }}', runtime)
+        self.assertIn('test-ssh-package.py --directory runtime-artifacts', runtime)
         self.assertIn('run-id: ${{ needs.metadata.outputs.source_run_id }}', runtime)
         self.assertIn("has_new_artifacts == 'true'", runtime)
         publish = workflow.split('\n  publish:', 1)[1]

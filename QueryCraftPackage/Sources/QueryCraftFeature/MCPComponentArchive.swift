@@ -3,9 +3,9 @@ import Security
 
 final class MCPComponentLock {
     private let descriptor: Int32
-    init(directory: URL) throws {
+    init(directory: URL, filename: String = ".component.lock") throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        descriptor = open(directory.appending(path: ".component.lock").path, O_CREAT | O_RDWR | O_NOFOLLOW, 0o600)
+        descriptor = open(directory.appending(path: filename).path, O_CREAT | O_RDWR | O_NOFOLLOW, 0o600)
         guard descriptor >= 0 else { throw MCPFailure("Cannot open component installation lock.") }
         guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
             close(descriptor)

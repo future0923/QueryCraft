@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-enum MCPComponentKind: String, Codable, Sendable { case mcp, skill }
+enum MCPComponentKind: String, Codable, Sendable { case mcp, skill, ssh }
 
 struct MCPComponentHost: Codable, Equatable, Sendable {
     let appVersion: String
@@ -127,7 +127,11 @@ actor MCPComponentCatalog {
         }
     }
     func releases(_ component: MCPComponentKind) async throws -> [MCPComponentRelease] {
-        let file = component == .mcp ? "mcp-\(DatabaseDriverArchitecture.current.rawValue).json" : "skill.json"
+        let file: String = switch component {
+        case .mcp: "mcp-\(DatabaseDriverArchitecture.current.rawValue).json"
+        case .skill: "skill.json"
+        case .ssh: "ssh-\(DatabaseDriverArchitecture.current.rawValue).json"
+        }
         let url = try requireConfiguredSource().appending(path: file)
         try validateURL(url)
         let (data, response) = try await session.data(for: request(url))

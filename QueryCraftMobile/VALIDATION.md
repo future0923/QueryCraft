@@ -2,6 +2,8 @@
 
 ## 合并 main 前的提交检查（2026-10-26）
 
+合并本地 main 的既有提交 553548c 后，移动端合并回归 8/0/0（153.240s，`main-merge-mobile-tests.json`），覆盖目录原生 Tab、iPad 分栏/背景、操作菜单表单、Redis 类型展示与刷新、SQL 输入/执行。Mac 主程序构建及核心测试尝试分别在 SSHSettingsPane.swift:10 出现 SwiftUI 类型检查超时报错（`main-merge-macos-build.json` / `main-merge-core-tests.json`）；该文件与 main 的已提交版本完全一致。本次不修 SSH，按用户要求交由并行任务处理，不能声称合并后的 Mac 构建/核心测试通过。未触碰主检出目录的未提交 SSH/MCP 工作；合并结果推至远端 main，主检出目录留在原提交，待其工作完成后同步。
+
 本次提交、合并源码，不发版、不打 tag，不调整 0.1.12/build22。已重新阅读 RELEASE_PROCESS。相对 v0.1.12 的分支累计包含移动端、公共业务逻辑及 MySQL/PostgreSQL/Doris/Redis/Elasticsearch 驱动源码适配；不能将最后一轮 UI 改动无驱动变化误当作整个分支无驱动变化。MariaDBTransport 变更同时涉及 MySQL/Doris。相关本机驱动独立构建、打包、签名、隔离加载与六类工厂验证见本文件各阶段记录；不覆盖用户当前 Dev 安装。Kafka 无移动新增实现，保留桌面兼容范围。Driver API 仍为 5，兼容常量及打包脚本相对发布基线未改变。此次六类驱动均不发布；正式发版须对上述五类受影响驱动重新评估发行身份、最低主程序版本及双架构包验证，不能直接发布本地验收包。MCP/SSH 的 main 并行工作保留其既有提交与独立发布安排。
 
 ## 保留原生灰色 Tab 胶囊，移除额外目录底板（2026-10-26）

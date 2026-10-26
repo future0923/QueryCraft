@@ -46,11 +46,13 @@ struct MCPOptimizationTests {
     @Test func ddlInvalidatesMetadataAndSQLNeverBorrowsMetadataConnection() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        var policy = MCPPolicy(); policy.enabled = true; policy.allConnections = true; policy.mode = .fullAccess
+        var policy = MCPPolicy(); policy.enabled = true; policy.allConnections = true
         try MCPPolicyStore(directory: root).save(policy)
         let driver = MCPProbeDriver(databaseType: .mysql)
         let runtime = MCPRuntime(directory: root, registry: DatabaseDriverRegistry(drivers: [driver]))
         let p = MCPTests().profile(); try await runtime.repository.insert(p)
+        policy.connections[p.id.uuidString] = .init(mode: .fullAccess)
+        try MCPPolicyStore(directory: root).save(policy)
         let args: [String: MCPJSONValue] = ["connection_id": .string(p.id.uuidString)]
         _ = try await runtime.call("querycraft_list_tables", arguments: args)
         let metadata = try #require(await driver.created.first)

@@ -65,11 +65,12 @@ struct MCPSessionTests {
         }
         #expect(await session.statements == ["START TRANSACTION READ ONLY", "SELECT 1", "ROLLBACK"])
         #expect(await session.state == .autoCommit)
-        policy.mode = .fullAccess; try MCPPolicyStore(directory: directory).save(policy)
         let clean = MCPBlockingSession()
         for type in [DatabaseType.mysql, .postgresql] {
+            let p = MCPTests().profile(type: type)
+            policy.connections[p.id.uuidString] = .init(mode: .fullAccess)
             await #expect(throws: MCPFailure.self) {
-                _ = try await runtime.execute("execute_batch", args: ["sql": "DROP TABLE users", "use_transaction": true, "confirm_high_risk": true], profile: MCPTests().profile(type: type), database: "allowed", connection: clean, policy: policy, inTransaction: false)
+                _ = try await runtime.execute("execute_batch", args: ["sql": "DROP TABLE users", "use_transaction": true, "confirm_high_risk": true], profile: p, database: "allowed", connection: clean, policy: policy, inTransaction: false)
             }
         }
         #expect(await clean.statements.isEmpty)

@@ -4,7 +4,6 @@ import Darwin
 
 enum MCPExecutionMode: String, Codable, CaseIterable, Sendable {
     case readOnly = "read_only", dataWrite = "safe_write", fullAccess = "high_risk_write"
-    var rank: Int { Self.allCases.firstIndex(of: self)! }
     var title: String {
         switch self {
         case .readOnly: AppCopy.current.text("只读", "Read only")
@@ -65,6 +64,7 @@ struct MCPOptimizationSettings: Codable, Equatable, Sendable {
 }
 
 struct MCPPolicy: Codable, Equatable, Sendable {
+    var ssh: MCPSSHPolicy? = nil
     var optimizations: MCPOptimizationSettings? = nil
     var tuning: MCPOptimizationSettings { optimizations ?? .init() }
     var version = 1
@@ -72,7 +72,6 @@ struct MCPPolicy: Codable, Equatable, Sendable {
     var allConnections = false
     var connectionIDs: Set<UUID> = []
     var groupIDs: Set<UUID> = []
-    var mode: MCPExecutionMode = .readOnly
     var groupModes: [String: MCPExecutionMode] = [:]
     var connections: [String: MCPConnectionPolicy] = [:]
     var disabledTools: Set<String> = []
@@ -107,9 +106,11 @@ struct MCPPolicy: Codable, Equatable, Sendable {
     }
     func effectiveMode(_ profile: ConnectionProfile, database: String?) -> MCPExecutionMode {
         let rule = connectionRule(profile)
-        let ceilings = [mode, profile.groupID.flatMap { groupModes[$0.uuidString] },
-                        rule.mode, database.flatMap { rule.databaseModes[$0] }].compactMap { $0 }
-        return ceilings.min(by: { $0.rank < $1.rank }) ?? mode
+        // The nearest explicit rule wins. Missing rules inherit; the final default is read-only.
+        return database.flatMap { rule.databaseModes[$0] }
+            ?? rule.mode
+            ?? profile.groupID.flatMap { groupModes[$0.uuidString] }
+            ?? .readOnly
     }
     func authorize(tool: String, profile: ConnectionProfile? = nil, database: String? = nil) throws {
         guard version == 1, enabled else { throw MCPFailure("MCP is disabled. Enable it in QueryCraft Settings → MCP.", code: .accessDenied) }
@@ -155,6 +156,34 @@ struct MCPPolicyStore: Sendable {
         } catch { throw MCPFailure("MCP policy cannot be read. Repair and save it in QueryCraft settings.", code: .policyUnavailable) }
     }
     func save(_ policy: MCPPolicy) throws {
+        try withLock { try write(policy) }
+    }
+    /// Serialize read/modify/write across desktop and independent MCP processes.
+    func update(_ change: (inout MCPPolicy) throws -> Void) throws {
+        try withLock {
+            var policy = try load()
+            try change(&policy)
+            try write(policy)
+        }
+    }
+    private func withLock(_ operation: () throws -> Void) throws {
+        let directory = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let descriptor = Darwin.open(directory.appending(path: ".mcp-policy.lock").path, O_CREAT | O_RDWR | O_NOFOLLOW, 0o600)
+        guard descriptor >= 0 else { throw MCPFailure("Cannot lock MCP policy.") }
+        defer { Darwin.close(descriptor) }
+        guard flock(descriptor, LOCK_EX) == 0 else { throw MCPFailure("Cannot lock MCP policy.") }
+        defer { flock(descriptor, LOCK_UN) }
+        try operation()
+    }
+    func savePreservingSSH(_ policy: MCPPolicy) throws {
+        try update { current in
+            let ssh = current.ssh
+            current = policy
+            current.ssh = ssh
+        }
+    }
+    private func write(_ policy: MCPPolicy) throws {
         try policy.validate()
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

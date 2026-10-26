@@ -19,8 +19,12 @@ def meaningful(base,head,path):
         return '\n'.join(line for line in text.splitlines() if not re.match(r'\s*(driver_version|driver_build)=',line))
     return normalize(read(base,path))!=normalize(read(head,path))
 def component_paths(kind):
+    if kind=='ssh':return ['QueryCraftSSHPlugin/**','QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/**','scripts/build-ssh-plugin.py','scripts/package-ssh-catalog.py']
     if kind=='skill':return ['Components/Skill/**','scripts/package-components.py']
-    return ['QueryCraftMCPPackage/Sources/**','QueryCraftMCPPackage/Package.swift',
+    ssh_runtime = ['SSHAccountAccess','SSHConnection','SSHConnectionService','SSHDiagnostic','SSHFileRequest',
+      'SSHPlugin','SSHPluginInstallation','SSHPluginManager','SSHRouteRequest','SSHTask','SSHTransfer','SSHTransferProgress']
+    return [f'QueryCraftPackage/Sources/QueryCraftFeature/{name}.swift' for name in ssh_runtime] + [
+      'QueryCraftPackage/Sources/QueryCraftFeature/ShellScript.swift','QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/**','QueryCraftMCPPackage/Sources/**','QueryCraftMCPPackage/Package.swift',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPHost*','QueryCraftPackage/Sources/QueryCraftFeature/MCPJSONValue*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPRuntime*','QueryCraftPackage/Sources/QueryCraftFeature/MCPHTTP*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPInitialization*','QueryCraftPackage/Sources/QueryCraftFeature/MCPPolicy*',
@@ -39,7 +43,7 @@ def plan(base,head,versions):
     paths=changes(base,head)
     components={}
     old=json.loads(read(base,'Components/versions.json') or '{}')
-    for kind in ['mcp','skill']:
+    for kind in versions:
         touched=[p for p in paths if any(fnmatch.fnmatch(p,pattern) for pattern in component_paths(kind))]
         before=dict(old.get(kind,{}));after=dict(versions[kind])
         for key in ['version','build']:before.pop(key,None);after.pop(key,None)
@@ -91,7 +95,7 @@ def main():
     versions=json.loads(read(args.head,'Components/versions.json') or (ROOT/'Components/versions.json').read_text());result=plan(base,args.head,versions)
     # Independent component tags take precedence over the last application tag.
     if not args.base:
-        for kind in ['mcp','skill']:
+        for kind in versions:
             tags=git('tag','--merged',args.head,'--sort=-version:refname',f'{kind}-v*').splitlines()
             previous=next((t for t in tags if git('rev-parse',t+'^{commit}')!=git('rev-parse',args.head+'^{commit}')),None)
             if previous:
