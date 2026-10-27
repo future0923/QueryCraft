@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise partial-run recovery, immutable source matching and publication gates."""
 import importlib.util
+import io
 from pathlib import Path
 import subprocess
 import tempfile
@@ -161,12 +162,13 @@ class SSHRepairRecoveryTests(unittest.TestCase):
     def test_only_authoritative_not_found_allows_unpublished_recovery(self):
         def get(code):
             def request(path):
-                raise urllib.error.HTTPError(path, code, 'fixture', {}, None)
+                raise urllib.error.HTTPError(path, code, 'fixture', {}, io.BytesIO())
             return request
         MODULE.require_unpublished(get(404), 'v0.1.13')
         for code in [401, 403, 500]:
-            with self.assertRaises(urllib.error.HTTPError):
+            with self.assertRaises(urllib.error.HTTPError) as failure:
                 MODULE.require_unpublished(get(code), 'v0.1.13')
+            failure.exception.close()
 
 
 if __name__ == '__main__':

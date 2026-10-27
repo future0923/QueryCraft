@@ -67,6 +67,7 @@ def require_unpublished(get, tag):
         get('/releases/tags/' + tag)
     except urllib.error.HTTPError as error:
         if error.code == 404:
+            error.close()
             return
         raise
     raise ValueError('SSH repair recovery cannot replace an existing GitHub release')

@@ -97,7 +97,7 @@ class SSHDistributionTests(unittest.TestCase):
     def test_failed_build_retains_full_log_and_surfaces_bounded_diagnostics(self):
         log=self.directory/'build.log'
         diagnostic=io.StringIO()
-        command=[sys.executable,'-c',"import sys; print('old output\\n' * 5000); print('fatal: missing dependency', file=sys.stderr); sys.exit(7)"]
+        command=[sys.executable,'-u','-c',"import sys; print('old output\\n' * 5000); print('fatal: missing dependency', file=sys.stderr); sys.exit(7)"]
         with contextlib.redirect_stderr(diagnostic):
             with self.assertRaises(subprocess.CalledProcessError) as failure:BUILD.run(command,log)
         self.assertEqual(failure.exception.returncode,7)
