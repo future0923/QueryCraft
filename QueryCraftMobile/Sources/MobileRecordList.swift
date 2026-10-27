@@ -3,6 +3,7 @@ import QueryCraftMobileCore
 
 /// A compact record presentation for narrow screens; the grid remains available.
 struct MobileRecordList: View {
+    @Bindable var preferences: MobilePreferences = .shared
     let data: MobileGridData
     let revision: String
     @Binding var scrollID: Int?
@@ -20,7 +21,7 @@ struct MobileRecordList: View {
                                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                                         Text(data.columns[column]).font(.caption).foregroundStyle(.secondary)
                                             .frame(width: 84, alignment: .leading).lineLimit(1)
-                                        Text(data.cell(row: row, column: column).gridPreviewText(nullDisplayText: "NULL", emptyStringDisplayText: "空字符串", maximumCharacterCount: 120))
+                                        Text(data.cell(row: row, column: column).gridPreviewText(nullDisplayText: preferences.nullStyle.displayText, emptyStringDisplayText: preferences.emptyStringStyle.displayText, maximumCharacterCount: 120))
                                             .font(column == 0 ? .subheadline.weight(.semibold) : .system(.caption, design: .monospaced))
                                             .foregroundStyle(data.cell(row: row, column: column) == .null ? .secondary : .primary)
                                             .lineLimit(1)
@@ -55,6 +56,7 @@ struct MobileRecordList: View {
 }
 
 struct MobileRecordInspector: View {
+    @Bindable var preferences: MobilePreferences = .shared
     let selection: MobileRecordSelection
     @Environment(\.dismiss) private var dismiss
     @State private var cellPresentation: MobileResultCellPresentation?
@@ -75,7 +77,7 @@ struct MobileRecordInspector: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(data.columns[column])
-                                if data.details.indices.contains(column), !data.details[column].isEmpty {
+                                if preferences.showsInspectorDetails, data.details.indices.contains(column), !data.details[column].isEmpty {
                                     Text(data.details[column]).font(.caption2).lineLimit(2)
                                 }
                             }
@@ -132,10 +134,10 @@ struct MobileRecordInspector: View {
 
     @ViewBuilder private func value(_ cell: WorkspaceDatabaseDataCell) -> some View {
         switch cell {
-        case .null: Text("NULL").foregroundStyle(.secondary)
+        case .null: Text(preferences.nullStyle.displayText).foregroundStyle(.secondary).accessibilityLabel("NULL")
         case .text(let value):
             let preview = WorkspaceDatabaseDataCell.boundedPreview(value, maximumCharacterCount: 16_384)
-            Text(value.isEmpty ? "空字符串" : preview)
+            Text(value.isEmpty ? preferences.emptyStringStyle.displayText : preview)
                 .font(.system(.body, design: .monospaced)).textSelection(.enabled)
             if preview != value {
                 Text("预览前 16,384 个字符。").font(.footnote).foregroundStyle(.secondary)

@@ -8,7 +8,7 @@ import QueryCraftMobileTransport
 struct MobilePostgreSQLMutationTests {
     private func config(reader: Bool = false) throws -> MobileSQLConfiguration {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"].flatMap(Int.init))
-        return .init(host: "127.0.0.1", port: port, username: reader ? "proof_reader" : "proof_writer",
+        return .init(host: MobileFixtureEndpoint.host, port: port, username: reader ? "proof_reader" : "proof_writer",
                      password: reader ? "querycraft-proof-pg" : "querycraft-proof-pg-writer",
                      database: "querycraft_ios_pg", tlsMode: .disabled, driver: .postgresql)
     }

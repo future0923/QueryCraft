@@ -10,7 +10,7 @@ import QueryCraftMobileCore
         let profile = MobileDriverSupportTests.profile(.mysql), repository = MobileWorkspaceRepository(directory: directory)
         let first = MobileDatabaseWorkspace(profile: profile, password: nil, service: MobileMySQLService(), workspaceRepository: repository)
         first.query.sql = "UPDATE sample SET value='unverified' WHERE id=1"
-        #expect(first.query.persistWriteBoundary(true))
+        #expect(first.query.persistWriteBoundary(true), "\(first.documentMessage ?? "No persistence diagnostic")")
         let restored = MobileDatabaseWorkspace(profile: profile, password: nil, service: MobileMySQLService(), workspaceRepository: repository)
         #expect(restored.query.writeOutcomeUncertain); #expect(restored.hasPendingChanges)
         #expect(restored.query.execute() == nil)
@@ -37,7 +37,7 @@ import QueryCraftMobileCore
     func documentsHaveIndependentSessionsAndRollbackBeforeClosing() async throws {
         let connection = try MobileTransferIntegrationTests.connection(.mysql)
         var profile = MobileDriverSupportTests.profile(.mysql)
-        profile.port = connection.configuration.port; profile.username = "root"; profile.database = connection.endpoint.database
+        profile.host = connection.configuration.host; profile.port = connection.configuration.port; profile.username = "root"; profile.database = connection.endpoint.database
         let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let workspace = MobileDatabaseWorkspace(profile: profile, password: connection.configuration.password, service: MobileMySQLService(), workspaceRepository: MobileWorkspaceRepository(directory: directory))
@@ -50,7 +50,7 @@ import QueryCraftMobileCore
         second.query.sql = "BEGIN"; await second.query.executeAll()?.value
         #expect(second.query.transactionState == .inTransaction)
         #expect(!workspace.closeDocument(first.id, discarding: first.closeSnapshot))
-        #expect(await workspace.rollbackAndCloseDocument(first.id, discarding: first.closeSnapshot))
+        #expect(await workspace.rollbackAndCloseDocument(first.id, discarding: first.closeSnapshot), "\(workspace.documentMessage ?? "No persistence diagnostic")")
         #expect(second.query.transactionState == .inTransaction)
         await second.query.transaction(.rollback)?.value
         #expect(second.query.transactionState == .autoCommit)
@@ -65,7 +65,7 @@ import QueryCraftMobileCore
     func postgresDocumentsKeepTheirOwnDatabaseAndSchemaCatalog() async throws {
         let connection = try MobileTransferIntegrationTests.connection(.postgresql)
         var profile = MobileDriverSupportTests.profile(.postgresql)
-        profile.port = connection.configuration.port; profile.username = "postgres"; profile.database = connection.endpoint.database; profile.schemaName = "workspace_source"
+        profile.host = connection.configuration.host; profile.port = connection.configuration.port; profile.username = "postgres"; profile.database = connection.endpoint.database; profile.schemaName = "workspace_source"
         let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let workspace = MobileDatabaseWorkspace(profile: profile, password: connection.configuration.password, service: MobileMySQLService(), workspaceRepository: MobileWorkspaceRepository(directory: directory))
@@ -122,7 +122,7 @@ import QueryCraftMobileCore
         defer { try? FileManager.default.removeItem(at: directory) }
         let profile = MobileDriverSupportTests.profile(.mysql), repository = MobileWorkspaceRepository(directory: directory)
         let original = MobileDatabaseWorkspace(profile: profile, password: nil, service: MobileMySQLService(), workspaceRepository: repository)
-        #expect(original.query.persistWriteBoundary(true))
+        #expect(original.query.persistWriteBoundary(true), "\(original.documentMessage ?? "No persistence diagnostic")")
         let restored = MobileDatabaseWorkspace(profile: profile, password: nil, service: MobileMySQLService(), workspaceRepository: repository)
         let uncertain = try #require(restored.activeDocument), other = try #require(restored.newDocument())
         restored.browser.safetyLock.disable()
@@ -167,7 +167,7 @@ import QueryCraftMobileCore
     func transferNamespaceSwitchInvalidatesPreviousObjectsBeforeAsyncRead() async throws {
         let source = try MobileTransferIntegrationTests.connection(.mysql)
         var profile = MobileDriverSupportTests.profile(.mysql)
-        profile.port = source.configuration.port; profile.username = "root"; profile.database = source.endpoint.database
+        profile.host = source.configuration.host; profile.port = source.configuration.port; profile.username = "root"; profile.database = source.endpoint.database
         let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let model = MobileTransferModel(profiles: [profile], manager: .init(historyURL: directory.appending(path: "runs.json")), library: .init(url: directory.appending(path: "tasks.json")), resolve: { _, _ in source.configuration })

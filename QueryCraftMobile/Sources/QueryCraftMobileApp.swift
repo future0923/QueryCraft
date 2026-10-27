@@ -10,17 +10,44 @@ struct QueryCraftMobileApp: App {
     init() {
         _ = WorkspaceMobileQueryCacheDirectory.current
         #if DEBUG
+        let physicalEnvironment = ProcessInfo.processInfo.environment
+        if physicalEnvironment["QUERYCRAFT_PHYSICAL_SQL_ACCEPTANCE"] == "1",
+           physicalEnvironment["QUERYCRAFT_PHYSICAL_SQL_OWNER"].flatMap(UUID.init(uuidString:)) != nil {
+            // Integration suites can run without touch events for minutes. Keep
+            // their protected-file fixture unlocked without changing OS settings.
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
         if let port = ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_MYSQL_PORT"].flatMap(Int.init) {
+            let environment = ProcessInfo.processInfo.environment
+            let systemOwner = environment["QUERYCRAFT_PROOF_SYSTEM_OWNER"].flatMap(UUID.init(uuidString:))
             let editExperience = ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_EDIT_EXPERIENCE"] == "1"
             let tableExperience = ProcessInfo.processInfo.environment["QUERYCRAFT_PROOF_TABLE_ACTIONS"] == "1"
-            let profile = MobileConnectionProfile(id: UUID(), name: "MySQL 本地验证", host: "127.0.0.1", port: port,
+            let profile = MobileConnectionProfile(id: systemOwner ?? UUID(), name: "MySQL 本地验证", host: environment["QUERYCRAFT_PROOF_HOST"] ?? "127.0.0.1", port: port,
                 username: tableExperience ? "proof_table_admin" : (editExperience ? "proof_writer" : "proof_reader"), database: tableExperience ? "querycraft_ios_table_actions" : (editExperience ? "querycraft_ios_edit" : "querycraft_ios_proof"), tlsMode: .required,
                 remembersPassword: false, requiresPassword: true)
-            let environment = ProcessInfo.processInfo.environment
             let emptyHome = environment["QUERYCRAFT_PROOF_EMPTY_HOME"] == "1"
-            let app = MobileApplicationModel(repository: MobileDebugLibrary(profile: emptyHome ? nil : profile), passwords: MobileDebugPasswords())
+            // Physical UI tests get an owner-scoped archive. Relaunch exercises
+            // the real persistence path without reading or changing user drafts.
+            let workspaceRepository: MobileWorkspaceRepository
+            var cleanupMessage: String?
+            if let systemOwner {
+                UIApplication.shared.isIdleTimerDisabled = true
+                let root = URL.cachesDirectory.appending(path: "QueryCraftPhysicalValidation", directoryHint: .isDirectory)
+                let directory = root.appending(path: systemOwner.uuidString, directoryHint: .isDirectory)
+                workspaceRepository = MobileWorkspaceRepository(directory: directory)
+                if environment["QUERYCRAFT_PROOF_SYSTEM_CLEANUP"] == "1" {
+                    do {
+                        // Also remove abandoned archives from an interrupted UI
+                        // run. This reserved cache root never holds user drafts.
+                        if FileManager.default.fileExists(atPath: root.path) { try FileManager.default.removeItem(at: root) }
+                    } catch { cleanupMessage = "真机测试缓存清理失败，请重新执行清理。" }
+                }
+            } else { workspaceRepository = MobileWorkspaceRepository() }
+            let app = MobileApplicationModel(repository: MobileDebugLibrary(profile: emptyHome ? nil : profile), passwords: MobileDebugPasswords(), workspaceRepository: workspaceRepository)
+            if let cleanupMessage { app.message = cleanupMessage }
             if environment["QUERYCRAFT_PROOF_HOME"] != "1", !emptyHome {
                 app.open(profile, suppliedPassword: tableExperience ? "querycraft-proof-table-admin" : (editExperience ? "querycraft-proof-writer" : "querycraft-proof-reader"))
+                if systemOwner != nil { app.selectTab(.query) }
             }
             _model = State(initialValue: app)
             return

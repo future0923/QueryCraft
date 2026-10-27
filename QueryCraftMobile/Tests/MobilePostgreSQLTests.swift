@@ -50,7 +50,7 @@ import QueryCraftMobileTransport
     }
     private func config() throws -> MobileSQLConfiguration {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"].flatMap(Int.init))
-        return .init(host: "127.0.0.1", port: port, username: "proof_reader", password: "querycraft-proof-pg", database: "querycraft_ios_pg", tlsMode: .disabled, driver: .postgresql)
+        return .init(host: MobileFixtureEndpoint.host, port: port, username: "proof_reader", password: "querycraft-proof-pg", database: "querycraft_ios_pg", tlsMode: .disabled, driver: .postgresql)
     }
     @Test(.enabled(if: ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"] != nil)) func realCatalogSchemaCommentsAndPagination() async throws {
         let config = try config(), service = MobilePostgreSQLService()

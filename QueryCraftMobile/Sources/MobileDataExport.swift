@@ -74,7 +74,7 @@ extension WorkspaceDataExporter: MobileDataExportWriting {}
     let snapshot: MobileDataExportSnapshot
     var scope = WorkspaceDataExportScope.currentData
     var format = WorkspaceDataExportFormat.xlsx
-    var preferences = WorkspaceDataExportPreferences()
+    var preferences: WorkspaceDataExportPreferences
     var sqlTableName: String
     var worksheetName: String
     private(set) var isExporting = false
@@ -88,7 +88,8 @@ extension WorkspaceDataExporter: MobileDataExportWriting {}
     private let writer: any MobileDataExportWriting
 
     init(snapshot: MobileDataExportSnapshot, temporaryRoot: URL = FileManager.default.temporaryDirectory,
-         writer: any MobileDataExportWriting = WorkspaceDataExporter()) {
+         writer: any MobileDataExportWriting = WorkspaceDataExporter(), defaults: MobilePreferences = .shared) {
+        preferences = defaults.validDataExport
         self.snapshot = snapshot
         self.writer = writer
         sqlTableName = snapshot.tableIdentifierParts?.last ?? ""

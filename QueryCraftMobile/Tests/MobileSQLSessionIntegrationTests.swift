@@ -7,7 +7,7 @@ import QueryCraftMobileTransport
 @MainActor struct MobileSQLSessionIntegrationTests {
     private func model(reader: Bool = false) throws -> MobileQueryModel {
         let config = try MobileSchemaIntegrationTests().config(reader: reader), model = MobileQueryModel()
-        model.port = String(config.port); model.username = config.username; model.password = config.password ?? ""
+        model.host = config.host; model.port = String(config.port); model.username = config.username; model.password = config.password ?? ""
         model.database = config.database ?? ""; model.tlsMode = .required
         return model
     }

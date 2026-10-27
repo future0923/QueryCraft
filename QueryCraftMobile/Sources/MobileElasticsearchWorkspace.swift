@@ -35,7 +35,7 @@ private actor MobileElasticsearchBatch {
     var console: MobileElasticsearchConsole!
     private(set) var sort = WorkspaceDatabaseDataSort.none
     private(set) var filter = WorkspaceDatabaseDataFilter.empty
-    private(set) var pageSize = 100
+    private(set) var pageSize: Int
     private(set) var totalCount: Int?
     private(set) var requiresRefresh = false
     private(set) var revision = UUID()
@@ -77,7 +77,8 @@ private actor MobileElasticsearchBatch {
         guard let page else { return "等待加载" }
         return "第 \(page.offset + (page.rowCount == 0 ? 0 : 1))–\(page.offset + page.rowCount) 条" + (totalCount.map { " · 共 \($0) 条" } ?? "")
     }
-    init(profile: MobileConnectionProfile, password: String?, session: (any MobileElasticsearchServing)? = nil, sessionFactory: (@Sendable () throws -> any MobileElasticsearchServing)? = nil) {
+    init(profile: MobileConnectionProfile, password: String?, session: (any MobileElasticsearchServing)? = nil, sessionFactory: (@Sendable () throws -> any MobileElasticsearchServing)? = nil, preferences: MobilePreferences = .shared) {
+        pageSize = preferences.tableDataPageSize
         self.profile = profile
         let authentication: DatabaseConnectionAuthentication = switch profile.authentication {
         case .usernamePassword: .usernamePassword(username: profile.username, password: password)
@@ -168,7 +169,7 @@ private actor MobileElasticsearchBatch {
     }
     func apply(filter: WorkspaceDatabaseDataFilter) { guard canNavigate else { return }; self.filter = filter; loadPage(offset: 0, fresh: true) }
     func setSort(_ sort: WorkspaceDatabaseDataSort) { guard canNavigate else { return }; self.sort = sort; loadPage(offset: 0, fresh: true) }
-    func setPageSize(_ size: Int) { guard canNavigate, [25,50,100,200,500].contains(size) else { return }; pageSize = size; loadPage(offset: 0, fresh: true) }
+    func setPageSize(_ size: Int) { guard canNavigate, MobilePreferences.pageSizes.contains(size) else { return }; pageSize = size; loadPage(offset: 0, fresh: true) }
     func next() { guard let page, page.hasNextPage, !isLoadingPage else { return }; loadPage(offset: page.offset + page.limit) }
     func previous() { guard let page, page.offset > 0, !isLoadingPage else { return }; loadPage(offset: max(0, page.offset - page.limit)) }
     func refresh() {

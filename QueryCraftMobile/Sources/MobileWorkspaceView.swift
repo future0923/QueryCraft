@@ -17,7 +17,6 @@ struct MobileWorkspaceView: View {
     @State private var snippets = SQLSnippetStore.shared
     @State private var snippetContext = MobileSQLSnippetContext()
     @State private var showingSnippets = false
-    @State private var showingSettings = false
     @State private var editorPreferences = MobileEditorPreferences.shared
     @State private var formatting = MobileSQLFormattingContext()
     init(model: MobileQueryModel, widthKey: String, browser: MobileBrowserModel? = nil, documentWorkspace: MobileDatabaseWorkspace? = nil, history: [MobileQueryHistoryItem] = [], restoreHistory: ((MobileQueryHistoryItem) -> Void)? = nil) {
@@ -101,7 +100,6 @@ struct MobileWorkspaceView: View {
                         Menu {
                             Button("格式化选区或当前语句") { formatting.format(.selectionOrCurrentStatement) }
                             Button("格式化整个文稿") { formatting.format(.document) }
-                            Button("编辑器设置…", systemImage: "slider.horizontal.3") { showingSettings = true }
                         } label: {
                             Image(systemName: "text.alignleft").frame(width: 32, height: 44).contentShape(.rect)
                         }.accessibilityLabel("格式化 SQL").accessibilityIdentifier("sqlFormatting")
@@ -154,7 +152,6 @@ struct MobileWorkspaceView: View {
         .sheet(isPresented: Binding(get: { documentWorkspace?.showingDocuments == true }, set: { documentWorkspace?.showingDocuments = $0 })) {
             if let documentWorkspace { MobileSQLDocumentsView(workspace: documentWorkspace) }
         }
-        .sheet(isPresented: $showingSettings) { MobileEditorSettingsView(preferences: editorPreferences, connection: model.editorConfiguration) }
         .sheet(isPresented: $showingSnippets) { MobileSQLSnippetsView(store: snippets) }
         .sheet(item: $model.sqlConfirmation) { confirmation in
             NavigationStack {

@@ -12,7 +12,7 @@ import QueryCraftMobileCore
         let database = type == .mysql ? target ?? "qc_workspace_source" : type == .postgresql ? "querycraft_ios_pg" : "querycraft_ios_drivers"
         let schema = type == .postgresql ? target ?? "workspace_source" : ""
         return .init(endpoint: .init(profileID: UUID(), database: database, schema: schema), configuration: .init(databaseType: type,
-            host: "127.0.0.1", port: port, username: type == .postgresql ? "postgres" : "root",
+            host: MobileFixtureEndpoint.host, port: port, username: type == .postgresql ? "postgres" : "root",
             password: type == .mysql ? "qc-workspace-mysql" : type == .postgresql ? "querycraft-proof-pg" : nil,
             database: database, tlsMode: .disabled))
     }

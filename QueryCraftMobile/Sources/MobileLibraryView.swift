@@ -16,6 +16,7 @@ struct MobileLibraryView: View {
             }
         }
         .sheet(isPresented: $app.showingTransfer) { if let model = app.transferModel { MobileTransferView(model: model) } }
+        .sheet(isPresented: $app.showingSettings) { MobileSettingsView(connection: app.workspace?.query.editorConfiguration) }
         .sheet(item: $app.editingConnection) { draft in MobileConnectionForm(draft: draft) { try app.save(draft) } }
         .sheet(item: $app.passwordPrompt) { profile in
             MobilePasswordPrompt(profile: profile) { password in app.open(profile, suppliedPassword: password) }

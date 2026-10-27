@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct MobileEditorSettingsView: View {
     @Bindable var preferences: MobileEditorPreferences
     var connection: MobileSQLConfiguration? = nil
+    var isEmbedded = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var mode = EditorColorMode.light
@@ -16,7 +17,7 @@ struct MobileEditorSettingsView: View {
     @State private var changeKey: String?
     @State private var replaying = false
     var body: some View {
-        NavigationStack {
+        MobileSettingsNavigation(embedded: isEmbedded) {
             Form {
                 Section("字体") {
                     Picker("等宽字体", selection: $preferences.fontFamily) {
@@ -76,8 +77,9 @@ struct MobileEditorSettingsView: View {
                 Section { Button("恢复编辑器默认设置", role: .destructive) { preferences.reset() } }
                 if let message { Section { Text(message).foregroundStyle(.red) } }
             }
+            .mobileSettingsCanvas()
             .navigationTitle("编辑器设置").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .toolbar { if !isEmbedded { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } } }
         }
         .onChange(of: colorScheme, initial: true) { _, scheme in if !choseMode { mode = scheme == .dark ? .dark : .light } }
         .onChange(of: preferences.colors) { old, next in
@@ -98,7 +100,7 @@ struct MobileEditorSettingsView: View {
             if case .failure(let error) = result, (error as? CocoaError)?.code != .userCancelled { message = error.localizedDescription }
         }
     }
-    private var fonts: [String] { UIFont.familyNames.filter { family in UIFont.fontNames(forFamilyName: family).contains { UIFont(name: $0, size: 15)?.fontDescriptor.symbolicTraits.contains(.traitMonoSpace) == true } }.sorted() }
+    private var fonts: [String] { MobileFontCatalog.families }
     private func roleTitle(_ role: EditorColorRole) -> String {
         switch role {
         case .text: "正文"; case .keyword: "关键字"; case .object: "对象"; case .property: "字段"; case .function: "函数"; case .type: "类型"

@@ -6,8 +6,7 @@ struct MobileDataExportView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var saving = false
-    private enum Input: Hashable { case target, worksheet, batch }
-    @FocusState private var focusedInput: Input?
+    @FocusState private var focusedInput: MobileExportInput?
 
     var body: some View {
         NavigationStack {
@@ -93,56 +92,11 @@ struct MobileDataExportView: View {
         .accessibilityIdentifier("dataExportOptions")
     }
 
-    @ViewBuilder private var formatOptions: some View {
-        switch model.format {
-        case .csv:
-            Toggle("包含字段名", isOn: $model.preferences.includesColumnNames)
-            nullPicker
-            Toggle("UTF-8 BOM", isOn: $model.preferences.csvIncludesUTF8BOM)
-            Picker("分隔符", selection: $model.preferences.csvDelimiter) {
-                Text("逗号").tag(WorkspaceCSVDelimiter.comma)
-                Text("Tab").tag(WorkspaceCSVDelimiter.tab)
-                Text("分号").tag(WorkspaceCSVDelimiter.semicolon)
-                Text("竖线").tag(WorkspaceCSVDelimiter.pipe)
-            }
-            Picker("换行", selection: $model.preferences.csvLineEnding) {
-                Text("CRLF").tag(WorkspaceCSVLineEnding.crlf); Text("LF").tag(WorkspaceCSVLineEnding.lf)
-            }
-            Picker("引号", selection: $model.preferences.csvQuotePolicy) {
-                Text("按需").tag(WorkspaceCSVQuotePolicy.asNeeded); Text("所有文本").tag(WorkspaceCSVQuotePolicy.allText)
-            }
-            Toggle("防止电子表格公式执行", isOn: $model.preferences.sanitizesSpreadsheetFormulas)
-        case .json:
-            Picker("布局", selection: $model.preferences.jsonLayout) {
-                Text("对象数组").tag(WorkspaceJSONLayout.objects)
-                Text("字段与行").tag(WorkspaceJSONLayout.tabular)
-                Text("逐行 JSON").tag(WorkspaceJSONLayout.lines)
-            }
-            if model.preferences.jsonLayout != .lines { Toggle("格式化 JSON", isOn: $model.preferences.prettyPrintsJSON) }
-        case .xlsx:
-            Toggle("包含字段名", isOn: $model.preferences.includesColumnNames)
-            nullPicker
-            LabeledContent("工作表名") {
-                TextField("结果", text: $model.worksheetName).multilineTextAlignment(.trailing).submitLabel(.done)
-                    .focused($focusedInput, equals: .worksheet)
-            }
-            Toggle("冻结表头", isOn: $model.preferences.xlsxFreezesHeader)
-            Toggle("自动筛选", isOn: $model.preferences.xlsxAddsAutoFilter)
-        case .sql:
-            LabeledContent("每条语句行数") {
-                TextField("1000", value: $model.preferences.sqlInsertBatchSize, format: .number.grouping(.never))
-                    .multilineTextAlignment(.trailing).keyboardType(.numbersAndPunctuation).submitLabel(.done)
-                    .focused($focusedInput, equals: .batch)
-            }
-            if model.snapshot.sqlDialect != .doris { Toggle("事务包装", isOn: $model.preferences.sqlWrapsInTransaction) }
-        }
+    private var formatOptions: some View {
+        MobileExportOptionsFields(preferences: $model.preferences, format: model.format,
+            sqlDialect: model.snapshot.sqlDialect, worksheetName: $model.worksheetName, focusedInput: $focusedInput)
     }
 
-    private var nullPicker: some View {
-        Picker("NULL 显示", selection: $model.preferences.nullStyle) {
-            Text("NULL").tag(WorkspaceDataExportNullStyle.literal); Text("空白").tag(WorkspaceDataExportNullStyle.empty)
-        }
-    }
 }
 
 /// Export the committed file URL directly. FileDocument/FileWrapper would load

@@ -8,7 +8,7 @@ import QueryCraftMobileTransport
     func testCachePagesRetainGridFrameAndWriteConfirmationRendersActualCapturedSQL() async throws {
         guard ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"] != nil else { throw XCTSkip("Requires the isolated MySQL fixture") }
         let model = MobileQueryModel(), config = try MobileSchemaIntegrationTests().config()
-        model.port = String(config.port); model.username = config.username; model.password = config.password ?? ""
+        model.host = config.host; model.port = String(config.port); model.username = config.username; model.password = config.password ?? ""
         model.database = config.database ?? ""; model.tlsMode = .required
         model.sql = "WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<999) SELECT n AS id, CONCAT('缓存记录 ',n) AS name FROM seq ORDER BY n"
         await model.execute()?.value

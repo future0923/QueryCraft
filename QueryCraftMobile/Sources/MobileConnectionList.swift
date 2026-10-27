@@ -7,6 +7,7 @@ struct MobileConnectionList: View {
         List {
             ForEach(app.library.profiles) { profile in
                 Button { app.open(profile) } label: { MobileConnectionRow(profile: profile) }
+                    .accessibilityIdentifier("connection." + profile.id.uuidString)
                     .buttonStyle(.plain)
                     .contextMenu {
                         Button("编辑", systemImage: "pencil") { app.edit(profile) }
@@ -40,6 +41,10 @@ struct MobileConnectionList: View {
         .navigationTitle("连接")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("设置", systemImage: "gearshape") { app.showingSettings = true }
+                    .accessibilityIdentifier("openSettings")
+            }
             ToolbarItem(placement: .topBarLeading) { Button("数据迁移", systemImage: "arrow.left.arrow.right") { app.openTransfer() } }
             if !app.library.profiles.isEmpty {
                 ToolbarItem(placement: .primaryAction) {

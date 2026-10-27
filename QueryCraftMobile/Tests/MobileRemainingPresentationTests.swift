@@ -9,8 +9,8 @@ import QueryCraftMobileCore
         guard ProcessInfo.processInfo.environment["PROOF_TRANSFER_MYSQL_PORT"] != nil else { throw XCTSkip("Requires owned workspace fixtures") }
         let mysql = try MobileTransferIntegrationTests.connection(.mysql), pg = try MobileTransferIntegrationTests.connection(.postgresql)
         var source = MobileDriverSupportTests.profile(.mysql), target = MobileDriverSupportTests.profile(.postgresql)
-        source.name = "迁移来源 MySQL"; source.username = "root"; source.port = mysql.configuration.port; source.database = mysql.endpoint.database
-        target.name = "迁移目标 PostgreSQL"; target.username = "postgres"; target.port = pg.configuration.port; target.database = pg.endpoint.database; target.schemaName = pg.endpoint.schema
+        source.name = "迁移来源 MySQL"; source.host = mysql.configuration.host; source.username = "root"; source.port = mysql.configuration.port; source.database = mysql.endpoint.database
+        target.name = "迁移目标 PostgreSQL"; target.host = pg.configuration.host; target.username = "postgres"; target.port = pg.configuration.port; target.database = pg.endpoint.database; target.schemaName = pg.endpoint.schema
         let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let manager = DataTransferManager(historyURL: directory.appending(path: "history.json"))

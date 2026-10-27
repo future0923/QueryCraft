@@ -16,6 +16,7 @@ final class MobileApplicationModel {
     var passwordPrompt: MobileConnectionProfile?
     var pendingDeletion: MobileConnectionProfile?
     var showingTransfer = false
+    var showingSettings = false
     private(set) var transferModel: MobileTransferModel?
     let transferManager: DataTransferManager
     var transferBlocksWrites: Bool {

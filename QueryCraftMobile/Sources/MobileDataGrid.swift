@@ -43,6 +43,7 @@ struct MobileGridData: Sendable {
 
 /// Two dimensional reuse: only cells inside the visible rectangle are materialized.
 struct MobileDataGrid: UIViewRepresentable {
+    var preferences: MobilePreferences = .shared
     let data: MobileGridData
     let revision: String
     let widthKey: String
@@ -91,13 +92,16 @@ struct MobileDataGrid: UIViewRepresentable {
     }
 
     @MainActor func apply(to view: UICollectionView, coordinator: Coordinator) {
+        let style = preferences.gridStyle
+        let styleChanged = coordinator.style != style
+        coordinator.style = style
         coordinator.parent = self
         defer { coordinator.attachSearch(to: view) }
         let timestampChanged = tracksViewport && viewport?.activeOwner == viewportOwner
             ? coordinator.timestampDisplay.configure(scope: timestampScope ?? widthKey, columns: data.metadata) : false
         let restoring = coordinator.revision.isEmpty || coordinator.restorationID != restorationID
         let changesPage = coordinator.pageContext != pageContext
-        guard coordinator.revision != revision || restoring || timestampChanged || changesPage else { return }
+        guard coordinator.revision != revision || restoring || timestampChanged || changesPage || styleChanged else { return }
         coordinator.isApplying = true
         defer { coordinator.isApplying = false; coordinator.saveViewport(view) }
         let sameShape = coordinator.columns == data.columns && coordinator.metadata == data.metadata
@@ -110,7 +114,7 @@ struct MobileDataGrid: UIViewRepresentable {
         coordinator.restorationID = restorationID
         coordinator.revision = revision
         coordinator.pageContext = pageContext
-        if !sameShape || coordinator.widthKey != widthKey || timestampChanged || (!coordinator.hasSizedRows && !data.rows.isEmpty) {
+        if !sameShape || coordinator.widthKey != widthKey || timestampChanged || styleChanged || (!coordinator.hasSizedRows && !data.rows.isEmpty) {
             coordinator.widthKey = widthKey
             coordinator.columns = data.columns
             coordinator.metadata = data.metadata
@@ -144,6 +148,7 @@ struct MobileDataGrid: UIViewRepresentable {
         var widths: [CGFloat] = []
         var restorationID: UUID?
         var isApplying = false
+        var style: MobileGridStyle?
         var axisLock = MobileGridAxisLock()
         weak var attachedSearchController: WorkspaceGridSearchController?
         private let localTimestampDisplay = MobileGridTimestampDisplay()
@@ -185,8 +190,8 @@ struct MobileDataGrid: UIViewRepresentable {
             let header = path.section == 0
             if header {
                 cell.label.text = parent.data.columns[column]
-                cell.subtitle.text = parent.data.details.indices.contains(column) ? parent.data.details[column] : ""
-                cell.label.font = .systemFont(ofSize: 15, weight: .semibold)
+                cell.subtitle.text = parent.preferences.showsColumnDetails && parent.data.details.indices.contains(column) ? parent.data.details[column] : ""
+                cell.label.font = .systemFont(ofSize: parent.preferences.dataGridFontSize, weight: .semibold)
                 cell.label.textColor = .label
                 cell.backgroundColor = .secondarySystemBackground
                 cell.resize = { [weak self, weak view] delta in
@@ -202,12 +207,12 @@ struct MobileDataGrid: UIViewRepresentable {
                 }
             } else {
                 let value = parent.data.cell(row: path.section - 1, column: column)
-                cell.label.text = timestampDisplay.preview(value, column: column, maximumCharacterCount: 200)
+                cell.label.text = timestampDisplay.preview(value, column: column, maximumCharacterCount: 200, style: style)
                     .replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
-                cell.label.font = .monospacedSystemFont(ofSize: 15, weight: .regular)
+                cell.label.font = parent.preferences.gridStyle.font
                 cell.label.textColor = value == .null ? .secondaryLabel : .label
                 cell.subtitle.text = ""
-                cell.backgroundColor = (path.section % 2 == 0) ? .secondarySystemBackground.withAlphaComponent(0.45) : .systemBackground
+                cell.backgroundColor = (parent.preferences.usesAlternatingTableRows && path.section % 2 == 0) ? .secondarySystemBackground.withAlphaComponent(0.45) : .systemBackground
                 if parent.data.deletedRows.contains(path.section - 1) {
                     cell.backgroundColor = UIColor.systemRed.withAlphaComponent(0.12)
                 } else if parent.data.pendingCells.contains(.init(row: path.section - 1, column: column)) {
@@ -317,17 +322,17 @@ struct MobileDataGrid: UIViewRepresentable {
         func automaticWidths(ignoringSavedColumn: Int? = nil) -> [CGFloat] {
             let samples = WorkspaceGridSampling.sampleIndexes(rowCount: parent.data.rows.count, columnCount: parent.data.columns.count)
             let saved = UserDefaults.standard.dictionary(forKey: "gridWidths." + parent.widthKey) ?? [:]
-            let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.monospacedSystemFont(ofSize: 15, weight: .regular)]
+            let attributes: [NSAttributedString.Key: Any] = [.font: parent.preferences.gridStyle.font]
             return parent.data.columns.enumerated().map { column, name in
                 if column != ignoringSavedColumn, let width = saved["\(column):\(name)"] as? Double, width.isFinite { return max(60, min(960, width)) }
                 var texts = [WorkspaceDatabaseDataCell.boundedPreview(name, maximumCharacterCount: 50)]
-                if parent.data.details.indices.contains(column) { texts.append(String(parent.data.details[column].prefix(50))) }
+                if parent.preferences.showsColumnDetails, parent.data.details.indices.contains(column) { texts.append(String(parent.data.details[column].prefix(50))) }
                 let mode = timestampDisplay.mode(column: column)
-                if mode == .seconds || mode == .milliseconds || (mode == .automatic && parent.data.metadata.indices.contains(column)
+                if mode == .seconds || mode == .milliseconds || (mode == .automatic && parent.preferences.formatsTimestamps && parent.data.metadata.indices.contains(column)
                     && WorkspaceTimestampDisplayFormatter.hasTimestampHint(parent.data.metadata[column])) {
                     texts.append("2000-01-01 00:00:00")
                 }
-                texts += samples.map { timestampDisplay.preview(parent.data.cell(row: $0, column: column), column: column, maximumCharacterCount: WorkspaceGridSampling.maximumMeasuredCharacters) }
+                texts += samples.map { timestampDisplay.preview(parent.data.cell(row: $0, column: column), column: column, maximumCharacterCount: WorkspaceGridSampling.maximumMeasuredCharacters, style: parent.preferences.gridStyle) }
                 let width = texts.map { ($0 as NSString).size(withAttributes: attributes).width + 24 }.max() ?? 100
                 return min(WorkspaceGridSampling.maximumAutomaticColumnWidth, max(96, ceil(width)))
             }

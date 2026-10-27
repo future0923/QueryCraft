@@ -7,7 +7,7 @@ import QueryCraftMobileTransport
 struct MobileDataEditingTests {
     private func config(user: String = "proof_writer") throws -> MobileSQLConfiguration {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
-        return .init(host: "127.0.0.1", port: port, username: user,
+        return .init(host: MobileFixtureEndpoint.host, port: port, username: user,
             password: user == "proof_writer" ? "querycraft-proof-writer" : "querycraft-proof-reader",
             database: "querycraft_ios_edit", tlsMode: .required)
     }

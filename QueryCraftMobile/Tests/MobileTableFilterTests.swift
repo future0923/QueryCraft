@@ -149,6 +149,6 @@ struct MobileTableFilterTests {
 
     private func configuration() throws -> MobileSQLConfiguration {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
-        return .init(host: "127.0.0.1", port: port, username: "proof_reader", password: "querycraft-proof-reader", database: "querycraft_ios_proof", tlsMode: .required)
+        return .init(host: MobileFixtureEndpoint.host, port: port, username: "proof_reader", password: "querycraft-proof-reader", database: "querycraft_ios_proof", tlsMode: .required)
     }
 }

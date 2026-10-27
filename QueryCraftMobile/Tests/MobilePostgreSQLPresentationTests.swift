@@ -7,7 +7,7 @@ import QueryCraftMobileCore
 @MainActor final class MobilePostgreSQLPresentationTests: XCTestCase {
     func testLivePostgreSQLWorkspaceRendersSchemaAndKeepsGridOnRefresh() async throws {
         guard let port = ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"].flatMap(Int.init) else { throw XCTSkip("Requires isolated PostgreSQL fixture") }
-        let profile = MobileConnectionProfile(id: UUID(), name: "PostgreSQL 验证", host: "127.0.0.1", port: port, username: "proof_reader", database: "querycraft_ios_pg", tlsMode: .disabled, remembersPassword: false, requiresPassword: true, driver: .postgresql, schemaName: "audit")
+        let profile = MobileConnectionProfile(id: UUID(), name: "PostgreSQL 验证", host: MobileFixtureEndpoint.host, port: port, username: "proof_reader", database: "querycraft_ios_pg", tlsMode: .disabled, remembersPassword: false, requiresPassword: true, driver: .postgresql, schemaName: "audit")
         let app = MobileApplicationModel(repository: PostgreSQLPresentationLibrary(profile))
         app.open(profile, suppliedPassword: "querycraft-proof-pg")
         let workspace = try XCTUnwrap(app.workspace)
@@ -41,7 +41,7 @@ import QueryCraftMobileCore
     }
     func testLivePostgreSQLTableEntryStagesAndRendersNativeEditor() async throws {
         guard let port = ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"].flatMap(Int.init) else { throw XCTSkip("Requires isolated PostgreSQL fixture") }
-        let profile = MobileConnectionProfile(id: UUID(), name: "PG 编辑", host: "127.0.0.1", port: port, username: "proof_writer", database: "querycraft_ios_pg", tlsMode: .disabled, remembersPassword: false, requiresPassword: true, driver: .postgresql, schemaName: "mobile_other")
+        let profile = MobileConnectionProfile(id: UUID(), name: "PG 编辑", host: MobileFixtureEndpoint.host, port: port, username: "proof_writer", database: "querycraft_ios_pg", tlsMode: .disabled, remembersPassword: false, requiresPassword: true, driver: .postgresql, schemaName: "mobile_other")
         let app = MobileApplicationModel(repository: PostgreSQLPresentationLibrary(profile))
         app.open(profile, suppliedPassword: "querycraft-proof-pg-writer")
         let workspace = try XCTUnwrap(app.workspace)

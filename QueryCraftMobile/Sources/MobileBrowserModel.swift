@@ -45,7 +45,7 @@ final class MobileBrowserModel {
     @ObservationIgnored var didRestoreSelection: ((MobileDatabaseObject) -> Void)?
     @ObservationIgnored private var pendingRestoration: MobileBrowserRestoration?
     var tab: Tab = .data
-    var pageSize = 100
+    var pageSize: Int
     private(set) var sortColumn: String?
     private(set) var ascending = true
     private(set) var dataFilter = WorkspaceDatabaseDataFilter.empty
@@ -57,7 +57,8 @@ final class MobileBrowserModel {
     @ObservationIgnored private var tableTask: Task<Void, Never>?
     private(set) var isBackgrounded = false
 
-    init(configuration: MobileSQLConfiguration, service: any MobileSQLServicing = MobileMySQLService(), mutationService: any MobileDataMutating = MobileDataMutationService(), supportsEditing: Bool = true) {
+    init(configuration: MobileSQLConfiguration, service: any MobileSQLServicing = MobileMySQLService(), mutationService: any MobileDataMutating = MobileDataMutationService(), supportsEditing: Bool = true, preferences: MobilePreferences = .shared) {
+        pageSize = preferences.tableDataPageSize
         self.supportsEditing = supportsEditing
         self.configuration = configuration
         self.selectedSchema = configuration.schemaName

@@ -6,7 +6,7 @@ import QueryCraftMobileCore
 @Suite(.serialized) @MainActor struct MobileElasticsearchTests {
     nonisolated static var port: Int? { ProcessInfo.processInfo.environment["PROOF_ELASTICSEARCH_PORT"].flatMap(Int.init) }
     static func profile(port: Int) -> MobileConnectionProfile {
-        .init(id: UUID(), name: "ES 隔离验证", host: "127.0.0.1", port: port, username: "", database: "", tlsMode: .disabled, remembersPassword: false, requiresPassword: false, driver: .elasticsearch, authentication: .none)
+        .init(id: UUID(), name: "ES 隔离验证", host: MobileFixtureEndpoint.host, port: port, username: "", database: "", tlsMode: .disabled, remembersPassword: false, requiresPassword: false, driver: .elasticsearch, authentication: .none)
     }
     private func fixture() async throws -> (MobileElasticsearchWorkspace, String, any MobileElasticsearchServing) {
         let port = try #require(Self.port)

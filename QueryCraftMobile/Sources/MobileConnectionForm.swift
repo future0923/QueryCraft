@@ -14,7 +14,7 @@ struct MobileConnectionForm: View {
                     if draft.driver == .elasticsearch {
                         Picker("认证", selection: $draft.authentication) { ForEach(MobileAuthentication.allCases) { Text($0.title).tag($0) } }
                     }
-                } footer: { Text("PostgreSQL 支持表数据编辑、SQL 写入和事务。Redis 支持键值编辑；Doris 和 Elasticsearch 提供只读浏览，Kafka 尚未移植。") }
+                } footer: { Text("MySQL、PostgreSQL 支持表数据编辑、SQL 写入和事务。Redis 支持键值编辑，Elasticsearch 支持文档与索引管理；Doris 提供只读浏览，Kafka 尚未移植。") }
                 Section(draft.driver.title) {
                     TextField("连接名称", text: $draft.name)
                     TextField("服务器", text: $draft.host).textContentType(.URL)
@@ -37,7 +37,7 @@ struct MobileConnectionForm: View {
                     Button("测试连接") { testConnection() }.disabled(draft.isTesting)
                     HStack {
                         ProgressView().opacity(draft.isTesting ? 1 : 0)
-                        Text(draft.message ?? "凭据不会写入连接文件。Redis 当前不支持 TLS；Doris 与 Elasticsearch 提供只读浏览。")
+                        Text(draft.message ?? "凭据不会写入连接文件。Redis 当前不支持 TLS；Doris 提供只读浏览，Elasticsearch 写操作须预览并确认。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }.frame(minHeight: 44)
                 }

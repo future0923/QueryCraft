@@ -7,7 +7,7 @@ import QueryCraftMobileTransport
 @MainActor @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"] != nil))
 struct MobilePostgreSQLParityTests {
     static func configuration(user: String = "postgres") throws -> MobileSQLConfiguration {
-        .init(host: "127.0.0.1", port: try #require(ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"].flatMap(Int.init)),
+        .init(host: MobileFixtureEndpoint.host, port: try #require(ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"].flatMap(Int.init)),
               username: user, password: "querycraft-proof-pg", database: "querycraft_ios_pg", tlsMode: .disabled, driver: .postgresql)
     }
     @discardableResult static func query(_ sql: String) async throws -> PostgreSQLCQueryResult {

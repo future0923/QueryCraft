@@ -66,9 +66,14 @@ struct ElasticsearchMappingWriteTests {
         await session.close()
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["QUERYCRAFT_ES_LIVE_TESTS"] == "1"), arguments: [19280, 19290])
+    private static var livePorts: [Int] {
+        ProcessInfo.processInfo.environment["QUERYCRAFT_ES_LIVE_PORTS"].map {
+            $0.split(separator: ",").compactMap { Int($0) }
+        } ?? [19280, 19290]
+    }
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["QUERYCRAFT_ES_LIVE_TESTS"] == "1"), arguments: Self.livePorts)
     func liveMappingAndREST(port: Int) async throws {
-        let session = try makeSession(host: "127.0.0.1", port: port, stub: false)
+        let session = try makeSession(host: ProcessInfo.processInfo.environment["QUERYCRAFT_ES_LIVE_HOST"] ?? "127.0.0.1", port: port, stub: false)
         try await session.connect()
         let prefix = "qc_mapping_" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
         let index = prefix + "_index", secondIndex = prefix + "_other", alias = prefix + "_alias", stream = prefix + "_stream", template = prefix + "_template"

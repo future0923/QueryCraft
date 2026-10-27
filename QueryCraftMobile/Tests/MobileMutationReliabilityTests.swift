@@ -7,7 +7,7 @@ import QueryCraftMobileTransport
 @MainActor struct MobileMutationReliabilityTests {
     private func configuration() throws -> MobileSQLConfiguration {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
-        return .init(host: "127.0.0.1", port: port, username: "proof_writer", password: "querycraft-proof-writer", database: "querycraft_ios_edit", tlsMode: .required)
+        return .init(host: MobileFixtureEndpoint.host, port: port, username: "proof_writer", password: "querycraft-proof-writer", database: "querycraft_ios_edit", tlsMode: .required)
     }
     private func fixture(_ table: String, mode: FaultConnection.Mode) async throws -> (MobileTableChanges, FaultConnection) {
         let config = try configuration(), object = MobileDatabaseObject(database: "querycraft_ios_edit", name: table, kind: .table, comment: "")

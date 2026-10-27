@@ -64,7 +64,7 @@ struct MobileSQLSchemaTests {
 
     @Test func realCatalogSharedQueriesSupportViewsCrossDatabaseAndAliasCompletion() async throws {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
-        let configuration = MobileSQLConfiguration(host: "127.0.0.1", port: port, username: "proof_reader", password: "querycraft-proof-reader", database: "querycraft_ios_proof", tlsMode: .required)
+        let configuration = MobileSQLConfiguration(host: MobileFixtureEndpoint.host, port: port, username: "proof_reader", password: "querycraft-proof-reader", database: "querycraft_ios_proof", tlsMode: .required)
         let service = MobileMySQLService()
         let databases = try await service.editorCatalog(configuration: configuration)
         #expect(databases.contains { $0.name == "querycraft_ios_other" })

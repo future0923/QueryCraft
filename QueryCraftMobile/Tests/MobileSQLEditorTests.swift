@@ -267,7 +267,7 @@ import QueryCraftMobileTransport
         let original = "-- 😀 中文\nsel", box = EditorBox("-- 😀 中文\nsel")
         box.selection = .init(location: original.utf16.count, length: 0)
         let controls = MobileSQLSnippetContext()
-        let (view, coordinator, window, previous) = try mount(box, snippets: SQLSnippetStore.shared.completionSources, snippetContext: controls)
+        let (view, coordinator, window, previous) = try mount(box, snippets: SQLSnippetStore.defaultSnippets.map(SQLSnippetCompletionSource.init(snippet:)), snippetContext: controls)
         defer { coordinator.stop(); window.endEditing(true); window.isHidden = true; previous?.makeKey() }
         view.becomeFirstResponder()
         try await wait { coordinator.items.contains { $0.kind == .snippet } }
@@ -288,7 +288,7 @@ import QueryCraftMobileTransport
     func testSnippetTouchNavigationTracksEditsEmptyStopsBacktabAndExit() async throws {
         let box = EditorBox("cte"); box.selection = .init(location: 3, length: 0)
         let controls = MobileSQLSnippetContext()
-        let (view, coordinator, window, previous) = try mount(box, snippets: SQLSnippetStore.shared.completionSources, snippetContext: controls)
+        let (view, coordinator, window, previous) = try mount(box, snippets: SQLSnippetStore.defaultSnippets.map(SQLSnippetCompletionSource.init(snippet:)), snippetContext: controls)
         defer { coordinator.stop(); window.endEditing(true); window.isHidden = true; previous?.makeKey() }
         view.becomeFirstResponder()
         try await wait { coordinator.items.contains { $0.kind == .snippet } }
@@ -319,7 +319,7 @@ import QueryCraftMobileTransport
     func testSnippetIMEAndExternalReplacementKeepNavigationSafe() async throws {
         let box = EditorBox("join"); box.selection = .init(location: 4, length: 0)
         let controls = MobileSQLSnippetContext()
-        let (view, coordinator, window, previous) = try mount(box, snippets: SQLSnippetStore.shared.completionSources, snippetContext: controls)
+        let (view, coordinator, window, previous) = try mount(box, snippets: SQLSnippetStore.defaultSnippets.map(SQLSnippetCompletionSource.init(snippet:)), snippetContext: controls)
         defer { coordinator.stop(); window.endEditing(true); window.isHidden = true; previous?.makeKey() }
         view.becomeFirstResponder()
         try await wait { coordinator.items.contains { $0.kind == .snippet } }
@@ -350,7 +350,7 @@ import QueryCraftMobileTransport
 
     func testChangingEnabledSnippetsRetiresPendingCandidatesImmediately() async throws {
         let box = EditorBox("sel"); box.selection = .init(location: 3, length: 0)
-        let (view, coordinator, window, previous) = try mount(box, snippets: SQLSnippetStore.shared.completionSources)
+        let (view, coordinator, window, previous) = try mount(box, snippets: SQLSnippetStore.defaultSnippets.map(SQLSnippetCompletionSource.init(snippet:)))
         defer { coordinator.stop(); window.endEditing(true); window.isHidden = true; previous?.makeKey() }
         view.becomeFirstResponder()
         try await wait { coordinator.items.contains { $0.kind == .snippet } }
@@ -360,6 +360,7 @@ import QueryCraftMobileTransport
         XCTAssertFalse(coordinator.items.contains { $0.kind == .snippet })
     }
 
+    private var completionDiagnostics: (() -> String)?
     private func mount(_ box: EditorBox, schema: MobileSQLSchemaCatalog = MobileSQLSchemaCatalog(), defaultDatabase: String = "",
                        snippets: [SQLSnippetCompletionSource] = [], snippetContext: MobileSQLSnippetContext? = nil) throws -> (MobileSQLTextView, MobileSQLEditor.Coordinator, UIWindow, UIWindow?) {
         let editor = MobileSQLEditor(text: .init(get: { box.text }, set: { box.text = $0 }),
@@ -368,6 +369,9 @@ import QueryCraftMobileTransport
             snippets: snippets, snippetContext: snippetContext) {}
         let coordinator = editor.makeCoordinator()
         let view = MobileSQLEditor.makeTextView(coordinator: coordinator)
+        completionDiagnostics = { [weak view, weak coordinator] in
+            "text=\(view?.text ?? "nil"); selection=\(String(describing: view?.selectedRange)); firstResponder=\(view?.isFirstResponder == true); composing=\(view?.markedTextRange != nil); sources=\(coordinator?.parent.snippets.map(\.trigger) ?? []); candidates=\(coordinator?.items.map(\.label) ?? [])"
+        }
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow), window = UIWindow(windowScene: scene)
         let host = UIViewController(); host.view.backgroundColor = .systemBackground
@@ -380,7 +384,7 @@ import QueryCraftMobileTransport
     private func wait(_ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertTrue(condition())
+        XCTAssertTrue(condition(), completionDiagnostics?() ?? "No editor diagnostic")
     }
 }
 

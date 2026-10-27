@@ -8,7 +8,7 @@ import QueryCraftMobileTransport
     private func model() throws -> MobileQueryModel {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
         let model = MobileQueryModel()
-        model.host = "127.0.0.1"; model.port = String(port); model.username = "proof_reader"
+        model.host = MobileFixtureEndpoint.host; model.port = String(port); model.username = "proof_reader"
         model.password = "querycraft-proof-reader"; model.database = "querycraft_ios_proof"; model.tlsMode = .required
         return model
     }

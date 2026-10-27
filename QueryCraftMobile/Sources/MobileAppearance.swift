@@ -35,6 +35,7 @@ extension View {
     @MainActor func mobileCanvas() -> some View { modifier(MobileCanvas()) }
     @MainActor func mobileAppearance() -> some View {
         tint(MobileAppearance.tint)
+            .preferredColorScheme(MobilePreferences.shared.colorScheme)
             .toggleStyle(MobileSwitchStyle())
             .background(MobileWindowTint().frame(width: 0, height: 0).accessibilityHidden(true).allowsHitTesting(false))
     }

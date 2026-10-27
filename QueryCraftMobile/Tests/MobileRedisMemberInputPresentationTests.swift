@@ -72,10 +72,19 @@ import QueryCraftMobileCore
         guard env["QUERYCRAFT_PHYSICAL_REDIS_ACCEPTANCE"] == "1", let owner = env["QUERYCRAFT_PHYSICAL_REDIS_OWNER"], UUID(uuidString: owner) != nil else {
             throw XCTSkip("Physical Redis writes require explicit user-authorized acceptance env")
         }
-        let profiles = try MobileLibraryRepository().load().profiles.filter { $0.driver == .redis }
-        let preferred = profiles.filter { $0.name == "测试" }
-        let profile = try XCTUnwrap(preferred.count == 1 ? preferred.first : profiles.count == 1 ? profiles.first : nil, "Select the intended saved Redis profile before physical acceptance")
-        let password = try MobileKeychainStore().password(for: profile.id)
+        let profile: MobileConnectionProfile
+        let password: String?
+        if let host = env["QUERYCRAFT_PHYSICAL_REDIS_HOST"] {
+            profile = .init(id: UUID(), name: "Physical isolated Redis", host: host,
+                port: try XCTUnwrap(env["QUERYCRAFT_PHYSICAL_REDIS_PORT"].flatMap(Int.init)), username: "", database: "0",
+                tlsMode: .disabled, remembersPassword: false, requiresPassword: false, driver: .redis)
+            password = nil
+        } else {
+            let profiles = try MobileLibraryRepository().load().profiles.filter { $0.driver == .redis }
+            let preferred = profiles.filter { $0.name == "测试" }
+            profile = try XCTUnwrap(preferred.count == 1 ? preferred.first : profiles.count == 1 ? profiles.first : nil, "Select the intended saved Redis profile before physical acceptance")
+            password = try MobileKeychainStore().password(for: profile.id)
+        }
         guard !profile.requiresPassword || password != nil else { throw MobileQueryError.invalidConnection }
         let database = try XCTUnwrap(RedisConnectionConfiguration.databaseIndex(from: profile.database))
         let client = RedisClient(configuration: .init(host: profile.host, port: profile.port, username: profile.username, password: password, databaseIndex: database))

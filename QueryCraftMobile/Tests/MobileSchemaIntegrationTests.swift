@@ -7,7 +7,7 @@ import QueryCraftMobileTransport
 @MainActor struct MobileSchemaIntegrationTests {
     func config(reader: Bool = false) throws -> MobileSQLConfiguration {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
-        return .init(host: "127.0.0.1", port: port, username: reader ? "proof_reader" : "proof_table_admin",
+        return .init(host: MobileFixtureEndpoint.host, port: port, username: reader ? "proof_reader" : "proof_table_admin",
                      password: reader ? "querycraft-proof-reader" : "querycraft-proof-table-admin", database: "querycraft_ios_table_actions", tlsMode: .required)
     }
     func object(_ name: String) -> MobileDatabaseObject { .init(database: "querycraft_ios_table_actions", name: name, kind: .table, comment: "") }

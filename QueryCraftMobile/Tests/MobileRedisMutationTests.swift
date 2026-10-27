@@ -6,6 +6,7 @@ import QueryCraftMobileCore
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["PROOF_REDIS_PORT"] != nil)) @MainActor struct MobileRedisMutationTests {
     static func profile() throws -> MobileConnectionProfile {
         var profile = MobileDriverSupportTests.profile(.redis)
+        profile.host = MobileFixtureEndpoint.host
         profile.port = try #require(ProcessInfo.processInfo.environment["PROOF_REDIS_PORT"].flatMap(Int.init))
         return profile
     }
@@ -15,7 +16,7 @@ import QueryCraftMobileCore
         try await client.connect()
         do {
             try await body(client, .init(profile: profile, password: nil), key)
-            _ = try await client.execute(["DEL", key]); _ = try await client.execute(["DEL", key], databaseIndex: 1)
+            _ = try await client.execute(["DEL", key], databaseIndex: 0); _ = try await client.execute(["DEL", key], databaseIndex: 1)
             await client.close()
         } catch {
             _ = try? await client.execute(["DEL", key], databaseIndex: 0); _ = try? await client.execute(["DEL", key], databaseIndex: 1)

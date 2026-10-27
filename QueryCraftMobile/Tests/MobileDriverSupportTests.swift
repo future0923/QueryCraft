@@ -4,6 +4,10 @@ import QueryCraftMobileCore
 import QueryCraftMobileTransport
 @testable import QueryCraftMobileProof
 
+enum MobileFixtureEndpoint {
+    static var host: String { ProcessInfo.processInfo.environment["PROOF_SERVER_HOST"] ?? "127.0.0.1" }
+}
+
 @MainActor struct MobileDriverSupportTests {
     static func profile(_ driver: MobileDriver = .redis) -> MobileConnectionProfile {
         .init(id: UUID(), name: driver.title, host: "127.0.0.1", port: driver.port, username: "", database: "0", tlsMode: .disabled, remembersPassword: false, requiresPassword: false, driver: driver)
@@ -137,7 +141,7 @@ import QueryCraftMobileTransport
     }
     @Test(.enabled(if: ProcessInfo.processInfo.environment["PROOF_ELASTICSEARCH_PORT"] != nil)) func elasticsearchLoopbackReadsRealServer() async throws {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_ELASTICSEARCH_PORT"].flatMap(Int.init))
-        var profile = Self.profile(.elasticsearch); profile.port = port; profile.authentication = .none
+        var profile = Self.profile(.elasticsearch); profile.host = MobileFixtureEndpoint.host; profile.port = port; profile.authentication = .none
         let service = MobileResourceService(profile: profile, password: nil)
         try await service.test()
         let catalog = try await service.catalog(scope: "Elasticsearch", cursor: 0, search: "")
@@ -152,7 +156,7 @@ import QueryCraftMobileTransport
     }
     @Test(.enabled(if: ProcessInfo.processInfo.environment["PROOF_DORIS_PORT"] != nil)) func dorisLoopbackReadsRealServerAndDoesNotOfferEdits() async throws {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_DORIS_PORT"].flatMap(Int.init))
-        let configuration = MobileSQLConfiguration(host: "127.0.0.1", port: port, username: "root", password: nil, database: "querycraft_ios_drivers", tlsMode: .disabled)
+        let configuration = MobileSQLConfiguration(host: MobileFixtureEndpoint.host, port: port, username: "root", password: nil, database: "querycraft_ios_drivers", tlsMode: .disabled)
         let service = MobileDorisService()
         #expect(try await service.databases(configuration: configuration).contains("querycraft_ios_drivers"))
         let objects = try await service.objects(configuration: configuration, database: "querycraft_ios_drivers", search: "", kind: .table)
@@ -170,7 +174,7 @@ import QueryCraftMobileTransport
     }
     @Test(.enabled(if: ProcessInfo.processInfo.environment["PROOF_REDIS_PORT"] != nil)) func redisLoopbackReadsRealProtocol() async throws {
         guard let raw = ProcessInfo.processInfo.environment["PROOF_REDIS_PORT"], let port = Int(raw) else { return }
-        var profile = Self.profile(); profile.port = port; profile.database = "0"
+        var profile = Self.profile(); profile.host = MobileFixtureEndpoint.host; profile.port = port; profile.database = "0"
         let service = MobileResourceService(profile: profile, password: nil)
         try await service.test()
         #expect(try await service.scopes().contains("0"))

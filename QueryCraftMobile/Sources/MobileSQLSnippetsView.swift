@@ -35,12 +35,13 @@ struct MobileSQLSnippetControls: View {
 
 struct MobileSQLSnippetsView: View {
     @Bindable var store: SQLSnippetStore
+    var isEmbedded = false
     @Environment(\.dismiss) private var dismiss
     @State private var editing: SQLSnippet?
     @State private var restoring = false
 
     var body: some View {
-        NavigationStack {
+        MobileSettingsNavigation(embedded: isEmbedded) {
             List {
                 Section {
                     ForEach(store.snippets) { snippet in
@@ -70,9 +71,10 @@ struct MobileSQLSnippetsView: View {
                 }
                 Section { Button("恢复默认片段", role: .destructive) { restoring = true } }
             }
+            .mobileSettingsCanvas()
             .navigationTitle("代码片段").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
+                if !isEmbedded { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } } }
                 ToolbarItem(placement: .primaryAction) {
                     Button { editing = .init(name: "", trigger: "", content: "") } label: { Image(systemName: "plus") }
                         .accessibilityLabel("新增代码片段")

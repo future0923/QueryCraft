@@ -130,6 +130,7 @@ targets:
     type: application
     platform: iOS
     sources:
+      - Assets.xcassets
       - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchFilterTranslator.swift
       - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchWorkspaceSession.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SavedQuery.swift
@@ -137,6 +138,9 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryDocumentRestorationState.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceQueryDocumentCloseSnapshot.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/QueryResultRowLimit.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/ApplicationAppearance.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/TableNullDisplayStyle.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/TableEmptyStringDisplayStyle.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorCompletionKey.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorIndentationStyle.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorThemeArchive.swift
@@ -362,6 +366,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.MobileProof
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: QueryCraft
         INFOPLIST_KEY_LSRequiresIPhoneOS: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -415,6 +420,17 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.MobileProof.Tests
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB $(BUILT_PRODUCTS_DIR)/include $(SRCROOT)/../QueryCraftDrivers/Sources/CLibPQ
+  QueryCraftMobileSystemUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - SystemUITests
+    dependencies:
+      - target: QueryCraftMobileProof
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.MobileProof.SystemUITests
+        TEST_TARGET_NAME: QueryCraftMobileProof
 schemes:
   QueryCraftMobileProof:
     build:
@@ -426,3 +442,12 @@ schemes:
       config: Debug
       targets:
         - QueryCraftMobileProofTests
+  QueryCraftMobilePhysicalUI:
+    build:
+      targets:
+        QueryCraftMobileProof: all
+        QueryCraftMobileSystemUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - QueryCraftMobileSystemUITests

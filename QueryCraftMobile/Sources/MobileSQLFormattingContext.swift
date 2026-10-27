@@ -21,10 +21,23 @@ import UIKit
             errorMessage = SQLFormattingError.editorUnavailable.localizedDescription
             return nil
         }
+        // Capture the user's action before yielding to the keyboard/input loop.
+        // Composition may end (or text/caret may change) before the Task starts.
+        guard editor.markedTextRange == nil else {
+            errorMessage = SQLFormattingError.textCompositionActive.localizedDescription
+            return nil
+        }
+        let text = editor.text, selection = editor.selectedRange
         let generation = generation
         isFormatting = true
         let task = Task { [weak self] in
-            do { _ = try await action(request) }
+            do {
+                try Task.checkCancellation()
+                guard editor.text == text, editor.selectedRange == selection, editor.markedTextRange == nil else {
+                    throw SQLFormattingError.sourceChanged
+                }
+                _ = try await action(request)
+            }
             catch is CancellationError { }
             catch {
                 if let self, self.generation == generation, !Task.isCancelled {

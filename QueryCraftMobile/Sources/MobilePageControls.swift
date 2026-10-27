@@ -10,7 +10,7 @@ struct MobilePageOptions: View {
                 .disabled(model.columns?.isEmpty != false)
         }
         Picker("每页行数", selection: $model.pageSize) {
-            ForEach([25, 50, 100, 200], id: \.self) { Text("\($0) 行").tag($0) }
+            ForEach(MobilePreferences.pageSizes, id: \.self) { Text("\($0) 行").tag($0) }
         }
         if let columns = model.columns {
             Menu("排序", systemImage: "arrow.up.arrow.down") {

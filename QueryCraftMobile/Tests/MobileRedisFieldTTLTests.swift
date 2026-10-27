@@ -48,8 +48,8 @@ import QueryCraftMobileCore
             _ = try await client.execute(["DEL", key], databaseIndex: 1); await client.close()
         } catch { _ = try? await client.execute(["DEL", key], databaseIndex: 1); await client.close(); throw error }
     }
-    @Test func deniedTTLReadCannotBecomePersistentSnapshot() async throws {
-        guard ProcessInfo.processInfo.environment["PROOF_REDIS_FIELD_TTL"] == "1" else { return }
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PROOF_REDIS_FIELD_TTL"] == "1"))
+    func deniedTTLReadCannotBecomePersistentSnapshot() async throws {
         let profile = try MobileRedisMutationTests.profile(), key = "querycraft:field-acl:" + UUID().uuidString
         let username = "qc_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let client = RedisClient(configuration: .init(host: profile.host, port: profile.port, username: "", password: nil, databaseIndex: 0))

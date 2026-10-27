@@ -9,6 +9,15 @@ import QueryCraftMobileTransport
 @MainActor final class MobilePhysicalSQLAcceptanceTests: XCTestCase {
     func testPhysicalSQLConnectionPreflight() async throws {
         try authorize()
+        let env = ProcessInfo.processInfo.environment
+        if env["QUERYCRAFT_PHYSICAL_MYSQL_HOST"] != nil, env["QUERYCRAFT_PHYSICAL_PG_HOST"] != nil {
+            for config in [try mysqlConfiguration(), try postgresConfiguration()] {
+                let result = try await read(config, "SELECT 1 AS physical_probe")
+                XCTAssertEqual(result.rows, [["1"]])
+            }
+            attach("MySQL and PostgreSQL isolated fixture SELECT 1 passed; no saved profiles accessed", name: "physical-sql-preflight")
+            return
+        }
         let profiles = try MobileLibraryRepository().load().profiles.filter { $0.driver == .mysql || $0.driver == .postgresql }
         var report: [String] = []
         for driver in [MobileDriver.mysql, .postgresql] {
@@ -48,6 +57,12 @@ import QueryCraftMobileTransport
     }
 
     private func mysqlConfiguration() throws -> MobileSQLConfiguration {
+        let env = ProcessInfo.processInfo.environment
+        if let host = env["QUERYCRAFT_PHYSICAL_MYSQL_HOST"] {
+            return .init(host: host, port: try XCTUnwrap(env["QUERYCRAFT_PHYSICAL_MYSQL_PORT"].flatMap(Int.init)),
+                username: "physical_acceptance", password: try XCTUnwrap(env["QUERYCRAFT_PHYSICAL_MYSQL_PASSWORD"]),
+                database: "physical_acceptance", tlsMode: .required)
+        }
         let profiles = try MobileLibraryRepository().load().profiles.filter { $0.driver == .mysql }
         let id = ProcessInfo.processInfo.environment["QUERYCRAFT_PHYSICAL_MYSQL_PROFILE"].flatMap(UUID.init(uuidString:))
         let profile = try XCTUnwrap(id.flatMap { id in profiles.first { $0.id == id } } ?? (profiles.count == 1 ? profiles.first : nil))
@@ -58,12 +73,15 @@ import QueryCraftMobileTransport
 
     func testPhysicalPostgreSQLNativeInputFilterAndEditing() async throws {
         try authorize()
+        try await acceptance(postgresConfiguration())
+    }
+
+    private func postgresConfiguration() throws -> MobileSQLConfiguration {
         let env = ProcessInfo.processInfo.environment
-        let config = MobileSQLConfiguration(host: try XCTUnwrap(env["QUERYCRAFT_PHYSICAL_PG_HOST"]),
+        return MobileSQLConfiguration(host: try XCTUnwrap(env["QUERYCRAFT_PHYSICAL_PG_HOST"]),
             port: try XCTUnwrap(env["QUERYCRAFT_PHYSICAL_PG_PORT"].flatMap(Int.init)), username: "physical_acceptance",
             password: try XCTUnwrap(env["QUERYCRAFT_PHYSICAL_PG_PASSWORD"]), database: "physical_acceptance", tlsMode: .disabled,
             driver: .postgresql, schemaName: "public")
-        try await acceptance(config)
     }
 
     private func acceptance(_ config: MobileSQLConfiguration) async throws {

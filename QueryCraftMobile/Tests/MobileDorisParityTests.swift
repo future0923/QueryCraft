@@ -8,7 +8,7 @@ import QueryCraftMobileCore
     func streamingCachePagingExportAndTrueStructureUseRealDoris() async throws {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_DORIS_PORT"].flatMap(Int.init))
         var profile = MobileDriverSupportTests.profile(.doris)
-        profile.port = port; profile.database = "querycraft_ios_drivers"; profile.username = "root"
+        profile.host = MobileFixtureEndpoint.host; profile.port = port; profile.database = "querycraft_ios_drivers"; profile.username = "root"
         let workspace = MobileDatabaseWorkspace(profile: profile, password: nil, service: MobileDorisService())
         let query = workspace.query
         let digits = "(SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9)"

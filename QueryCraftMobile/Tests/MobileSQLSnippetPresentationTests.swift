@@ -89,7 +89,7 @@ private struct SnippetRenderView: View {
         VStack {
             HStack { Text("SQL"); Spacer(); MobileSQLSnippetControls(context: controls) }.padding()
             MobileSQLEditor(text: $draft.text, selection: $draft.selection, isFocused: $draft.focused,
-                            schema: schema, defaultDatabase: "", snippets: SQLSnippetStore.shared.completionSources, snippetContext: controls) {}
+                            schema: schema, defaultDatabase: "", snippets: SQLSnippetStore.defaultSnippets.map(SQLSnippetCompletionSource.init(snippet:)), snippetContext: controls) {}
                 .frame(height: 240)
             Spacer()
         }.background(Color(uiColor: .systemBackground))

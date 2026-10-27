@@ -24,9 +24,12 @@ import QueryCraftMobileCore
         return true
     }
 
-    func preview(_ cell: WorkspaceDatabaseDataCell, column: Int, maximumCharacterCount: Int) -> String {
-        WorkspaceTimestampDisplayFormatter.shared.preview(cell,
+    func preview(_ cell: WorkspaceDatabaseDataCell, column: Int, maximumCharacterCount: Int, style: MobileGridStyle? = nil) -> String {
+        let mode = mode(column: column)
+        return WorkspaceTimestampDisplayFormatter.shared.preview(cell,
             column: columns.indices.contains(column) ? columns[column] : nil,
-            mode: mode(column: column), maximumCharacterCount: maximumCharacterCount)
+            mode: mode == .automatic && style?.formatsTimestamps == false ? .raw : mode,
+            nullDisplayText: style?.nullText ?? "NULL", emptyStringDisplayText: style?.emptyText ?? "",
+            maximumCharacterCount: maximumCharacterCount)
     }
 }

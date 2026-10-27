@@ -66,7 +66,7 @@ import QueryCraftMobileTransport
 
     @Test func realMySQLTableAliasesJoinExpressionsAndEmptyMetadata() async throws {
         let port = try #require(ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init))
-        let config = MobileSQLConfiguration(host: "127.0.0.1", port: port, username: "proof_reader",
+        let config = MobileSQLConfiguration(host: MobileFixtureEndpoint.host, port: port, username: "proof_reader",
             password: "querycraft-proof-reader", database: "querycraft_ios_proof", tlsMode: .required)
         let service = MobileMySQLService()
         let object = MobileDatabaseObject(database: "querycraft_ios_proof", name: "epoch_values", kind: .table, comment: "")

@@ -9,7 +9,7 @@ final class MobileMariaDBIntegrationTests: XCTestCase {
         guard let port = ProcessInfo.processInfo.environment["PROOF_MYSQL_PORT"].flatMap(Int.init) else {
             throw XCTSkip("Set PROOF_MYSQL_PORT for the isolated local MySQL fixture.")
         }
-        return .init(host: "127.0.0.1", port: port, username: "proof_reader",
+        return .init(host: MobileFixtureEndpoint.host, port: port, username: "proof_reader",
                      password: "querycraft-proof-reader", database: "querycraft_ios_proof", tlsMode: tls)
     }
 

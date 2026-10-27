@@ -7,13 +7,13 @@ import QueryCraftMobileTransport
 @MainActor @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"] != nil))
 struct MobilePostgreSQLSessionTests {
     func config(reader: Bool = false) throws -> MobileSQLConfiguration {
-        .init(host: "127.0.0.1", port: try #require(ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"].flatMap(Int.init)),
+        .init(host: MobileFixtureEndpoint.host, port: try #require(ProcessInfo.processInfo.environment["PROOF_POSTGRES_PORT"].flatMap(Int.init)),
               username: reader ? "proof_reader" : "proof_writer", password: reader ? "querycraft-proof-pg" : "querycraft-proof-pg-writer",
               database: "querycraft_ios_pg", tlsMode: .disabled, driver: .postgresql, schemaName: "mobile_session")
     }
     func model(reader: Bool = false, session: MobileSQLSession? = nil) throws -> MobileQueryModel {
         let config = try config(reader: reader), model = MobileQueryModel(executor: MobilePostgreSQLExecutor(), metadataService: MobilePostgreSQLService(), session: session)
-        model.driver = .postgresql; model.port = String(config.port); model.username = config.username; model.password = config.password ?? ""
+        model.driver = .postgresql; model.host = config.host; model.port = String(config.port); model.username = config.username; model.password = config.password ?? ""
         model.database = config.database ?? ""; model.schemaName = config.schemaName; model.tlsMode = config.tlsMode; model.exportDialect = .postgresql
         model.allowsDataMutation = { false }
         return model

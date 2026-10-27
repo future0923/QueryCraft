@@ -45,17 +45,40 @@ import UIKit
         model.sql = "select 'name';"
         let (view, coordinator, window, previous) = try mount(model, context)
         defer { coordinator.stop(); window.endEditing(true); window.isHidden = true; previous?.makeKey() }
-        view.becomeFirstResponder(); view.selectedRange = (view.text as NSString).range(of: "name")
+        XCTAssertTrue(view.becomeFirstResponder())
+        try await Task.sleep(for: .milliseconds(250))
+        view.selectedRange = (view.text as NSString).range(of: "name")
         view.setMarkedText("中文", selectedRange: .init(location: 2, length: 0))
         coordinator.textViewDidChange(view)
         let text = view.text
-        await context.format(.document)?.value
+        XCTAssertNotNil(view.markedTextRange, "Establish native composition before requesting formatting")
+        XCTAssertNil(context.format(.document), "Reject at the synchronous toolbar boundary before input-method IPC can finish composition")
         XCTAssertEqual(context.errorMessage, SQLFormattingError.textCompositionActive.localizedDescription)
         XCTAssertEqual(view.text, text); XCTAssertNotNil(view.markedTextRange)
         view.unmarkText(); view.text = "   "; coordinator.textViewDidChange(view)
         await context.format(.document)?.value
         XCTAssertEqual(context.errorMessage, SQLFormattingError.emptyDocument.localizedDescription)
         XCTAssertEqual(view.text, "   ")
+    }
+
+    func testFormattingRejectsInputChangedBeforeItsTaskStarts() async throws {
+        for changeText in [false, true] {
+            let model = MobileQueryModel(), context = MobileSQLFormattingContext()
+            model.sql = "select a,b from users;"
+            let (view, coordinator, window, previous) = try mount(model, context)
+            defer { coordinator.stop(); window.endEditing(true); window.isHidden = true; previous?.makeKey() }
+            let task = context.format(.document)
+            XCTAssertNotNil(task)
+            if changeText {
+                view.text += " "; coordinator.textViewDidChange(view)
+            } else {
+                view.selectedRange = .init(location: 2, length: 0); coordinator.textViewDidChangeSelection(view)
+            }
+            let expected = view.text, selection = view.selectedRange
+            await task?.value
+            XCTAssertEqual(context.errorMessage, SQLFormattingError.sourceChanged.localizedDescription)
+            XCTAssertEqual(view.text, expected); XCTAssertEqual(view.selectedRange, selection)
+        }
     }
 
     func testLateFormattingRejectsCaretAndTextChangesEvenWhenRestored() async throws {

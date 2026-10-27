@@ -43,9 +43,7 @@ final class MobileEditorPreferences {
     var indentationUnit: String { EditorPreferenceRules.indentationUnit(style: indentationStyle, width: indentationWidth) }
     var formattingOptions: SQLFormattingOptions { .init(keywordCase: keywordCase, indentationUnit: indentationUnit) }
     var font: UIFont {
-        if !fontFamily.isEmpty, let name = UIFont.fontNames(forFamilyName: fontFamily).first,
-           let font = UIFont(name: name, size: fontSize) { return font }
-        return .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        MobileFontCatalog.font(family: fontFamily, size: fontSize)
     }
     func reset() {
         colors = .init(); fontFamily = ""; fontSize = 15
