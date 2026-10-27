@@ -129,6 +129,8 @@ gh workflow run release.yml --ref main \
 
 以 `source_run_id` 恢复时，工作流先核对来源 run 已结束、属于本仓库的发布工作流，且源码提交与当前版本 tag 完全一致。按未过期产物清单只构建缺失项；源码仍固定在原 tag，不移动 tag，也不混用 main 后续功能。明确指定 `rebuild_driver` 时才强制重建该驱动。
 
+用户明确要求修复尚未发布的同一版本时，可保留失败 tag 的备份后修复该 tag；已发布版本不可替换。SSH 打包修复有一项严格限定的驱动缓存恢复：来源必须失败或取消、当前版本没有 GitHub Release、修复提交必须继承失败提交，且全部差异仅限 SSH 构建脚本、恢复检查及其测试和本流程文档。工作流、主程序、共享模块、驱动源码、依赖、配置和版本身份必须完全不变。来源只能包含驱动产物，禁止带入旧客户端或更新源；两个客户端及 MCP/SSH 必须重新构建并重新运行原生验证。其他跨提交恢复一律拒绝。
+
 ```bash
 gh workflow run release.yml --ref main \
   -f publish=true -f publish_components=true -f publish_drivers=true \

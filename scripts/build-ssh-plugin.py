@@ -8,6 +8,7 @@ from pathlib import Path
 import plistlib
 import shutil
 import subprocess
+import sys
 import tarfile
 import urllib.request
 
@@ -21,8 +22,18 @@ SOURCES = {
 
 
 def run(args, log, cwd=None, env=None):
-    with log.open('ab') as output:
-        subprocess.run([str(a) for a in args], cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT, check=True)
+    try:
+        with log.open('ab') as output:
+            subprocess.run([str(a) for a in args], cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT, check=True)
+    except subprocess.CalledProcessError:
+        # CI runners disappear after failure; retain the full log and surface
+        # the actual compiler/linker error alongside the failing command.
+        with log.open('rb') as saved:
+            saved.seek(max(0, saved.seek(0, os.SEEK_END) - 16_384))
+            tail = saved.read().decode('utf-8', errors='replace')
+        print(f'Last SSH build output ({log}):', file=sys.stderr)
+        print('\n'.join(tail.splitlines()[-80:]), file=sys.stderr)
+        raise
 
 
 def source(name, cache, destination):
@@ -111,7 +122,7 @@ def main():
     exports = architecture / 'exports.txt'
     exports.write_text(''.join('_querycraft_ssh_plugin_' + name + '\n' for name in ['version', 'create', 'run', 'cancel', 'destroy', 'file_version', 'file_create', 'file_management_version', 'pool_version', 'pool_create', 'pool_run', 'pool_invalidate', 'pool_prune', 'pool_destroy', 'progress_version', 'set_progress', 'route_version', 'set_route', 'diagnostic_version', 'diagnostic', 'terminal_version', 'set_terminal', 'terminal_resize', 'terminal_ready']))
     run(['clang', '-arch', args.arch, '-mmacosx-version-min=15.0', '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
-         '-fvisibility=hidden', '-dynamiclib', '-I', header, '-I', install / 'include',
+         '-fvisibility=hidden', '-dynamiclib', '-I', header, '-I', install / 'include', '-I', crypto / 'include',
          ROOT / 'QueryCraftSSHPlugin/src/ssh_plugin.c', install / 'lib/libssh2.a', crypto / 'lib/libcrypto.a',
          '-framework', 'Security', '-framework', 'CoreFoundation', '-lpthread',
          '-Wl,-install_name,@rpath/QueryCraftSSH', '-Wl,-exported_symbols_list,' + str(exports), '-o', binary], log)

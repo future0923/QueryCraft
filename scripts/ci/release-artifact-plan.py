@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
-"""Plan only missing release builds while pinning cached and new artifacts to one commit."""
+"""Plan missing release builds and validate the provenance of reusable artifacts."""
 import argparse
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
+import urllib.error
 import urllib.request
 
 ARCHITECTURES = [('x86_64', 'macos-15-intel'), ('arm64', 'macos-15')]
 DRIVERS = {'mysql', 'postgresql', 'doris', 'redis', 'elasticsearch', 'kafka'}
+# A failed, unpublished SSH packaging repair may retain driver artifacts only
+# when every other tracked input (including the workflow) is byte-identical.
+SSH_REPAIR_PATHS = {
+    'scripts/build-ssh-plugin.py',
+    'scripts/ci/release-artifact-plan.py',
+    'scripts/test-release-artifact-plan.py',
+    'scripts/test-ssh-distribution.py',
+    'docs/RELEASE_PROCESS.md',
+}
 
 
 def plan(available, drivers, publish_drivers, rebuild_driver='none'):
@@ -31,6 +41,35 @@ def validate_source(run, expected_commit):
         raise ValueError('Source run must finish before its artifacts can be reused')
     if run['path'] != '.github/workflows/release.yml':
         raise ValueError('Source run is not the release workflow')
+
+
+def validate_driver_recovery(run, expected_commit, available, repository='.'):
+    validate_source(run, run['head_sha'])
+    if run.get('conclusion') not in {'failure', 'cancelled', 'timed_out'}:
+        raise ValueError('Only a failed or cancelled release can use SSH repair recovery')
+    valid_names = {f'querycraft-release-driver-{driver}-{arch}'
+                   for driver in DRIVERS for arch, _ in ARCHITECTURES}
+    if not available or not available <= valid_names:
+        raise ValueError('SSH repair recovery accepts only driver artifacts; clients must be rebuilt')
+    original = run['head_sha']
+    if subprocess.run(['git', 'merge-base', '--is-ancestor', original, expected_commit],
+                      cwd=repository, check=False).returncode:
+        raise ValueError('SSH repair must descend from the failed release commit')
+    changed = set(subprocess.check_output(
+        ['git', 'diff', '--name-only', '--no-renames', '-z', original, expected_commit],
+        cwd=repository).decode().strip('\0').split('\0'))
+    if 'scripts/build-ssh-plugin.py' not in changed or not changed <= SSH_REPAIR_PATHS:
+        raise ValueError('Driver build inputs changed; cached driver artifacts cannot be reused')
+
+
+def require_unpublished(get, tag):
+    try:
+        get('/releases/tags/' + tag)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return
+        raise
+    raise ValueError('SSH repair recovery cannot replace an existing GitHub release')
 
 
 def main():
@@ -66,7 +105,7 @@ def main():
             with urllib.request.urlopen(urllib.request.Request(api + path, headers=headers), timeout=60) as response:
                 return json.load(response)
 
-        validate_source(get('/actions/runs/' + args.source_run), build_ref)
+        run = get('/actions/runs/' + args.source_run)
         page = 1
         while True:
             records = get(f'/actions/runs/{args.source_run}/artifacts?per_page=100&page={page}')['artifacts']
@@ -74,6 +113,12 @@ def main():
             if len(records) < 100:
                 break
             page += 1
+        if run['head_sha'] == build_ref:
+            validate_source(run, build_ref)
+        else:
+            require_unpublished(get, tag)
+            validate_driver_recovery(run, build_ref, available)
+            print('Verified SSH-only repair: all driver build inputs and identities are unchanged; rebuilding all clients.')
     result = plan(available, drivers, args.publish_drivers == 'true', args.rebuild_driver)
     result['build_ref'] = build_ref
     with args.github_output.open('a') as output:

@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import plistlib
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -22,6 +23,7 @@ def load(name, file):
     result=importlib.util.module_from_spec(spec);spec.loader.exec_module(result);return result
 CATALOG=load('ssh_catalog','package-ssh-catalog.py')
 DEPLOY=load('deploy','deploy-components.py')
+BUILD=load('ssh_build','build-ssh-plugin.py')
 
 class SSHDistributionTests(unittest.TestCase):
     def setUp(self):
@@ -92,5 +94,15 @@ class SSHDistributionTests(unittest.TestCase):
     def test_tampered_archive_rejected(self):
         self.records();next(self.directory.glob('*.zip')).write_bytes(b'bad')
         with self.assertRaisesRegex(ValueError,'checksum'):self.validate()
+    def test_failed_build_retains_full_log_and_surfaces_bounded_diagnostics(self):
+        log=self.directory/'build.log'
+        diagnostic=io.StringIO()
+        command=[sys.executable,'-c',"import sys; print('old output\\n' * 5000); print('fatal: missing dependency', file=sys.stderr); sys.exit(7)"]
+        with contextlib.redirect_stderr(diagnostic):
+            with self.assertRaises(subprocess.CalledProcessError) as failure:BUILD.run(command,log)
+        self.assertEqual(failure.exception.returncode,7)
+        self.assertIn('old output',log.read_text())
+        self.assertIn('fatal: missing dependency',diagnostic.getvalue())
+        self.assertLess(len(diagnostic.getvalue()),17_000)
 
 if __name__=='__main__':unittest.main()
