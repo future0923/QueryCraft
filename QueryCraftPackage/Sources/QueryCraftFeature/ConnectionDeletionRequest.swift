@@ -4,6 +4,7 @@ struct ConnectionDeletionRequest: Equatable, Identifiable, Sendable {
     let target: ConnectionDeletionTarget
     let profileIDs: [ConnectionProfile.ID]
     let impact: ConnectionDeletionImpact
+    var sshProfiles: [SSHConnection] = []
 
     var id: UUID {
         switch target {
@@ -44,20 +45,20 @@ struct ConnectionDeletionRequest: Equatable, Identifiable, Sendable {
             """
             \(chineseSubject)将被永久删除。
 
-            连接配置：\(impact.connectionProfileCount)
+            连接配置：\(impact.connectionProfileCount + sshProfiles.count)
             已保存查询：\(impact.savedQueryCount)
             可恢复草稿：\(impact.recoverableDraftCount)
             工作区恢复记录：\(impact.workspaceRestorationCount)
-            钥匙串凭据：\(impact.storedCredentialCount)
+            钥匙串凭据：\(impact.storedCredentialCount + sshProfiles.filter(\.storesCredential).count)
             """,
             """
             \(englishSubject) will be permanently deleted.
 
-            Connection Profiles: \(impact.connectionProfileCount)
+            Connection Profiles: \(impact.connectionProfileCount + sshProfiles.count)
             Saved Queries: \(impact.savedQueryCount)
             Recoverable Drafts: \(impact.recoverableDraftCount)
             Workspace Restorations: \(impact.workspaceRestorationCount)
-            Keychain Credentials: \(impact.storedCredentialCount)
+            Keychain Credentials: \(impact.storedCredentialCount + sshProfiles.filter(\.storesCredential).count)
             """
         )
     }

@@ -4,6 +4,7 @@ struct MCPSettingsReviewView: View {
     let policy: MCPPolicy
     let profiles: [ConnectionProfile]
     let groups: [ConnectionGroup]
+    var sshProfiles: [SSHConnection] = []
     let save: () -> Void
     @Environment(\.dismiss) private var dismiss
     private func copy(_ zh: String, _ en: String) -> String { AppCopy.current.text(zh, en) }
@@ -68,6 +69,15 @@ struct MCPSettingsReviewView: View {
                         }
                     } header: {
                         Text("\(profile.name) · \(profile.databaseType.title)\(groupName(profile))")
+                    }
+                }
+                ForEach(sshProfiles) { profile in
+                    Section("\(profile.name) · SSH") {
+                        let access = SSHAccountAccess(id: profile.id, policy: policy)
+                        LabeledContent(copy("最终权限", "Effective access"), value: policy.enabled
+                            ? access.access.title : copy("MCP 已关闭", "MCP disabled"))
+                        Text(MCPPermissionSummary.sshScope(access))
+                            .font(MCPSettingsType.detail).foregroundStyle(.secondary)
                     }
                 }
                 Section {

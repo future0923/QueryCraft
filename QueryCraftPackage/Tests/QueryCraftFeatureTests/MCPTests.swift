@@ -174,6 +174,62 @@ struct MCPTests {
         await #expect(throws: MCPFailure.self) { _ = try await MCPSQLAuthorization.statements("DELETE FROM users", profile: p, database: "allowed", policy: policy) }
         await #expect(throws: MCPFailure.self) { _ = try await MCPSQLAuthorization.statements("BEGIN", profile: p, database: "allowed", policy: policy) }
     }
+    @Test(arguments: [DatabaseType.mysql, .postgresql, .doris], MCPExecutionMode.allCases)
+    func contextFunctionsWorkWithoutUnrestrictedFullAccess(_ driver: DatabaseType, _ mode: MCPExecutionMode) async throws {
+        let p = profile(type: driver)
+        let context = driver == .postgresql ? "CURRENT_DATABASE(), CURRENT_SCHEMA()" : "DATABASE(), SCHEMA()"
+        let sql = "SELECT 1 AS connection_ok, \(context), VERSION() AS server_version"
+        let scopes: [Set<String>?] = [nil, ["allowed"]]
+        for databases in scopes {
+            var policy = MCPPolicy()
+            policy.connections[p.id.uuidString] = .init(databases: databases, mode: mode)
+            let statements = try await MCPSQLAuthorization.statements(sql, profile: p, database: "allowed", policy: policy)
+            #expect(statements.map(\.kind) == [.read])
+            #expect(statements.first?.sql == sql)
+            let nested = try await MCPSQLAuthorization.statements("SELECT COALESCE(version( /* context */ ), 'unknown')", profile: p, database: "allowed", policy: policy)
+            #expect(nested.map(\.kind) == [.read])
+        }
+    }
+    @Test(arguments: [DatabaseType.mysql, .postgresql, .doris], [MCPExecutionMode.readOnly, .dataWrite])
+    func contextFunctionPermissionDoesNotAuthorizeRoutinesOrArguments(_ driver: DatabaseType, _ mode: MCPExecutionMode) async throws {
+        let p = profile(type: driver)
+        var policy = MCPPolicy()
+        policy.connections[p.id.uuidString] = .init(databases: ["allowed"], mode: mode)
+        for sql in ["SELECT allowed.version()", "SELECT version(1)", "SELECT version(evil_function())", "SELECT VERSION(), evil_function()"] {
+            do {
+                _ = try await MCPSQLAuthorization.statements(sql, profile: p, database: "allowed", policy: policy)
+                Issue.record("Unverified SQL function was authorized: \(sql)")
+            } catch let failure as MCPFailure {
+                #expect(failure.code == .accessDenied)
+            }
+        }
+    }
+    @Test(arguments: [DatabaseType.mysql, .postgresql, .doris])
+    func contextFunctionsPreserveDatabaseScopeAndMetadataDiscovery(_ driver: DatabaseType) async throws {
+        let p = profile(type: driver)
+        var policy = MCPPolicy(); policy.enabled = true; policy.allConnections = true
+        policy.connections[p.id.uuidString] = .init(databases: ["allowed"], mode: .fullAccess)
+        try policy.authorize(tool: "list_databases", profile: p)
+        do {
+            try policy.authorize(tool: "execute_query", profile: p)
+            Issue.record("Scoped query was authorized without selecting a database")
+        } catch let failure as MCPFailure {
+            #expect(failure.code == .accessDenied)
+            #expect(failure.message.contains("list_databases"))
+        }
+        #expect(throws: MCPFailure.self) { try policy.authorize(tool: "execute_query", profile: p, database: "private") }
+        let sql = driver == .postgresql ? "SELECT CURRENT_DATABASE(), VERSION()" : "SELECT DATABASE(), VERSION()"
+        await #expect(throws: MCPFailure.self) {
+            _ = try await MCPSQLAuthorization.statements(sql, profile: p, database: "private", policy: policy)
+        }
+        do {
+            _ = try await MCPSQLAuthorization.statements("SHOW DATABASES", profile: p, database: "allowed", policy: policy)
+            Issue.record("Scoped SHOW was authorized without filtering metadata")
+        } catch let failure as MCPFailure {
+            #expect(failure.code == .accessDenied)
+            #expect(failure.message.contains("list_databases"))
+        }
+    }
     @Test func argumentsRejectMixedArraysAndUnknownFields() throws {
         #expect(throws: MCPFailure.self) {
             try MCPToolCatalog.validate("execute_redis_command", arguments: ["connection_id": "id", "arguments": .array(["SET", .int(1), "value"])])

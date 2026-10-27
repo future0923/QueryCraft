@@ -3,6 +3,64 @@ import Testing
 @testable import QueryCraftFeature
 
 struct MCPOptimizationTests {
+    @Test(arguments: [DatabaseType.mysql, .postgresql, .doris, .redis, .elasticsearch, .kafka],
+          ["get_schema_context", "describe_table"])
+    func missingSchemaObjectDoesNotReportMissingConnection(_ type: DatabaseType, _ tool: String) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var policy = MCPPolicy(); policy.enabled = true; policy.allConnections = true
+        try MCPPolicyStore(directory: root).save(policy)
+        let driver = MCPProbeDriver(databaseType: type)
+        let runtime = MCPRuntime(directory: root, registry: DatabaseDriverRegistry(drivers: [driver]))
+        let profile = MCPTests().profile(type: type)
+        try await runtime.repository.insert(profile)
+        var args: [String: MCPJSONValue] = ["connection_id": .string(profile.id.uuidString), "refresh": true]
+        args[tool == "describe_table" ? "table" : "tables"] = tool == "describe_table"
+            ? .string("missing_object") : .array([.string("missing_object")])
+        let failure = await #expect(throws: MCPFailure.self) {
+            _ = try await runtime.call("querycraft_" + tool, arguments: args)
+        }
+        let payload = try #require(failure?.value.objectValue?["error"]?.objectValue)
+        #expect(payload["code"] == "OBJECT_NOT_FOUND")
+        #expect(payload["automatic_retry"] == false)
+        let recovery = try #require(payload["recovery"]?.stringValue)
+        #expect(recovery.contains("list_tables") && recovery.contains("refresh=true"))
+        #expect(!recovery.contains("list_connections"))
+        #expect(failure?.errorDescription?.hasPrefix("[OBJECT_NOT_FOUND]") == true)
+
+        // The same saved connection remains valid and can describe an existing object.
+        args[tool == "describe_table" ? "table" : "tables"] = tool == "describe_table"
+            ? .string("users") : .array([.string("users")])
+        let result = try await runtime.call("querycraft_" + tool, arguments: args)
+        if tool == "describe_table" {
+            #expect(result.arrayValue?.first?.objectValue?["name"] == "users")
+        } else {
+            #expect(result.objectValue?["returned_tables"] == .int(1))
+        }
+        await runtime.shutdown()
+    }
+
+    @Test(arguments: ["get_schema_context", "describe_table"])
+    func missingSchemaConnectionRetainsConnectionRecovery(_ tool: String) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var policy = MCPPolicy(); policy.enabled = true; policy.allConnections = true
+        try MCPPolicyStore(directory: root).save(policy)
+        let driver = MCPProbeDriver(databaseType: .doris)
+        let runtime = MCPRuntime(directory: root, registry: DatabaseDriverRegistry(drivers: [driver]))
+        var args: [String: MCPJSONValue] = ["connection_id": .string(UUID().uuidString), "refresh": true]
+        args[tool == "describe_table" ? "table" : "tables"] = tool == "describe_table"
+            ? .string("users") : .array([.string("users")])
+        let failure = await #expect(throws: MCPFailure.self) {
+            _ = try await runtime.call("querycraft_" + tool, arguments: args)
+        }
+        let payload = try #require(failure?.value.objectValue?["error"]?.objectValue)
+        #expect(payload["code"] == "CONNECTION_NOT_FOUND")
+        #expect(payload["recovery"]?.stringValue?.contains("list_connections") == true)
+        #expect(await driver.createdCount == 0)
+        await runtime.shutdown()
+    }
+
     @Test func kafkaWithoutSavedDatabaseUsesDriverNamespace() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

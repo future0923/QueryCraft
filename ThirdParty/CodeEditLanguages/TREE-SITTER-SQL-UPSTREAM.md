@@ -14,6 +14,9 @@ The grammar was selected independently against QueryCraft-owned MySQL 5.7 and
 
 ## QueryCraft MySQL adaptations
 
+- Doris comment-only table/column ALTER clauses, multiple DROP TABLE targets and
+  qualified index DDL names are retained structurally for MCP scope/permission checks.
+
 - Reviewed generator inputs are retained under `Generator/TreeSitterSQL`; the
   generated C parser is intentionally not byte-for-byte upstream.
 - `--` starts a comment only when followed by MySQL whitespace/control, and

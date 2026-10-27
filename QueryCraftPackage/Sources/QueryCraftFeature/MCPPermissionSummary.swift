@@ -1,6 +1,15 @@
 import Foundation
 
 enum MCPPermissionSummary {
+    static func sshScope(_ access: SSHAccountAccess) -> String {
+        let copy = AppCopy.current
+        guard access.access != .denied else { return copy.text("禁止访问", "No access") }
+        var operations: [String] = []
+        if access.fileRead { operations.append(copy.text("读取", "Read")) }
+        if access.fileTransfer { operations.append(copy.text("传输", "Transfer")) }
+        if access.fileManagement { operations.append(copy.text("管理", "Manage")) }
+        return operations.isEmpty ? copy.text("未授权文件操作", "No file access") : operations.joined(separator: " · ")
+    }
     static func access(_ profile: ConnectionProfile, policy: MCPPolicy) -> String {
         let copy = AppCopy.current
         guard policy.enabled else { return copy.text("MCP 已关闭", "MCP disabled") }
@@ -31,7 +40,7 @@ enum MCPPermissionSummary {
 
     static func objectAccess(_ name: String, profile: ConnectionProfile, policy: MCPPolicy) -> String {
         guard policy.enabled, policy.includesConnection(profile),
-              policy.connectionRule(profile).allowedDatabases?.contains(name) != false else {
+              policy.permitsDatabaseName(name, profile: profile) else {
             return AppCopy.current.text("禁止访问", "No access")
         }
         return policy.effectiveMode(profile, database: name).title

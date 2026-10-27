@@ -23,7 +23,7 @@ export default {
     $.keyword_drop,
     $.keyword_table,
     optional($._if_exists),
-    $.object_reference,
+    comma_list($.object_reference, true),
     optional($._drop_behavior),
   ),
 
@@ -93,7 +93,7 @@ export default {
     $.keyword_index,
     optional($.keyword_concurrently),
     optional($._if_exists),
-    field("name", $.identifier),
+    field("name", $.object_reference),
     optional($._drop_behavior),
     optional(
       seq(

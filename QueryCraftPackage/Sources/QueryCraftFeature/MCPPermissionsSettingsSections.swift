@@ -44,7 +44,7 @@ struct MCPPermissionsSettingsSections: View {
                 .frame(maxWidth: .infinity, alignment: .leading).help(accessHelpText)
         } header: {
             HStack(spacing: 12) {
-                Text(copy("数据库连接权限", "Database connection access"))
+                Text(copy("连接权限", "Connection access"))
                 Spacer(minLength: 8)
                 Button {
                     model.connectionFilterVisible.toggle()

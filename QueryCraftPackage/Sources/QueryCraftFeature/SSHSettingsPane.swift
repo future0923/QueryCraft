@@ -1,102 +1,17 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// SSH account management is part of the welcome connection catalog. This
+/// settings page retains the local Shell library only.
 struct SSHSettingsPane: View {
-    @Bindable var model: SSHSettingsModel
-    @State private var draft: SSHConnectionDraft?
-    @State private var removing: SSHConnection?
-    @State private var importing = false
-    private func copy(_ zh: String, _ en: String) -> String { AppCopy.current.text(zh, en) }
+    @State private var scripts: ShellScriptSettingsModel
+    init(model _: SSHSettingsModel, scripts: ShellScriptSettingsModel? = nil) {
+        _scripts = State(initialValue: scripts ?? ShellScriptSettingsModel())
+    }
     var body: some View {
         Form {
-            connectionControls
-            savedConnections
-            requirements
-        }
-        .formStyle(.grouped).scrollContentBackground(.hidden).contentMargins(.top, 8, for: .scrollContent)
-        .searchable(text: $model.search, prompt: copy("搜索服务器或账号", "Search servers or accounts"))
-        .task { await model.load() }
-        .onReceive(NotificationCenter.default.publisher(for: SSHConnectionService.settingsChanged)) { _ in Task { await model.load() } }
-        .sheet(item: $draft, onDismiss: { Task { await model.load() } }) { value in
-            SSHConnectionEditor(draft: value, service: model.service)
-        }
-        .sheet(isPresented: $importing, onDismiss: { Task { await model.load() } }) { SSHConfigImportPane(service: model.service) }
-        .confirmationDialog(copy("删除 SSH 连接？", "Delete SSH connection?"), isPresented: Binding(
-            get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { profile in
-            Button(copy("删除连接及凭据", "Delete connection and credential"), role: .destructive) {
-                removing = nil; Task { await model.remove(profile) }
-            }
-        } message: { profile in Text(copy("将删除 \(profile.name) 的本地账号配置、保存的凭据和 MCP 授权。已提交的远程命令可能继续执行。", "Remove the local account, saved credential and MCP access for \(profile.name). A submitted remote command may continue running.")) }
-    }
-    private var connectionControls: some View {
-        Section {
-            HStack(alignment: .top) {
-                SettingsControlLabel(title: copy("SSH 服务器与账号", "SSH servers and accounts"),
-                    description: copy("密码保存在本机钥匙串。每条连接使用独立账号与 MCP 权限。", "Passwords stay in the local Keychain. Each connection has its own account and MCP access."))
-                Spacer()
-                Button { Task { await model.load() } } label: { Image(systemName: "arrow.clockwise") }
-                    .help(copy("重新加载", "Reload")).disabled(model.busy)
-                Button(copy("导入…", "Import…"), systemImage: "square.and.arrow.down") { importing = true }
-                    .disabled(!model.loaded || model.busy)
-                Button(copy("添加服务器", "Add server"), systemImage: "plus") { draft = SSHConnectionDraft(policy: model.policy) }
-                    .disabled(!model.loaded || model.busy)
-            }
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small).frame(width: 16).opacity(model.busy ? 1 : 0)
-                Text(model.error ?? model.status).font(.caption)
-                    .foregroundStyle(model.error == nil ? Color.secondary : .red)
-                Spacer()
-            }.frame(height: 30)
-        }
-    }
-
-    private var savedConnections: some View {
-        Section(copy("已保存的连接", "Saved connections")) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if model.loaded && model.profiles.isEmpty {
-                        Text(copy("尚未添加服务器。点击“添加服务器”填写地址和账号。", "No servers yet. Choose Add server to enter an address and account."))
-                            .foregroundStyle(.secondary).padding(.vertical, 12)
-                    } else {
-                        ForEach(model.filtered) { profile in
-                            HStack(spacing: 12) {
-                                Image(systemName: "server.rack").font(.title2).frame(width: 28)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(profile.name).font(.headline)
-                                    Text("\(profile.username)@\(profile.host):\(profile.port)").textSelection(.enabled)
-                                        .font(.subheadline).foregroundStyle(.secondary)
-                                    Text(SSHAccess.current(id: profile.id, policy: model.policy).title + " · "
-                                         + authenticationTitle(profile.authenticationMethod) + (profile.jumpConnectionID == nil ? "" : copy(" · 经跳板机", " · via jump host")))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 8)
-                                Button(copy("配置", "Configure")) { draft = SSHConnectionDraft(profile: profile, policy: model.policy) }
-                                Button(role: .destructive) { removing = profile } label: { Image(systemName: "trash") }
-                                    .help(copy("删除连接", "Delete connection"))
-                            }.padding(.vertical, 7).disabled(model.busy)
-                        }
-                        if model.loaded && model.filtered.isEmpty && !model.profiles.isEmpty {
-                            Text(copy("没有匹配的服务器。", "No matching servers.")).foregroundStyle(.secondary)
-                        }
-                    }
-                }.frame(maxWidth: .infinity, alignment: .topLeading)
-            }.frame(height: 220)
-        }
-    }
-
-    private var requirements: some View {
-        Section(copy("MCP 使用条件", "MCP requirements")) {
-            Text(copy("在“插件”中安装 SSH 插件，再在此配置账号和授权。在 MCP 设置中启用 MCP，并为具体连接授予命令执行权限；执行前确认具体命令。", "Install SSH in Plugins, then configure accounts and access here. Enable MCP and grant command execution for the specific connection. Confirm the exact command before execution."))
-                .font(.caption).foregroundStyle(.secondary)
-            if !model.policy.enabled {
-                Label(copy("当前 MCP 未启用；连接测试不受本机 MCP 开关限制。", "MCP is disabled. Local connection tests remain available."), systemImage: "info.circle")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func authenticationTitle(_ value: SSHAuthentication) -> String {
-        switch value { case .password: copy("密码", "Password"); case .privateKey: copy("私钥", "Private key"); case .agent: "SSH agent" }
+            ShellScriptSettingsSection(model: scripts)
+        }.formStyle(.grouped).scrollContentBackground(.hidden).contentMargins(.top, 8, for: .scrollContent)
     }
 }
 
@@ -106,6 +21,7 @@ struct SSHConnectionEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectingKey = false
     @State private var jumpProfiles: [SSHConnection] = []
+    @State private var groups: [ConnectionGroup] = []
     @State private var operation: Task<Void, Never>?
     private func copy(_ zh: String, _ en: String) -> String { AppCopy.current.text(zh, en) }
     var body: some View {
@@ -118,6 +34,10 @@ struct SSHConnectionEditor: View {
             Form {
                 Section(copy("服务器", "Server")) {
                     TextField(copy("名称", "Name"), text: $draft.name)
+                    Picker(copy("分组", "Group"), selection: $draft.groupID) {
+                        Text(copy("未分组", "Ungrouped")).tag(Optional<UUID>.none)
+                        ForEach(groups) { Text($0.name).tag(Optional($0.id)) }
+                    }
                     TextField(copy("地址", "Host"), text: $draft.host)
                     TextField(copy("端口", "Port"), text: $draft.port)
                     TextField(copy("用户名", "Username"), text: $draft.username)
@@ -168,7 +88,6 @@ struct SSHConnectionEditor: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Toggle(copy("已通过可信渠道核对该指纹", "I verified this fingerprint through a trusted channel"), isOn: $draft.verifiedHost)
                 }
-                SSHAccessControls(access: $draft.access, fileRead: $draft.fileRead, fileTransfer: $draft.fileTransfer, fileManagement: $draft.fileManagement)
             }
             .formStyle(.grouped).scrollContentBackground(.hidden).contentMargins(.top, 8, for: .scrollContent)
             .disabled(draft.busy)
@@ -199,6 +118,8 @@ struct SSHConnectionEditor: View {
         .onReceive(NotificationCenter.default.publisher(for: SSHConnectionService.settingsChanged)) { _ in Task { await draft.synchronizeAccess(service: service) } }
         .task {
             if let snapshot = try? await service.snapshot() { jumpProfiles = snapshot.profiles }
+            do { groups = try await service.connectionGroups() }
+            catch { draft.error = error.localizedDescription }
             await draft.synchronizeAccess(service: service)
         }
         .onDisappear { operation?.cancel(); draft.secret = "" }

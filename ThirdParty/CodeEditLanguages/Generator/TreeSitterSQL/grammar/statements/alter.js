@@ -52,6 +52,8 @@ export default {
     $.drop_constraint,
     $.alter_column,
     $.modify_column,
+    $.modify_column_comment,
+    $.modify_table_comment,
     $.change_column,
     $.drop_column,
     $.rename_object,
@@ -158,6 +160,21 @@ export default {
     optional($._if_exists),
     $.column_definition,
     optional($.column_position),
+  ),
+
+  // Doris comment-only DDL must not be misread as a column type change.
+  modify_column_comment: $ => seq(
+    $.keyword_modify,
+    $.keyword_column,
+    field('name', $.identifier),
+    $.keyword_comment,
+    $.literal,
+  ),
+
+  modify_table_comment: $ => seq(
+    $.keyword_modify,
+    $.keyword_comment,
+    $.literal,
   ),
 
   change_column: $ => seq(
@@ -310,7 +327,7 @@ export default {
     $.keyword_alter,
     $.keyword_index,
     optional($._if_exists),
-    $.identifier,
+    $.object_reference,
     choice(
       $.rename_object,
       seq(

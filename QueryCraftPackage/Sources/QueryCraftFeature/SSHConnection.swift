@@ -17,6 +17,8 @@ struct SSHConnection: Codable, Equatable, Identifiable, Sendable {
     var authentication: SSHAuthentication? = nil
     var agentSocketPath: String? = nil
     var jumpConnectionID: UUID? = nil
+    var groupID: UUID? = nil
+    var sortIndex: Int? = nil
     var authenticationMethod: SSHAuthentication { authentication ?? (privateKeyPath == nil ? .password : .privateKey) }
 
     func validate() throws {
@@ -130,6 +132,20 @@ struct SSHConnectionStore: Sendable {
                 throw MCPFailure(AppCopy.current.text("连接已被修改，请重新打开后编辑。", "The connection changed. Reopen it before editing."))
             }
             profiles[index] = profile
+        }
+    }
+
+    func move(_ profile: SSHConnection, to groupID: UUID?, beforeID: UUID?) throws {
+        try mutate { profiles in
+            guard let index = profiles.firstIndex(of: profile) else { throw MCPFailure("Connection changed. Reload it.") }
+            profiles[index].groupID = groupID
+            let moved = profiles[index]
+            var destination = profiles.filter { $0.groupID == groupID && $0.id != profile.id }
+                .sorted { ($0.sortIndex ?? Int.max) < ($1.sortIndex ?? Int.max) }
+            destination.insert(moved, at: beforeID.flatMap { id in destination.firstIndex { $0.id == id } } ?? destination.count)
+            for (order, entry) in destination.enumerated() {
+                if let index = profiles.firstIndex(where: { $0.id == entry.id }) { profiles[index].sortIndex = order }
+            }
         }
     }
 

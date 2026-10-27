@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import QueryCraftFeature
 
 struct WelcomeWindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
@@ -20,5 +21,6 @@ private final class WelcomeWindowConfigurationView: NSView {
 
     func configureWindow() {
         window?.isRestorable = false
+        window?.identifier = WelcomeWindowPresentation.windowIdentifier
     }
 }

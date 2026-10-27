@@ -23,3 +23,15 @@ The MCP implementation uses the official [Swift MCP SDK](https://github.com/mode
 Swift System and Swift Collections (Apache 2.0 with Swift runtime exception where stated).
 Exact revisions are pinned in `QueryCraftPackage/Package.resolved`. License texts
 and upstream notices are included in `ThirdPartyLicenses` and the standalone MCP bundle.
+
+## Interactive SSH terminal
+
+The native terminal renderer uses [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)
+1.10.1 (MIT), pinned in `QueryCraftSSHTerminalRenderer/Package.resolved`. It is
+statically linked into the nested `TerminalRenderer.bundle` distributed inside
+the independently installed SSH plugin. Its license is included in that bundle
+and `ThirdPartyLicenses/SWIFTTERM-LICENSE.txt`. The main application and standalone
+MCP do not link SwiftTerm. The renderer loads only when opening a terminal.
+No server-side runtime or additional SSH transport is required.
+
+SwiftTerm 1.10.1 carries the small, reproducible `ThirdParty/SwiftTerm/QueryCraft.patch`: retain user scrollback position during output and expose the macOS wheel override. `scripts/patch-swiftterm.py` verifies the pinned source revision before applying it.

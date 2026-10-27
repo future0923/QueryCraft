@@ -23,9 +23,7 @@ extension MCPRuntime {
 
     private func perform(_ tool: String, args: [String: MCPJSONValue], profile: ConnectionProfile, database: String?,
                          connection: any WorkspaceSession, policy: MCPPolicy, inTransaction: Bool) async throws -> MCPJSONValue {
-        let accessTarget = profile.databaseType == .kafka ? args.string("topic")
-            : profile.databaseType == .elasticsearch ? args.string("path").flatMap(MCPRequestAuthorization.index) : database
-        let mode = policy.effectiveMode(profile, database: accessTarget)
+        let mode = try policy.executionMode(profile, database: database, args: args)
         let limit = min(policy.maximumRows, max(1, args.integer("max_rows", default: 100)))
         let buffer = MCPResultBuffer(limit: limit, byteLimit: policy.maximumResultBytes,
                                      cellOffset: args.integer("cell_char_offset", default: 0), cellLimit: args.integer("cell_char_limit", default: 200))
@@ -34,8 +32,7 @@ extension MCPRuntime {
             if [.kafka, .elasticsearch].contains(profile.databaseType) {
                 return .array(try await connection.fetchObjects(in: database ?? "").filter { policy.permitsObject($0, profile: profile, schema: args.string("schema")) }.prefix(1000).map { .string($0.name) })
             }
-            let allowed = policy.connectionRule(profile).allowedDatabases
-            return .array(try await connection.fetchDatabases().filter { allowed == nil || allowed!.contains($0) }.map(MCPJSONValue.string))
+            return .array(try await connection.fetchDatabases().filter { policy.permitsDatabaseName($0, profile: profile) }.map(MCPJSONValue.string))
         case "list_tables":
             let objects = try await connection.fetchObjects(in: database ?? "").filter { policy.permitsObject($0, profile: profile, schema: args.string("schema")) }
             return .array(objects.prefix(1000).map { .object(["name": .string($0.name), "kind": .string($0.kind.rawValue)]) })
@@ -49,7 +46,7 @@ extension MCPRuntime {
             for name in requested.prefix(maximumTables) {
                 try Task.checkCancellation()
                 guard let object = objects.first(where: { $0.name == name || (args.string("schema") != nil && $0.nameWithinSchema == name) }) else {
-                    throw MCPFailure("Object not found in the selected database. Refresh list_tables and use its exact name.", code: .connectionNotFound)
+                    throw MCPFailure("Object not found in the selected database/schema or outside the authorized scope.", code: .objectNotFound)
                 }
                 details.append((object, try await connection.fetchDetails(for: object, in: database ?? "")))
             }
@@ -67,13 +64,9 @@ extension MCPRuntime {
             return .object(["tables": .array(values), "truncated": .bool(requested.count > details.count)])
         case "execute_query", "execute_batch", "execute_and_show":
             let statements = try await MCPSQLAuthorization.statements(try args.requiredString("sql"), profile: profile, database: database, policy: policy)
-            if mode == .fullAccess, !args.flag("confirm_high_risk"), statements.contains(where: { statement in
-                switch statement.kind {
-                case .ddl, .control, .unknown: true
-                case .update, .delete: !MCPSQLAuthorization.hasBoundedFilter(statement.sql)
-                default: false
-                }
-            }) { throw MCPFailure("This operation requires confirm_high_risk=true under full access.", code: .confirmationRequired) }
+            if !args.flag("confirm_high_risk"), statements.contains(where: \.requiresConfirmation) {
+                throw MCPFailure("This operation requires confirm_high_risk=true under full access.", code: .confirmationRequired)
+            }
             let changesSchema = statements.contains { if case .ddl = $0.kind { return true }; return false }
             // Invalidate before execution and on every exit, including partial/unknown outcomes.
             if changesSchema { invalidateMetadata(for: profile.id) }
@@ -82,9 +75,13 @@ extension MCPRuntime {
             guard !atomic || (!inTransaction && args.string("session_id") == nil && !args.flag("continue_on_error")
                 && [.mysql, .postgresql].contains(profile.databaseType)) else { throw MCPFailure("Atomic batches require an independent SQL connection and stop-on-error.") }
             if (atomic || inTransaction) && statements.contains(where: { if case .ddl = $0.kind { return true }; return false }) {
-                throw MCPFailure("This driver cannot track DDL inside MCP transactions. Execute it separately in autocommit mode.")
+                throw MCPFailure("This driver cannot track DDL inside MCP transactions. Execute it separately in autocommit mode.", code: .unsupported)
             }
-            let readOnlyTransaction = mode == .readOnly && !inTransaction && [.mysql, .postgresql].contains(profile.databaseType)
+            let readOnlyTransaction = mode == .readOnly && statements.allSatisfy { !$0.writesData }
+                && !inTransaction && [.mysql, .postgresql].contains(profile.databaseType)
+            if inTransaction, mode == .readOnly, statements.contains(where: \.writesData) {
+                throw MCPFailure("This pinned transaction is read-only. Open a session in the writable target database.", code: .accessDenied)
+            }
             let ownsTransaction = atomic || readOnlyTransaction
             if let schema = args.string("schema") { try await connection.applyQueryContext(.init(databaseName: database ?? "", schemaName: schema)) }
             if ownsTransaction { _ = try await connection.executeStatement(readOnlyTransaction ? "START TRANSACTION READ ONLY" : "BEGIN", kind: .transaction(.begin), database: database, onBatch: { _ in }) }
@@ -94,7 +91,13 @@ extension MCPRuntime {
                     try Task.checkCancellation()
                     let current = try store.load()
                     try current.authorize(tool: tool, profile: profile, database: database)
-                    _ = try await MCPSQLAuthorization.statements(statement.sql, profile: profile, database: database, policy: current)
+                    guard try await repository.fetch(id: profile.id) == profile else {
+                        throw MCPFailure("Connection changed before the next SQL statement.", code: .connectionNotFound)
+                    }
+                    let authorized = try await MCPSQLAuthorization.statements(statement.sql, profile: profile, database: database, policy: current)
+                    if !args.flag("confirm_high_risk"), authorized.contains(where: \.requiresConfirmation) {
+                        throw MCPFailure("This operation requires confirm_high_risk=true.", code: .confirmationRequired)
+                    }
                     let rows = MCPResultBuffer(limit: limit, byteLimit: max(1024, policy.maximumResultBytes / statements.count),
                                                cellOffset: args.integer("cell_char_offset", default: 0), cellLimit: args.integer("cell_char_limit", default: 200))
                     do {
@@ -145,16 +148,18 @@ extension MCPRuntime {
             let writes: Set<String> = ["SET", "SETEX", "PSETEX", "SETNX", "DEL", "UNLINK", "EXPIRE", "PEXPIRE", "PERSIST", "HSET", "HDEL", "LPUSH", "RPUSH", "LPOP", "RPOP", "SADD", "SREM", "ZADD", "ZREM", "INCR", "DECR", "XADD"]
             let destructive = ["FLUSHDB", "FLUSHALL"].contains(name)
             if destructive {
-                guard mode == .fullAccess, args.flag("confirm_high_risk"),
-                      name == "FLUSHDB" || policy.connectionRule(profile).allowedDatabases == nil else {
-                    throw MCPFailure("Redis flush requires full access, explicit confirmation and an authorized database scope.")
+                guard mode == .fullAccess, name == "FLUSHDB" || policy.permitsAllObjectWrites(profile) else {
+                    throw MCPFailure("Redis flush requires full access to every affected database.", code: .accessDenied)
                 }
+                guard args.flag("confirm_high_risk") else { throw MCPFailure("Redis flush requires confirm_high_risk=true.", code: .confirmationRequired) }
             }
-            guard !["SELECT", "AUTH", "HELLO", "QUIT", "MONITOR", "SUBSCRIBE", "PSUBSCRIBE", "MULTI", "EXEC", "WATCH", "DISCARD", "BLPOP", "BRPOP"].contains(name),
-                  reads.contains(name) || (mode != .readOnly && writes.contains(name)) || destructive else {
+            guard reads.contains(name) || writes.contains(name) || destructive else {
+                throw MCPFailure("This command is not supported by the stateless MCP Redis route. Select the logical DB with database; use supported bounded commands.", code: .unsupported)
+            }
+            guard reads.contains(name) || (mode != .readOnly && writes.contains(name)) || destructive else {
                 throw MCPFailure("Redis command is unavailable under the current MCP policy.", code: .accessDenied)
             }
-            guard let db = Int(database ?? "0"), db >= 0 else { throw MCPFailure("Invalid Redis logical database.") }
+            guard let db = RedisLogicalDatabase.index(from: database) else { throw MCPFailure("Invalid Redis logical database.") }
             let result = try await redis.executeRedisCommand(.init(source: arguments.joined(separator: " "), arguments: arguments), databaseIndex: db)
             return .object(["reply": redisValue(result.reply), "truncated": .bool(redisTruncated(result.reply))])
         case "execute_request":
@@ -164,7 +169,8 @@ extension MCPRuntime {
                   let method = WorkspaceRequestMethod(rawValue: try args.requiredString("method").uppercased()) else { throw MCPFailure("An Elasticsearch connection and valid method are required.") }
             let path = try args.requiredString("path")
             let request = WorkspaceRequest(method: method, path: path, body: args.string("body").map { Data($0.utf8) })
-            try MCPRequestAuthorization.validate(request, allowed: policy.connectionRule(profile).allowedDatabases)
+            do { try WorkspaceRequestClassifier.validate(request, policy: mode == .readOnly ? .readOnly : .writesAllowed) }
+            catch { throw MCPFailure("This REST method/route is not allowed by the current access mode.", code: mode == .readOnly ? .accessDenied : .invalidArgument) }
             if mode == .dataWrite && WorkspaceRequestClassifier.requiresDangerousConfirmation(request) {
                 throw MCPFailure("This Elasticsearch operation requires full access.", code: .accessDenied)
             }
@@ -190,10 +196,12 @@ extension MCPRuntime {
         case "send_message":
             invalidateMetadata(for: profile.id)
             defer { invalidateMetadata(for: profile.id) }
-            guard mode != .readOnly, let kafka = connection as? any WorkspaceKafkaProducing else { throw MCPFailure("Kafka produce requires write permission and a compatible driver.") }
+            guard mode != .readOnly else { throw MCPFailure("Kafka produce requires write permission for this topic.", code: .accessDenied) }
+            guard let kafka = connection as? any WorkspaceKafkaProducing else { throw MCPFailure("Kafka producing is unavailable on this driver.", code: .unsupported) }
             let topic = try args.requiredString("topic"); try authorizeTopic(topic, profile: profile, policy: policy)
+            guard let value = args.string("value") else { throw MCPFailure("Missing argument: value") }
             let request = WorkspaceKafkaProduceRequest(topic: topic, partition: args["partition"]?.intValue.flatMap(Int32.init(exactly:)),
-                key: args.string("key").map { Data($0.utf8) }, value: Data(try args.requiredString("value").utf8))
+                key: args.string("key").map { Data($0.utf8) }, value: Data(value.utf8))
             try request.validate()
             let receipt = try await kafka.produce(request)
             return .object(["partition": .int(Int(receipt.partition)), "offset": receipt.offset.map { .string(String($0)) } ?? .null, "confirmed": true])

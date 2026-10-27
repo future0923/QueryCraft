@@ -7,8 +7,25 @@ final class NewConnectionFlowModel {
     enum Step: Equatable {
         case selectDatabase
         case configure(DatabaseProduct)
+        case configureSSH
     }
 
+    enum ConnectionChoice: Hashable { case database(DatabaseProduct), ssh }
+    let allowsSSH: Bool
+    var selectsSSH = false
+    private(set) var catalogLoaded = false
+    var selectedConnection: ConnectionChoice? {
+        get { selectsSSH ? .ssh : selectedDatabaseProduct.map(ConnectionChoice.database) }
+        set {
+            switch newValue {
+            case .ssh: selectsSSH = true
+            case .database(let product): selectsSSH = false; selectedDatabaseProduct = product
+            case nil: selectsSSH = false; selectedDatabaseProduct = nil
+            }
+        }
+    }
+    var matchesSSH: Bool { allowsSSH && (searchText.isEmpty || "SSH 服务器 Secure Shell".localizedCaseInsensitiveContains(searchText)) }
+    func configureSSH() { step = .configureSSH }
     private(set) var step = Step.selectDatabase
     private(set) var catalogItems: [DatabaseDriverCatalogItem] = []
     private(set) var installationErrorMessage = ""
@@ -16,9 +33,12 @@ final class NewConnectionFlowModel {
     var selectedDatabaseProduct: DatabaseProduct?
     var searchText = ""
 
+    let sshPlugin: SSHPluginSettingsModel
     private let driverManager: DatabaseDriverManager
 
-    init(driverManager: DatabaseDriverManager = .shared) {
+    init(driverManager: DatabaseDriverManager = .shared, allowsSSH: Bool = true, sshPlugin: SSHPluginSettingsModel = SSHPluginSettingsModel()) {
+        self.sshPlugin = sshPlugin
+        self.allowsSSH = allowsSSH
         self.driverManager = driverManager
     }
 
@@ -34,7 +54,7 @@ final class NewConnectionFlowModel {
     }
 
     var selectedItem: DatabaseProductCatalogItem? {
-        guard let selectedDatabaseProduct else { return nil }
+        guard !selectsSSH, let selectedDatabaseProduct else { return nil }
         return productItems.first {
             $0.entry.databaseProduct == selectedDatabaseProduct
         }
@@ -49,12 +69,15 @@ final class NewConnectionFlowModel {
         }
     }
 
-    var isInstalling: Bool {
-        selectedItem?.installationState.isBusy == true
+    var selectedPlugin: ConnectionPluginPresentation? {
+        selectsSSH ? ConnectionPluginPresentation(sshPlugin) : selectedItem.map { ConnectionPluginPresentation($0.driverItem) }
     }
+    var isInstalling: Bool { selectedPlugin?.installationState.isBusy == true }
 
     func loadCatalog() async {
         catalogItems = await driverManager.catalogItems()
+        if allowsSSH { await sshPlugin.refresh() }
+        catalogLoaded = true
         if selectedDatabaseProduct == nil {
             selectedDatabaseProduct = productItems.first?.entry.databaseProduct
         }
@@ -62,6 +85,13 @@ final class NewConnectionFlowModel {
     }
 
     func continueWithSelection() async {
+        if selectsSSH {
+            guard allowsSSH, !sshPlugin.busy else { return }
+            if sshPlugin.installed == nil { await sshPlugin.install() }
+            if let error = sshPlugin.error { installationErrorMessage = error; isShowingInstallationError = true; return }
+            guard !Task.isCancelled, selectsSSH, sshPlugin.installed != nil else { return }
+            configureSSH(); return
+        }
         guard let selectedItem else { return }
         installationErrorMessage = ""
         isShowingInstallationError = false
@@ -80,6 +110,7 @@ final class NewConnectionFlowModel {
                 }
                 try Task.checkCancellation()
                 await loadCatalog()
+                guard !selectsSSH, selectedDatabaseProduct == selectedItem.entry.databaseProduct else { return }
                 step = .configure(selectedItem.entry.databaseProduct)
             } catch is CancellationError {
                 await loadCatalog()
@@ -96,6 +127,11 @@ final class NewConnectionFlowModel {
     }
 
     func uninstallSelection() async {
+        if selectsSSH {
+            await sshPlugin.uninstall()
+            if let error = sshPlugin.error { installationErrorMessage = error; isShowingInstallationError = true }
+            return
+        }
         guard let selectedItem,
               selectedItem.installationState.hasInstalledDriver,
               !selectedItem.installationState.isBusy

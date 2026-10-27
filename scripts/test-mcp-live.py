@@ -17,7 +17,7 @@ def freeport():
  with socket.socket() as sock:sock.bind(('127.0.0.1',0));return sock.getsockname()[1]
 def start(kind):
  name='qc-mcp-check-'+uuid.uuid4().hex[:12]+'-'+kind
- images={'mysql':'mysql:5.6','pg':'postgres:17','redis':'redis:7.4.2','es':'docker.elastic.co/elasticsearch/elasticsearch:8.18.0','kafka':'apache/kafka:3.9.1','doris':'apache/doris:all-in-one-4.1.3'}
+ images={'mysql':args.mysql_image,'pg':'postgres:17','redis':args.redis_image,'es':'docker.elastic.co/elasticsearch/elasticsearch:8.18.0','kafka':'apache/kafka:3.9.1','doris':'apache/doris:all-in-one-4.1.3'}
  internal={'mysql':3306,'pg':5432,'redis':6379,'es':9200,'kafka':9092,'doris':9030}[kind]
  host=freeport()
  env={'mysql':['MYSQL_ALLOW_EMPTY_PASSWORD=yes'],'pg':['POSTGRES_HOST_AUTH_METHOD=trust'],'redis':[],
@@ -51,7 +51,109 @@ def start(kind):
  if kind=='kafka':docker('exec',name,'/opt/kafka/bin/kafka-topics.sh','--bootstrap-server','localhost:19092','--create','--topic','qc-mcp-fixture','--partitions','1','--replication-factor','1')
  print('READY '+kind,flush=True)
 
+def permission_cases(typ,cid,base,call,settings,save):
+ def rule(mode,scope='selected',overrides=None,names=None):
+  target=base.get('database') or ('qc-mcp-fixture' if typ in ['elasticsearch','kafka'] else '0')
+  settings['connections'][cid]={'mode':'read_only','databaseAccess':scope,'databases':names or [target],'databaseModes':overrides if overrides is not None else {target:mode}}
+  save()
+ def c(tool,**extra):return call(tool,{**base,**extra})
+ def q(sql,**extra):return c('execute_query',sql=sql,**extra)
+ def deny(tool,code='ACCESS_DENIED',**extra):
+  result=call(tool,{**base,**extra},error=True)
+  assert result['structuredContent']['error']['code']==code,(tool,extra,result)
+ def rows(result):return result['results'][0]['result']['rows']
+ if typ in ['mysql','postgresql','doris']:
+  db=base['database'];rule('high_risk_write')
+  original=next(p for p in call('list_connections') if p['id']==cid)
+  discovery=call('add_connection',{'name':'Scoped discovery fixture','type':typ,'host':'127.0.0.1','port':original['port'],'username':'postgres' if typ=='postgresql' else 'root','database':'qc_missing_default','tls_mode':'disabled'})['connection_id']
+  settings['connections'][discovery]={'mode':'read_only','databaseAccess':'selected','databases':[db],'databaseModes':{db:'high_risk_write'}};save()
+  assert call('plugin_tools',{'connection_id':discovery})
+  assert call('plugin_call',{'connection_id':discovery,'tool':'list_databases','arguments':{}})==[db]
+  assert rows(call('plugin_call',{'connection_id':discovery,'tool':'execute_query','arguments':{'database':db,'sql':'SELECT 1'}}))==[['1']]
+  create='CREATE TABLE qc_scoped (id INT PRIMARY KEY, note VARCHAR(100))'
+  if typ=='doris':create='CREATE TABLE qc_scoped (id INT, note VARCHAR(100)) UNIQUE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES ("replication_num"="1")'
+  deny('execute_query',code='CONFIRMATION_REQUIRED',sql=create)
+  q(create,confirm_high_risk=True)
+  q("INSERT INTO qc_scoped(id,note) VALUES(1,'full')")
+  probe='SELECT DATABASE(), VERSION()' if typ!='postgresql' else 'SELECT pg_catalog.current_database(), pg_catalog.version()'
+  assert rows(q(probe))[0][0].split(':')[-1]==db
+  if typ=='postgresql':comment="COMMENT ON COLUMN qc_scoped.note IS 'scoped permission'"
+  elif typ=='doris':comment='ALTER TABLE qc_scoped MODIFY COLUMN note COMMENT "scoped permission"'
+  else:comment="ALTER TABLE qc_scoped MODIFY COLUMN note VARCHAR(100) COMMENT 'scoped permission'"
+  q(comment,confirm_high_risk=True)
+  table=next(t['name'] for t in c('list_tables',refresh=True) if t['name'].split('.')[-1]=='qc_scoped')
+  details=c('describe_table',table=table,refresh=True)
+  assert any(col['name']=='note' and col['comment']=='scoped permission' for col in details[0]['columns']),details
+  q('ALTER TABLE qc_scoped ADD COLUMN extra INT',confirm_high_risk=True)
+  deadline=time.monotonic()+30
+  while not any(col['name']=='extra' for col in c('describe_table',table=table,refresh=True)[0]['columns']):
+   assert time.monotonic()<deadline,'Schema change did not become visible'
+   time.sleep(.2)
+  rule('safe_write');q("UPDATE qc_scoped SET note='safe' WHERE id=1")
+  q("INSERT INTO qc_scoped(id,note) VALUES(2,'remove')");q('DELETE FROM qc_scoped WHERE id=2')
+  deny('execute_query',sql='DELETE FROM qc_scoped')
+  deny('execute_query',sql='ALTER TABLE qc_scoped ADD COLUMN denied INT',confirm_high_risk=True)
+  rule('read_only');assert rows(q('SELECT note FROM qc_scoped WHERE id=1'))==[['safe']]
+  rows(q(probe));deny('execute_query',sql="UPDATE qc_scoped SET note='denied' WHERE id=1")
+  rule('high_risk_write');deny('execute_query',code='CONFIRMATION_REQUIRED',sql='DELETE FROM qc_scoped')
+  if typ in ['mysql','doris']:
+   settings['connections'][cid]={'mode':'high_risk_write','databaseAccess':'all','databaseModes':{}};save()
+   q('CREATE DATABASE qc_mcp_ro',confirm_high_risk=True)
+   ro={'connection_id':cid,'database':'qc_mcp_ro'}
+   rocreate='CREATE TABLE qc_ro (id INT PRIMARY KEY)'
+   if typ=='doris':rocreate='CREATE TABLE qc_ro (id INT) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES ("replication_num"="1")'
+   call('execute_query',{**ro,'sql':rocreate,'confirm_high_risk':True});call('execute_query',{**ro,'sql':'INSERT INTO qc_ro VALUES(7)'})
+   for scope in ['selected','all']:
+    rule('high_risk_write',scope=scope,overrides={db:'high_risk_write','qc_mcp_ro':'read_only'},names=[db,'qc_mcp_ro'])
+    for sql in ['DELETE FROM qc_mcp_ro.qc_ro WHERE id=7','INSERT INTO qc_mcp_ro.qc_ro VALUES(8)','ALTER TABLE qc_mcp_ro.qc_ro ADD COLUMN denied INT']:
+     deny('execute_query',sql=sql,confirm_high_risk=True)
+    assert rows(q('SELECT id FROM qc_mcp_ro.qc_ro'))==[['7']]
+    result=call('execute_query',{**ro,'sql':f"INSERT INTO {db}.qc_scoped(id,note) VALUES({8 if scope=='selected' else 9},'explicit target')"})
+    assert result['results'][0]['affected_or_returned_rows']==1,result
+  if typ=='postgresql':
+   q('CREATE SCHEMA qc_permission_schema',confirm_high_risk=True)
+   q('CREATE TABLE qc_permission_schema.t(id INT)',confirm_high_risk=True)
+   q('DROP SCHEMA qc_permission_schema CASCADE',confirm_high_risk=True)
+  rule('high_risk_write');q('DROP TABLE qc_scoped',confirm_high_risk=True)
+ elif typ=='redis':
+  rule('safe_write');c('execute_redis_command',arguments=['SET','qc:scope','value'])
+  rule('read_only');assert c('execute_redis_command',arguments=['GET','qc:scope'])['reply']=='value'
+  deny('execute_redis_command',arguments=['SET','qc:scope','denied'])
+  rule('high_risk_write');deny('execute_redis_command',code='CONFIRMATION_REQUIRED',arguments=['FLUSHDB'])
+  c('execute_redis_command',arguments=['FLUSHDB'],confirm_high_risk=True)
+  assert c('execute_redis_command',arguments=['GET','qc:scope'])['reply'] is None
+  settings['connections'][cid]={'mode':'high_risk_write','databaseAccess':'all','databaseModes':{'1':'read_only'}};save()
+  deny('execute_redis_command',arguments=['FLUSHALL'],confirm_high_risk=True)
+  settings['connections'][cid]['databaseModes']['1']='high_risk_write';save()
+  deny('execute_redis_command',code='CONFIRMATION_REQUIRED',arguments=['FLUSHALL'])
+  c('execute_redis_command',arguments=['FLUSHALL'],confirm_high_risk=True)
+  original=next(p for p in call('list_connections') if p['id']==cid)
+  alias=call('add_connection',{'name':'Redis saved DB label','type':'redis','host':'127.0.0.1','port':original['port'],'database':'DB 8','tls_mode':'disabled'})['connection_id']
+  settings['connections'][alias]={'mode':'read_only','databaseAccess':'selected','databases':['8'],'databaseModes':{'DB 8':'safe_write'}};save()
+  call('execute_redis_command',{'connection_id':alias,'arguments':['SET','qc:display-db','alias works']})
+  assert call('execute_redis_command',{'connection_id':alias,'database':'8','arguments':['GET','qc:display-db']})['reply']=='alias works'
+  assert call('list_databases',{'connection_id':alias})==['DB 8']
+ elif typ=='elasticsearch':
+  settings['connections'][cid]={'mode':'read_only','databaseAccess':'all','databaseModes':{}};save()
+  assert 'responses' in json.loads(c('execute_request',method='POST',path='/_msearch',body='{}\n{"size":0,"query":{"match_all":{}}}\n')['body'])
+  rule('high_risk_write',names=['qc-mcp-fixture','qc-scope-new'],overrides={'qc-mcp-fixture':'high_risk_write','qc-scope-new':'high_risk_write'})
+  deny('execute_request',code='CONFIRMATION_REQUIRED',method='PUT',path='/qc-scope-new',body='{}')
+  c('execute_request',method='PUT',path='/qc-scope-new',body='{}',confirm_high_risk=True)
+  c('execute_request',method='PUT',path='/qc-scope-new/_doc/1',body='{"index":"ordinary","script":"data","pipeline":"data"}')
+  c('execute_request',method='PUT',path='/qc-scope-new/_mapping',body='{"properties":{"extra":{"type":"keyword"}}}',confirm_high_risk=True)
+  settings['connections'][cid]['databaseModes']['qc-scope-new']='read_only';settings['connections'][cid]['mode']='high_risk_write';save()
+  deny('execute_request',method='DELETE',path='/qc-scope-new',confirm_high_risk=True)
+  deny('execute_request',method='POST',path='/qc-mcp-fixture/_bulk',body='{"index":{"_index":"qc-scope-new"}}\n{"v":1}\n',confirm_high_risk=True)
+  settings['connections'][cid]['databaseModes']['qc-scope-new']='high_risk_write';save()
+  c('execute_request',method='DELETE',path='/qc-scope-new',confirm_high_risk=True)
+ elif typ=='kafka':
+  rule('safe_write');c('send_message',topic='qc-mcp-fixture',value='')
+  rule('read_only');deny('send_message',topic='qc-mcp-fixture',value='denied')
+  settings['connections'][cid]['mode']='high_risk_write';save();deny('send_message',topic='qc-mcp-fixture',value='still denied')
+ print('PASS '+typ+' scoped object-mode/confirmation/override permission cases',flush=True)
+
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('executable',type=Path);parser.add_argument('--drivers-dir',type=Path,required=True);parser.add_argument('--drivers',default='mysql,pg,redis,es,kafka,doris');parser.add_argument('--stress',action='store_true',help='Keep MySQL/Doris alive for concurrent same-process HTTP checks and transaction cleanup')
+parser.add_argument('--permission-matrix',action='store_true');parser.add_argument('--mysql-image',default='mysql:5.6');parser.add_argument('--redis-image',default='redis:7.4.2')
 args=parser.parse_args();assert not args.stress or {'mysql','doris'} <= set(args.drivers.split(',')), '--stress requires mysql,doris';EXE=args.executable.resolve();drivers=args.drivers_dir.resolve();selected=args.drivers.split(',')
 try:
  with tempfile.TemporaryDirectory(prefix='qc-mcp-live-') as temp:
@@ -150,6 +252,7 @@ try:
      groups=c('consumer_groups',topic='qc-mcp-fixture');assert any(g['id']=='qc-mcp-fixture-group' and g['partitions'] for g in groups),groups
      assert any(t['name']=='qc-mcp-fixture' for t in c('list_tables'))
      print('PASS kafka live produce, peek, groups and readonly denial',flush=True)
+    if args.permission_matrix:permission_cases(typ,cid,base,call,settings,save)
     settings['connections'][cid]={'databaseAccess':'none','databaseModes':{}};save();call('list_tables',base,error=True)
     if args.stress and kind in ['mysql','doris']:
      settings['connections'][cid]={'mode':'safe_write','databaseModes':{}};save();stress_connections[kind]=base

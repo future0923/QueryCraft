@@ -53,6 +53,18 @@ actor SQLStructuralParser {
         self.highlightQuery = highlightQuery
     }
 
+    /// Authorization needs semantic parents (DDL targets, assignments and nested writes).
+    /// Keep this independent of the compact tree used by editor formatting/completion.
+    func authorizationTree(revision: SQLSourceRevision) throws -> SQLSyntaxNodeSnapshot {
+        guard let cachedParse, cachedParse.source.revision == revision,
+              let root = cachedParse.tree.rootNode else { throw SQLStructuralParserError.staleRevision }
+        func snapshot(_ node: Node) -> SQLSyntaxNodeSnapshot {
+            SQLSyntaxNodeSnapshot(type: node.nodeType ?? "unknown", range: SQLSourceRange(node.range),
+                                  children: Self.childNodes(of: node).map(snapshot))
+        }
+        return snapshot(root)
+    }
+
     func parse(
         _ source: SQLSourceSnapshot,
         applying edit: SQLSourceEdit? = nil
@@ -1371,6 +1383,9 @@ actor SQLStructuralParser {
 
     private static func statementKind(for node: Node) -> SQLStatementKind {
         let nodeTypes = descendantNodeTypes(in: node)
+        // ON DUPLICATE KEY UPDATE is part of INSERT, not a free-standing UPDATE.
+        if childNodes(of: node).contains(where: { $0.nodeType == "insert" }),
+           !nodeTypes.contains("update"), !nodeTypes.contains("delete") { return .insert }
         return statementKind(
             nodeTypes: nodeTypes,
             hasUpdateWhereClause: nodeTypes.contains("keyword_update") && hasOuterUpdateWhereClause(in: node),
@@ -1443,7 +1458,7 @@ actor SQLStructuralParser {
         {
             return .ddl(.alter)
         }
-        if nodeTypes.contains("_ddl_statement") {
+        if nodeTypes.contains("_ddl_statement") || nodeTypes.contains("comment_statement") || nodeTypes.contains("keyword_rename") {
             return .ddl(.other)
         }
         if nodeTypes.contains("_commit") || nodeTypes.contains("commit") {

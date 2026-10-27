@@ -20,8 +20,8 @@
     "desktopAPI": 1
   },
   "ssh": {
-    "version": "0.7.0",
-    "build": "7",
+    "version": "0.9.0",
+    "build": "11",
     "minimumAppVersion": "0.1.12",
     "driverAPI": 5,
     "storageAPI": 1,

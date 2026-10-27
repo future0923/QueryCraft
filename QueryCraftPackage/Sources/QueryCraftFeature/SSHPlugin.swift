@@ -106,6 +106,9 @@ final class SSHPlugin: SSHTransport, Sendable {
         let prune: Control
         let destroy: Control
     }
+    private typealias SetTerminal = @Sendable @convention(c) (OpaquePointer?, Int32, UInt32, UInt32) -> Int32
+    private typealias ResizeTerminal = @Sendable @convention(c) (OpaquePointer?, UInt32, UInt32) -> Void
+    private typealias TerminalReady = @Sendable @convention(c) (OpaquePointer?) -> UInt32
     private struct Functions: Sendable {
         let create: Create
         let fileCreate: FileCreate?
@@ -117,6 +120,9 @@ final class SSHPlugin: SSHTransport, Sendable {
         let setProgress: SetProgress?
         let setRoute: SetRoute?
         let diagnostic: Diagnostic?
+        let setTerminal: SetTerminal?
+        let resizeTerminal: ResizeTerminal?
+        let terminalReady: TerminalReady?
     }
     private static let libraries = Mutex<[String: Functions]>([:])
     private let functions: Functions
@@ -138,6 +144,7 @@ final class SSHPlugin: SSHTransport, Sendable {
               let executable = bundle.executableURL else {
             throw MCPFailure("SSH plugin is missing, invalid or incompatible. Install a compatible signed plugin.", code: .unsupported)
         }
+        try Self.validateTerminalRenderer(in: bundleURL)
         functions = try Self.libraries.withLock { libraries in
             if let loaded = libraries[bundleURL.path] { return loaded }
             guard let handle = dlopen(executable.path, RTLD_NOW | RTLD_LOCAL) else {
@@ -170,10 +177,15 @@ final class SSHPlugin: SSHTransport, Sendable {
                 let diagnosticVersion = dlsym(handle, "querycraft_ssh_plugin_diagnostic_version").map { unsafeBitCast($0, to: Version.self) }
                 let diagnostic: Diagnostic? = (diagnosticVersion?() ?? 0) == 1
                     ? dlsym(handle, "querycraft_ssh_plugin_diagnostic").map { unsafeBitCast($0, to: Diagnostic.self) } : nil
+                let terminalVersion = dlsym(handle, "querycraft_ssh_plugin_terminal_version").map { unsafeBitCast($0, to: Version.self) }
+                let hasTerminal = terminalVersion?() == 1
                 let functions = try Functions(create: symbol("querycraft_ssh_plugin_create", Create.self), fileCreate: fileCreate, managesFiles: fileCreate != nil && (managementVersion?() ?? 0) == 1,
                     run: symbol("querycraft_ssh_plugin_run", Run.self), cancel: symbol("querycraft_ssh_plugin_cancel", Control.self),
                     destroy: symbol("querycraft_ssh_plugin_destroy", Control.self), pool: pooling, setProgress: setProgress, setRoute: setRoute,
-                    diagnostic: diagnostic)
+                    diagnostic: diagnostic,
+                    setTerminal: hasTerminal ? try symbol("querycraft_ssh_plugin_set_terminal", SetTerminal.self) : nil,
+                    resizeTerminal: hasTerminal ? try symbol("querycraft_ssh_plugin_terminal_resize", ResizeTerminal.self) : nil,
+                    terminalReady: hasTerminal ? try symbol("querycraft_ssh_plugin_terminal_ready", TerminalReady.self) : nil)
                 // Keep successful modules resident until process exit. A
                 // cancelled system resolver can finish after its request;
                 // unloading its code earlier would leave a live thread in it.
@@ -187,7 +199,24 @@ final class SSHPlugin: SSHTransport, Sendable {
             progress: functions.setProgress != nil, routes: functions.setRoute != nil, diagnostics: functions.diagnostic != nil)
     }
 
-    static func verifySignature(at url: URL) throws {
+    /// Validate nested optional UI without loading it into a headless MCP process.
+    static func validateTerminalRenderer(in root: URL) throws {
+        guard let container = Bundle(url: root), let abi = container.object(forInfoDictionaryKey: "QCSSHTerminalRendererABIVersion") as? Int else { return }
+        guard abi == 1 else { throw MCPFailure("SSH terminal renderer ABI is incompatible.", code: .unsupported) }
+        let canonical = root.resolvingSymlinksInPath()
+        let url = canonical.appending(path: "Contents/PlugIns/TerminalRenderer.bundle").resolvingSymlinksInPath()
+        guard url.path.hasPrefix(canonical.path + "/"), let bundle = Bundle(url: url),
+              bundle.bundleIdentifier == "io.github.future0923.QueryCraft.SSH.TerminalRenderer",
+              bundle.object(forInfoDictionaryKey: "QCSSHTerminalRendererABIVersion") as? Int == 1,
+              bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String == container.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String == container.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+              let executable = bundle.executableURL, FileManager.default.fileExists(atPath: executable.path) else {
+            throw MCPFailure("SSH terminal renderer metadata is incompatible or missing. Current was preserved.", code: .unsupported)
+        }
+        try verifySignature(at: url, identifier: "io.github.future0923.QueryCraft.SSH.TerminalRenderer")
+    }
+
+    static func verifySignature(at url: URL, identifier: String = "io.github.future0923.QueryCraft.SSH") throws {
         // QueryCraft's free distribution uses a pinned self-signed certificate,
         // which has no Apple Team ID. Accept the host's exact leaf certificate;
         // otherwise retain the existing Apple-team / Debug ad-hoc rules.
@@ -199,7 +228,7 @@ final class SSHPlugin: SSHTransport, Sendable {
            SecStaticCodeCreateWithPath(url as CFURL, SecCSFlags(), &plugin) == errSecSuccess, let plugin {
             let digest = Insecure.SHA1.hash(data: SecCertificateCopyData(leaf) as Data).map { String(format: "%02x", $0) }.joined()
             var requirement: SecRequirement?
-            let text = "identifier \"io.github.future0923.QueryCraft.SSH\" and certificate leaf = H\"\(digest)\""
+            let text = "identifier \"\(identifier)\" and certificate leaf = H\"\(digest)\""
             if SecRequirementCreateWithString(text as CFString, SecCSFlags(), &requirement) == errSecSuccess,
                SecStaticCodeCheckValidity(plugin, SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckAllArchitectures), requirement) == errSecSuccess {
                 return
@@ -233,7 +262,7 @@ final class SSHPlugin: SSHTransport, Sendable {
         guard supportsFiles else { throw MCPFailure("Reconnect using an SSH plugin with SFTP extension 1.", code: .unsupported) }
         return try await executeOperation(request, file: file)
     }
-    private func executeOperation(_ request: SSHRequest, file: SSHFileRequest?) async throws -> SSHResult {
+    private func validateRequest(_ request: SSHRequest) throws {
         try Task.checkCancellation()
         try request.connection.validate()
         guard (1...300_000).contains(request.timeoutMilliseconds), (1...1_048_576).contains(request.maximumOutputBytes),
@@ -257,6 +286,9 @@ final class SSHPlugin: SSHTransport, Sendable {
         if request.connection.authenticationMethod == .agent || !request.jumps.isEmpty || request.scanHostKey {
             guard supportsRoutes else { throw MCPFailure("Install SSH 0.6.0 or later and reconnect for agent/jump-host connections.", code: .unsupported) }
         }
+    }
+    private func executeOperation(_ request: SSHRequest, file: SSHFileRequest?) async throws -> SSHResult {
+        try validateRequest(request)
         let operation = try makeOperation(request, file: file)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -270,7 +302,22 @@ final class SSHPlugin: SSHTransport, Sendable {
         } onCancel: { operation.cancel() }
     }
 
-    private func makeOperation(_ request: SSHRequest, file: SSHFileRequest?) throws -> Operation {
+    func makeTerminal(_ request: SSHRequest, socket: Int32, columns: Int, rows: Int) throws -> SSHTerminalHandle {
+        try validateRequest(request)
+        guard request.command == nil, !request.scanHostKey, functions.setTerminal != nil else {
+            throw MCPFailure(AppCopy.current.text("请安装支持交互终端的 SSH 0.8.0 或更新插件。", "Install SSH 0.8.0 or later for interactive terminals."), code: .unsupported)
+        }
+        let operation = try makeOperation(request, file: nil, terminal: (socket, columns, rows))
+        return SSHTerminalHandle(run: { [self] in
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let result = operation.run()
+                    withExtendedLifetime(self) { continuation.resume(returning: result) }
+                }
+            }
+        }, cancel: { operation.cancel() }, resize: { operation.resize(columns: $0, rows: $1) }, ready: { operation.isTerminalReady() })
+    }
+    private func makeOperation(_ request: SSHRequest, file: SSHFileRequest?, terminal: (Int32, Int, Int)? = nil) throws -> Operation {
         let profile = request.connection
         let values: [String?] = [profile.host, profile.username, profile.hostFingerprint, profile.privateKeyPath, request.secret, request.command,
                                  file?.remotePath, file?.localPath, file?.temporaryPath]
@@ -297,9 +344,16 @@ final class SSHPlugin: SSHTransport, Sendable {
             task = create(&value)
         } else { task = functions.create(&raw) }
         guard let task else { throw MCPFailure("SSH plugin rejected the request.", code: .unsupported) }
-        do { try configureRoute(task, request: request) }
+        do {
+            try configureRoute(task, request: request)
+            if let terminal {
+                guard let configure = functions.setTerminal, configure(task, terminal.0, UInt32(clamping: terminal.1), UInt32(clamping: terminal.2)) == 0 else {
+                    throw MCPFailure("SSH plugin rejected the terminal configuration.", code: .unsupported)
+                }
+            }
+        }
         catch { functions.destroy(task); throw error }
-        return Operation(task: task, functions: functions, pool: request.jumps.isEmpty && request.agentSocket == nil && !request.scanHostKey ? pool : nil, scope: profile.id.uuidString, progress: file?.progress,
+        return Operation(task: task, functions: functions, pool: terminal == nil && request.jumps.isEmpty && request.agentSocket == nil && !request.scanHostKey ? pool : nil, scope: profile.id.uuidString, progress: file?.progress,
                          endpoints: request.jumps.map(\.connection) + [profile])
     }
 
@@ -386,6 +440,11 @@ final class SSHPlugin: SSHTransport, Sendable {
                 }, Unmanaged.passUnretained(sink).toOpaque())
             }
         }
+        deinit { if let task { functions.destroy(task) } }
+        func resize(columns: Int, rows: Int) {
+            lock.withLock { if let task { functions.resizeTerminal?(task, UInt32(clamping: columns), UInt32(clamping: rows)) } }
+        }
+        func isTerminalReady() -> Bool { lock.withLock { task.map { functions.terminalReady?($0) == 1 } ?? false } }
         func cancel() { lock.withLock { if let task { functions.cancel(task) } } }
         func run() -> SSHResult {
             // Only this worker runs libssh2. Concurrent cancellation touches

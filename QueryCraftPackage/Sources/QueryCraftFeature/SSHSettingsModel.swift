@@ -45,6 +45,7 @@ final class SSHConnectionDraft: Identifiable {
     let id: UUID
     let original: SSHConnection?
     var name: String
+    var groupID: UUID?
     var host: String
     var port: String
     var username: String
@@ -66,7 +67,7 @@ final class SSHConnectionDraft: Identifiable {
     var error: String?
     init(profile: SSHConnection? = nil, policy: MCPPolicy = MCPPolicy()) {
         expectedAccess = profile.map { SSHAccountAccess(id: $0.id, policy: policy) }
-        original = profile; id = profile?.id ?? UUID()
+        original = profile; id = profile?.id ?? UUID(); groupID = profile?.groupID
         name = profile?.name ?? ""; host = profile?.host ?? ""; port = String(profile?.port ?? 22)
         username = profile?.username ?? "root"; fingerprint = profile?.hostFingerprint ?? ""
         authentication = profile?.authenticationMethod ?? .password
@@ -98,7 +99,7 @@ final class SSHConnectionDraft: Identifiable {
             privateKeyPath: authentication == .privateKey ? keyPath : nil,
             storesCredential: authentication == .password || (authentication == .privateKey && keyHasPassphrase), authentication: authentication,
             agentSocketPath: authentication == .agent && !agentSocketPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? agentSocketPath.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
-            jumpConnectionID: jumpConnectionID)
+            jumpConnectionID: jumpConnectionID, groupID: groupID, sortIndex: original?.sortIndex)
         try profile.validate()
         guard !profile.storesCredential || !secret.isEmpty || retainsCredential else {
             throw MCPFailure(AppCopy.current.text("请输入密码或私钥口令。", "Enter a password or key passphrase."))

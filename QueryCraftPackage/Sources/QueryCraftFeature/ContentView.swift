@@ -4,6 +4,8 @@ import SwiftUI
 public struct ContentView: View {
     @FocusState private var focusedAction: WelcomeAction?
     @State private var isPresentingNewConnectionFlow = false
+    @State private var sshDraft: SSHConnectionDraft?
+    @State private var removingSSH: SSHConnection?
     @State private var profileBeingEdited: ConnectionProfile?
     @State private var initialConnectionGroupID: ConnectionGroup.ID?
     @State private var groupEditorMode: ConnectionGroupEditorMode?
@@ -14,6 +16,7 @@ public struct ContentView: View {
     @State private var driverInstallationRequest:
         ConnectionProfileDriverInstallationRequest?
     @State private var model: WelcomeModel
+    private var loadsApplicationState = true
 
     public var body: some View {
         welcomeView
@@ -67,6 +70,8 @@ public struct ContentView: View {
 
                 ConnectionProfilesPane(
                     model: model,
+                    openSSH: { SSHTerminalWindowController.show(connection: $0) },
+                    createSSH: { presentSSH() }, editSSH: { presentSSH($0) }, deleteSSH: { removingSSH = $0 },
                     openProfile: openProfile,
                     createProfile: presentCreateConnection,
                     editProfile: presentEditConnection,
@@ -88,6 +93,17 @@ public struct ContentView: View {
                 welcomeModel: model,
                 initialGroupID: initialConnectionGroupID
             )
+        }
+        .sheet(item: $sshDraft, onDismiss: { Task { await model.ssh?.load() } }) { draft in
+            if let ssh = model.ssh { SSHConnectionEditor(draft: draft, service: ssh.service) }
+        }
+        .confirmationDialog(AppCopy.current.text("删除 SSH 连接？", "Delete SSH connection?"), isPresented: Binding(get: { removingSSH != nil }, set: { if !$0 { removingSSH = nil } }), presenting: removingSSH) { profile in
+            Button(AppCopy.current.text("删除连接及凭据", "Delete connection and credential"), role: .destructive) {
+                removingSSH = nil
+                Task { await model.ssh?.remove(profile) }
+            }
+        } message: { profile in
+            Text(AppCopy.current.text("删除“\(profile.name)”的服务器配置、保存的凭据和 MCP 授权。已经运行的远程程序可能继续执行。", "Delete the server account, saved credential and MCP grants for \(profile.name). Already running remote programs may continue."))
         }
         .sheet(item: $profileBeingEdited) { profile in
             CreateConnectionView(
@@ -140,8 +156,9 @@ public struct ContentView: View {
             Text(request.confirmationMessage)
         }
         .task {
-            await loadWelcomeState()
+            if loadsApplicationState { await loadWelcomeState() } else { await model.loadProfiles() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: SSHConnectionService.settingsChanged)) { _ in Task { await model.ssh?.load() } }
         .onAppear {
             focusedAction = .createConnection
         }
@@ -149,6 +166,15 @@ public struct ContentView: View {
 
     public init() {
         _model = State(initialValue: WelcomeModel.makeDefault())
+    }
+
+    init(model: WelcomeModel, loadsApplicationState: Bool = true) {
+        _model = State(initialValue: model); self.loadsApplicationState = loadsApplicationState
+    }
+
+    private func presentSSH(_ profile: SSHConnection? = nil) {
+        guard let ssh = model.ssh else { return }
+        sshDraft = SSHConnectionDraft(profile: profile, policy: ssh.policy)
     }
 
     private func presentCreateConnection(

@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct MCPSettingsPane: View {
-    private let openSSH: (() -> Void)?
     @State private var model: MCPSettingsModel
     @State private var confirmUninstall = false
     @State private var showsSettingsIndex = false
@@ -9,9 +8,8 @@ struct MCPSettingsPane: View {
     @State private var pendingIndexDestination: MCPSettingsDestination?
     @State private var reviewPolicy = MCPPolicy()
 
-    init(model: MCPSettingsModel, openSSH: (() -> Void)? = nil) {
+    init(model: MCPSettingsModel) {
         _model = State(initialValue: model)
-        self.openSSH = openSSH
     }
 
     private func copy(_ zh: String, _ en: String) -> String { AppCopy.current.text(zh, en) }
@@ -92,7 +90,7 @@ struct MCPSettingsPane: View {
             MCPConnectionScopeEditor(model: model, profile: profile)
         }
         .sheet(isPresented: $showsReview) {
-            MCPSettingsReviewView(policy: reviewPolicy, profiles: model.profiles, groups: model.groups) {
+            MCPSettingsReviewView(policy: reviewPolicy, profiles: model.profiles, groups: model.groups, sshProfiles: model.sshProfiles) {
                 guard model.policy == reviewPolicy else {
                     model.error = copy("配置已变化，请重新检查后保存。", "Settings changed. Review them again before saving.")
                     return
@@ -157,13 +155,6 @@ struct MCPSettingsPane: View {
     }
 
     @ViewBuilder private var accessSections: some View {
-        if let openSSH {
-            Section(copy("SSH 服务器", "SSH servers")) {
-                SettingsControlLabel(title: copy("服务器账号与授权", "Server accounts and access"),
-                    description: copy("先在插件页安装 SSH，再配置服务器、密码或私钥，以及每个账号的 MCP 权限。", "Install SSH in Plugins, then configure servers, passwords or private keys, and per-account MCP access."))
-                Button(copy("管理 SSH 服务器…", "Manage SSH servers…"), action: openSSH)
-            }
-        }
         Section {
             Toggle(isOn: $model.policy.enabled) {
                 MCPSettingsControlLabel(title: copy("启用 MCP", "Enable MCP"),

@@ -4,6 +4,12 @@ import SwiftUI
 struct ConnectionProfilesOutlineView: NSViewRepresentable {
     let groups: [ConnectionGroup]
     let profiles: [ConnectionProfile]
+    var sshProfiles: [SSHConnection] = []
+    var openSSH: ((SSHConnection) -> Void)? = nil
+    var createSSH: (() -> Void)? = nil
+    var editSSH: ((SSHConnection) -> Void)? = nil
+    var deleteSSH: ((SSHConnection) -> Void)? = nil
+    var moveSSH: ((SSHConnection, UUID?, UUID?) -> Void)? = nil
     let searchQuery: String
     let showsUngrouped: Bool
     let openProfile: (ConnectionProfile) -> Void

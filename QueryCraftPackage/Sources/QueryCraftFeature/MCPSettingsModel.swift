@@ -23,6 +23,8 @@ final class MCPSettingsModel {
     var skillDirectory: URL { skillTarget.directory(in: skillHomeDirectory, identity: serverIdentity) }
     private let historyStore: MCPHistoryStore
     var profiles: [ConnectionProfile] = []
+    var sshProfiles: [SSHConnection] = []
+    var originalSSHPolicy: MCPSSHPolicy?
     var groups: [ConnectionGroup] = []
     var installedVersion: String?
     var availableVersion: String?
@@ -181,6 +183,7 @@ final class MCPSettingsModel {
             let (snapshot, executable) = try await (loaded, path)
             try Task.checkCancellation()
             policy = snapshot.policy; profiles = snapshot.connections.profiles; groups = snapshot.connections.groups
+            sshProfiles = snapshot.sshProfiles; originalSSHPolicy = snapshot.policy.ssh
             self.executable = executable
             didLoad = true; error = nil
         } catch is CancellationError {
@@ -241,6 +244,7 @@ final class MCPSettingsModel {
                 loadingDatabaseChoices.remove(id)
             }
             profiles = refreshedProfiles; groups = snapshot.connections.groups
+            rebaseSSHProfiles(snapshot)
             await inspectSkill()
             await inspectClientRegistration()
             if section == "activity" { await loadHistory() }
@@ -290,7 +294,7 @@ final class MCPSettingsModel {
     }
     func save() {
         guard didLoad else { return }
-        do { captureQueryTimeout(); try store.savePreservingSSH(policy); error = nil; status = AppCopy.current.text("已保存；权限立即生效，HTTP 监听地址变更需重启服务", "Saved; permissions apply immediately. Restart HTTP to apply listening address changes.") }
+        do { captureQueryTimeout(); try persistSettingsPolicy(); error = nil; status = AppCopy.current.text("已保存；权限立即生效，HTTP 监听地址变更需重启服务", "Saved; permissions apply immediately. Restart HTTP to apply listening address changes.") }
         catch { self.error = error.localizedDescription }
     }
     func install() async {
@@ -330,7 +334,7 @@ final class MCPSettingsModel {
     func authorizeCredentials() async {
         guard didLoad, !isBusy else { return }; isBusy = true; defer { isBusy = false }
         do {
-            captureQueryTimeout(); try store.savePreservingSSH(policy)
+            captureQueryTimeout(); try persistSettingsPolicy()
             error = nil
             status = AppCopy.current.text("正在统一授权已选连接…", "Authorizing selected connections…")
             let supported = try? await MCPProcess.run(URL(fileURLWithPath: executable), arguments: ["--credential-protocol"])
@@ -373,7 +377,7 @@ final class MCPSettingsModel {
         do {
             // Stopping must remain possible even when the editor contains invalid values.
             if running {
-                captureQueryTimeout(); try store.savePreservingSSH(policy)
+                captureQueryTimeout(); try persistSettingsPolicy()
                 try await service.start(executable: executable, settings: policy.http)
             }
             else { try await service.stop() }

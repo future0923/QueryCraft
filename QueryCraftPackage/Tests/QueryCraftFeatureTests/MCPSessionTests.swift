@@ -42,7 +42,9 @@ struct MCPSessionTests {
         try MCPPolicyStore(directory: directory).save(policy)
         let session = MCPBlockingSession()
         let runtime = MCPRuntime(directory: directory, registry: DatabaseDriverRegistry(drivers: [MCPRecordingDriver(databaseType: type, session: session)]))
-        let profile = MCPTests().profile(type: type)
+        let initialProfile = MCPTests().profile(type: type)
+        try await runtime.repository.insert(initialProfile)
+        let profile = try #require(try await runtime.repository.fetch(id: initialProfile.id))
         _ = try await runtime.connect(profile, database: "allowed", mode: .readOnly)
         #expect(await session.statements.isEmpty)
         _ = try await runtime.execute("execute_query", args: ["sql": "SELECT 1"], profile: profile, database: "allowed", connection: session, policy: policy, inTransaction: false)
@@ -60,8 +62,11 @@ struct MCPSessionTests {
         var policy = MCPPolicy(); policy.enabled = true; policy.allConnections = true
         try MCPPolicyStore(directory: directory).save(policy)
         let session = MCPBlockingSession(failQuery: true), runtime = MCPRuntime(directory: directory)
+        let initialProfile = MCPTests().profile()
+        try await runtime.repository.insert(initialProfile)
+        let profile = try #require(try await runtime.repository.fetch(id: initialProfile.id))
         await #expect(throws: MCPFailure.self) {
-            _ = try await runtime.execute("execute_query", args: ["sql": "SELECT 1"], profile: MCPTests().profile(), database: "allowed", connection: session, policy: policy, inTransaction: false)
+            _ = try await runtime.execute("execute_query", args: ["sql": "SELECT 1"], profile: profile, database: "allowed", connection: session, policy: policy, inTransaction: false)
         }
         #expect(await session.statements == ["START TRANSACTION READ ONLY", "SELECT 1", "ROLLBACK"])
         #expect(await session.state == .autoCommit)

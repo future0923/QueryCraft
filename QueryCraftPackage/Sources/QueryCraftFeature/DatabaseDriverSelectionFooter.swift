@@ -20,7 +20,7 @@ struct DatabaseDriverSelectionFooter: View {
             }
 
             HStack {
-                if model.selectedItem?.installationState.hasInstalledDriver == true {
+                if model.selectedPlugin?.installationState.hasInstalledDriver == true {
                     Button(
                         AppCopy.current.text("卸载驱动", "Uninstall Driver"),
                         systemImage: "trash",
@@ -39,7 +39,7 @@ struct DatabaseDriverSelectionFooter: View {
                 Button(continueButtonTitle, action: continueSelection)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(model.selectedItem == nil || model.isInstalling)
+                    .disabled(model.selectedPlugin == nil || model.isInstalling || (model.selectedPlugin?.installedVersion == nil && model.selectedPlugin?.availableVersion == nil))
                     .accessibilityIdentifier("continueDatabaseSelectionButton")
             }
         }
@@ -47,7 +47,7 @@ struct DatabaseDriverSelectionFooter: View {
     }
 
     private var continueButtonTitle: String {
-        guard let selectedItem = model.selectedItem else {
+        guard let selectedItem = model.selectedPlugin else {
             return AppCopy.current.text("继续", "Continue")
         }
         switch selectedItem.installationState {

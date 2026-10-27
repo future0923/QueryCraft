@@ -1,13 +1,15 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PluginSettingsPane: View {
-    var openSSH: (() -> Void)? = nil
     @State private var model = PluginSettingsModel()
     @State private var sshModel = SSHPluginSettingsModel()
     @State private var requestedAction: PluginSettingsAction?
     @State private var actionRequestID: UUID?
     @State private var uninstallCandidate: DatabaseDriverCatalogItem?
     @State private var isShowingUninstallConfirmation = false
+    @State private var removingSSH = false
+    @State private var importingSSH = false
 
     private var copy: SettingsCopy {
         SettingsCopy(language: .activeInterfaceLanguage)
@@ -37,7 +39,7 @@ struct PluginSettingsPane: View {
                 }
             }
 
-            Section(copy.databaseDriverPluginsSection) {
+            Section(AppCopy.current.text("连接插件", "Connection plugins")) {
                 ForEach(model.visibleItems) { item in
                     PluginSettingsRow(
                         item: item,
@@ -49,9 +51,16 @@ struct PluginSettingsPane: View {
                         }
                     )
                 }
-            }
-            if model.searchText.isEmpty || "SSH libssh2 服务器".localizedCaseInsensitiveContains(model.searchText) {
-                SSHPluginSettingsSection(model: sshModel, openServers: openSSH)
+                if model.searchText.isEmpty || "SSH libssh2 服务器".localizedCaseInsensitiveContains(model.searchText) {
+                    PluginSettingsRow(item: ConnectionPluginPresentation(sshModel),
+                        install: { Task { await sshModel.install() } },
+                        update: { Task { await sshModel.install() } },
+                        uninstall: { removingSSH = true })
+                    .contextMenu {
+                        Button(AppCopy.current.text("选择本地安装包…", "Choose local package…")) { importingSSH = true }
+                            .disabled(sshModel.busy)
+                    }
+                }
             }
         }
         .formStyle(.grouped)
@@ -105,6 +114,15 @@ struct PluginSettingsPane: View {
         } message: {
             Text(model.errorMessage)
         }
+        .fileImporter(isPresented: $importingSSH, allowedContentTypes: [.zip, .bundle, .directory]) { result in
+            switch result {
+            case .success(let source): Task { await sshModel.install(source: source) }
+            case .failure(let error): sshModel.error = error.localizedDescription
+            }
+        }
+        .confirmationDialog(copy.uninstallPluginTitle, isPresented: $removingSSH) {
+            Button(copy.uninstallPlugin, role: .destructive) { Task { await sshModel.uninstall() } }
+        } message: { Text(copy.uninstallPluginMessage("SSH")) }
     }
 
     private func request(_ action: PluginSettingsAction) {

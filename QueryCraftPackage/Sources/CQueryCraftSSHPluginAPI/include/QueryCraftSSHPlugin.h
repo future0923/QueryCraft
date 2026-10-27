@@ -125,4 +125,12 @@ typedef struct {
     uint32_t size, endpoint_index, hop_count, phase;
 } qc_ssh_diagnostic;
 typedef const qc_ssh_diagnostic *(*qc_ssh_diagnostic_fn)(qc_ssh_task *);
+/* Optional interactive terminal extension 1. Set before run; fd is duplicated.
+   Worker owns libssh2. Host uses a duplex stream socket for raw terminal bytes.
+   resize/ready/cancel may overlap run; destroy only after run finishes.
+   timeout_ms bounds setup only; an established shell lives until EOF/cancel.
+   No pooling, command replay, clipboard or remote runtime is involved. */
+typedef int32_t (*qc_ssh_set_terminal_fn)(qc_ssh_task *, int32_t fd, uint32_t cols, uint32_t rows);
+typedef void (*qc_ssh_terminal_resize_fn)(qc_ssh_task *, uint32_t cols, uint32_t rows);
+typedef uint32_t (*qc_ssh_terminal_ready_fn)(qc_ssh_task *);
 #endif

@@ -8,6 +8,7 @@ final class QueryCraftApplicationDelegate: NSObject, NSApplicationDelegate {
     private var fallbackWelcomeWindow: NSWindow?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard SSHTerminalWindowController.confirmApplicationTermination() else { return .terminateCancel }
         guard WorkspaceTransferLifecycle.hasActiveTransfers else { return .terminateNow }
         let alert = NSAlert()
         alert.messageText = String(localized: "Data transfers are still running")
@@ -23,6 +24,7 @@ final class QueryCraftApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NotificationCenter.default.addObserver(self, selector: #selector(showConnectionsRequested(_:)), name: WelcomeWindowPresentation.requestNotification, object: nil)
         softwareUpdateManager.start()
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(1))
@@ -42,6 +44,14 @@ final class QueryCraftApplicationDelegate: NSObject, NSApplicationDelegate {
 
     private func showWelcomeWindowIfNeeded() {
         guard !NSApp.windows.contains(where: \.isVisible) else { return }
+        showConnectionsRequested(nil)
+    }
+
+    @objc private func showConnectionsRequested(_ notification: Notification?) {
+        if let existing = NSApp.windows.first(where: { $0.identifier == WelcomeWindowPresentation.windowIdentifier }) {
+            existing.deminiaturize(nil); existing.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true); return
+        }
         if let fallbackWelcomeWindow {
             fallbackWelcomeWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)

@@ -155,7 +155,8 @@ actor MCPRuntime {
             for p in profiles where policy.permits(p) {
                 values.append(.object(["id": .string(p.id.uuidString), "name": .string(p.name), "type": .string(p.databaseType.rawValue),
                                        "host": .string(p.host), "port": .int(p.port), "database": p.defaultDatabase.map(MCPJSONValue.string) ?? .null,
-                                       "driver_installed": .bool(await registry.isInstalled(p.databaseType))]))
+                                       "driver_installed": .bool(await registry.isInstalled(p.databaseType)),
+                                       "mcp_access": policy.accessMetadata(p)]))
             }
             return .array(values)
         }
@@ -222,8 +223,13 @@ actor MCPRuntime {
             }
             profile = current
         }
-        let database = args.string("database") ?? savedEntry?.database ?? profile.defaultDatabase
+        var database = args.string("database") ?? savedEntry?.database ?? profile.defaultDatabase
             ?? (profile.databaseType == .redis ? "0" : profile.databaseType == .kafka ? "Kafka" : nil)
+        if tool == "list_databases" {
+            if [.mysql, .doris].contains(profile.databaseType) { database = nil }
+            else if profile.databaseType == .postgresql, let allowed = policy.connectionRule(profile).allowedDatabases,
+                    database.map({ !policy.permitsDatabaseName($0, profile: profile) }) ?? true { database = allowed.sorted().first }
+        }
         policy = try store.load()
         if let savedEntry, database != savedEntry.database { throw MCPFailure("Database cannot change on a pinned session. Open another session.") }
         try policy.authorize(tool: tool, profile: profile, database: database)
@@ -241,15 +247,22 @@ actor MCPRuntime {
                 throw MCPFailure("Driver calls cannot switch connections.", code: .accessDenied)
             }
             delegated["connection_id"] = .string(profile.id.uuidString)
-            if delegated["database"] == nil, let database { delegated["database"] = .string(database) }
+            if delegated["database"] == nil, let requested = args["database"] { delegated["database"] = requested }
             return try await dispatch("querycraft_" + target, arguments: delegated)
         }
         if tool == "duplicate_connection" || tool == "remove_connection" {
             return try await mutateConnection(tool, profile: profile, args: args, policy: policy)
         }
-        let accessTarget = profile.databaseType == .kafka ? args.string("topic")
-            : profile.databaseType == .elasticsearch ? args.string("path").flatMap(MCPRequestAuthorization.index) : database
-        let mode = policy.effectiveMode(profile, database: accessTarget)
+        let sqlDriver = [.mysql, .postgresql, .doris].contains(profile.databaseType)
+        let sqlTools: Set<String> = ["execute_query", "execute_batch", "execute_and_show", "open_session", "begin_transaction", "commit_transaction"]
+        if (sqlTools.contains(tool) && !sqlDriver)
+            || (["list_routines", "get_routine_source"].contains(tool) && ![.mysql, .postgresql].contains(profile.databaseType))
+            || (tool == "execute_redis_command" && profile.databaseType != .redis)
+            || (tool == "execute_request" && profile.databaseType != .elasticsearch)
+            || (["peek_messages", "send_message", "consumer_groups"].contains(tool) && profile.databaseType != .kafka) {
+            throw MCPFailure("This tool is not supported by the selected connection's driver.", code: .unsupported)
+        }
+        let mode = try policy.executionMode(profile, database: database, args: args)
         if let savedEntry, savedEntry.mode != mode { throw MCPFailure("Session permissions changed. Close and reopen the session.", code: .sessionUnavailable) }
         let metadataOnly = MCPToolCatalog.metadataTools.contains(tool) && savedEntry == nil
         let cacheKey = try metadataKey(tool: tool, args: args, profile: profile, database: database, policy: policy)
@@ -277,8 +290,11 @@ actor MCPRuntime {
             // Revalidate after potentially slow connection establishment.
             policy = try store.load()
             try policy.authorize(tool: tool, profile: profile, database: database)
-            guard !stopped, policy.effectiveMode(profile, database: accessTarget) == mode else {
+            guard !stopped, try policy.executionMode(profile, database: database, args: args) == mode else {
                 throw MCPFailure("MCP permissions changed while connecting. Open a new session.", code: .accessDenied)
+            }
+            guard try await repository.fetch(id: profile.id) == profile else {
+                throw MCPFailure("Connection changed while connecting. Open a new session.", code: .connectionNotFound)
             }
             if tool == "open_table" {
                 let name = try args.requiredString("table")

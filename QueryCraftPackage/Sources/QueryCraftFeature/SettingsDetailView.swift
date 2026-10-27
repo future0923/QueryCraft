@@ -5,7 +5,6 @@ struct SettingsDetailView: View {
     @Bindable var preferences: ApplicationPreferences
     let mcpModel: MCPSettingsModel
     let sshModel: SSHSettingsModel
-    var openSSH: (() -> Void)? = nil
 
     private var copy: SettingsCopy {
         SettingsCopy(language: .activeInterfaceLanguage)
@@ -29,9 +28,9 @@ struct SettingsDetailView: View {
             case .data:
                 DataSettingsPane(preferences: preferences)
             case .mcp:
-                MCPSettingsPane(model: mcpModel, openSSH: openSSH)
+                MCPSettingsPane(model: mcpModel)
             case .plugins:
-                PluginSettingsPane(openSSH: openSSH)
+                PluginSettingsPane()
             case .ssh:
                 SSHSettingsPane(model: sshModel)
             }

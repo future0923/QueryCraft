@@ -145,17 +145,31 @@ extension MCPPermissionInheritanceTests {
     }
 }
 
-private struct PermissionDriver: DatabaseDriver {
+struct PermissionDriver: DatabaseDriver {
     let databaseType: DatabaseType
     let session: PermissionDriverSession
-    func makeSession(configuration: DatabaseConnectionConfiguration) async throws -> any WorkspaceSession { session }
+    func makeSession(configuration: DatabaseConnectionConfiguration) async throws -> any WorkspaceSession {
+        await session.recordDatabase(configuration.database)
+        return session
+    }
     func testConnection(configuration: DatabaseConnectionConfiguration) async throws {}
 }
 
-private actor PermissionDriverSession: RedisWorkspaceSession, WorkspaceRequestExecutingSession, WorkspaceKafkaProducing {
+actor PermissionDriverSession: RedisWorkspaceSession, WorkspaceRequestExecutingSession, WorkspaceKafkaProducing {
     var writes = 0
+    var statements: [String] = []
+    var configuredDatabases: [String?] = []
+    var redisDatabases: [Int] = []
+    func recordDatabase(_ database: String?) { configuredDatabases.append(database) }
+    var statementHook: (@Sendable (String) async throws -> Void)?
+    func setStatementHook(_ hook: @escaping @Sendable (String) async throws -> Void) { statementHook = hook }
+    func executeStatement(_ sql: String, kind: SQLStatementKind, database: String?, onBatch: @escaping @Sendable (WorkspaceDatabaseDataBatch) async throws -> Void) async throws -> WorkspaceQueryExecutionResult {
+        statements.append(sql)
+        try await statementHook?(sql)
+        return .init(columns: [], rowCount: 0)
+    }
     func connect() async throws {}
-    func fetchDatabases() async throws -> [String] { [] }
+    func fetchDatabases() async throws -> [String] { ["allowed", "private", "DB 0", "DB 8"] }
     func fetchObjects(in database: String) async throws -> [WorkspaceDatabaseObject] { [] }
     func fetchDetails(for object: WorkspaceDatabaseObject, in database: String) async throws -> WorkspaceDatabaseObjectDetails { throw MCPFailure("unused") }
     func fetchIndexes(for object: WorkspaceDatabaseObject, in database: String) async throws -> [WorkspaceDatabaseIndex] { [] }
@@ -167,6 +181,7 @@ private actor PermissionDriverSession: RedisWorkspaceSession, WorkspaceRequestEx
     func scanRedisKeys(databaseIndex: Int, cursor: UInt64, pattern: String?, count: Int) async throws -> RedisKeyScanPage { throw MCPFailure("unused") }
     func fetchRedisKey(_ reference: RedisKeyReference, maximumElements: Int) async throws -> RedisKeyDetails { throw MCPFailure("unused") }
     func executeRedisCommand(_ invocation: RedisCommandInvocation, databaseIndex: Int) async throws -> RedisCommandResult {
+        redisDatabases.append(databaseIndex)
         writes += 1; return .init(invocation: invocation, reply: .simpleString("OK"), elapsedSeconds: 0)
     }
     func executeRequest(_ request: WorkspaceRequest) async throws -> WorkspaceRequestExecutionResult { throw MCPFailure("unused") }

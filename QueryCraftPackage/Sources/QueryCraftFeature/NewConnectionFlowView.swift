@@ -3,6 +3,7 @@ import SwiftUI
 struct NewConnectionFlowView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: NewConnectionFlowModel
+    @State private var sshDraft: SSHConnectionDraft?
     @State private var installRequestID: UUID?
     @State private var uninstallRequestID: UUID?
     @State private var isShowingInstallConfirmation = false
@@ -20,7 +21,7 @@ struct NewConnectionFlowView: View {
         self.initialGroupID = initialGroupID
         _model = State(
             initialValue: NewConnectionFlowModel(
-                driverManager: driverManager
+                driverManager: driverManager, allowsSSH: welcomeModel.ssh != nil
             )
         )
     }
@@ -50,7 +51,7 @@ struct NewConnectionFlowView: View {
             .alert(
                 AppCopy.current.text("驱动未安装", "Driver Not Installed"),
                 isPresented: $isShowingInstallConfirmation,
-                presenting: model.selectedItem
+                presenting: model.selectedPlugin
             ) { _ in
                 Button(
                     AppCopy.current.text("安装", "Install"),
@@ -65,15 +66,15 @@ struct NewConnectionFlowView: View {
             } message: { item in
                 Text(
                     AppCopy.current.text(
-                        "\(item.driverItem.entry.displayName) 驱动尚未安装。是否从驱动市场下载？",
-                        "The \(item.driverItem.entry.displayName) driver is not installed. Download it from the Driver Marketplace?"
+                        "\(item.displayName) 驱动尚未安装。是否从驱动市场下载？",
+                        "The \(item.displayName) driver is not installed. Download it from the Driver Marketplace?"
                     )
                 )
             }
             .alert(
                 AppCopy.current.text("卸载驱动？", "Uninstall Driver?"),
                 isPresented: $isShowingUninstallConfirmation,
-                presenting: model.selectedItem
+                presenting: model.selectedPlugin
             ) { _ in
                 Button(
                     AppCopy.current.text("卸载", "Uninstall"),
@@ -88,8 +89,8 @@ struct NewConnectionFlowView: View {
             } message: { item in
                 Text(
                     AppCopy.current.text(
-                        "将从这台 Mac 移除 \(item.driverItem.entry.displayName) 驱动。连接配置不会被删除。请先关闭正在使用此驱动的工作区。",
-                        "The \(item.driverItem.entry.displayName) driver will be removed from this Mac. Connection profiles will be kept. Close workspaces using this driver first."
+                        "将从这台 Mac 移除 \(item.displayName) 驱动。连接配置不会被删除。请先关闭正在使用此驱动的工作区。",
+                        "The \(item.displayName) driver will be removed from this Mac. Connection profiles will be kept. Close workspaces using this driver first."
                     )
                 )
             }
@@ -102,6 +103,10 @@ struct NewConnectionFlowView: View {
             ) { } message: {
                 Text(model.installationErrorMessage)
             }
+        case .configureSSH:
+            if let ssh = welcomeModel.ssh, let sshDraft {
+                SSHConnectionEditor(draft: sshDraft, service: ssh.service)
+            }
         case .configure(let databaseProduct):
             CreateConnectionView(
                 model: welcomeModel,
@@ -112,7 +117,11 @@ struct NewConnectionFlowView: View {
     }
 
     private func continueSelection() {
-        guard let item = model.selectedItem else { return }
+        if model.selectsSSH, let ssh = welcomeModel.ssh {
+            sshDraft = SSHConnectionDraft(policy: ssh.policy)
+            sshDraft?.groupID = initialGroupID
+        }
+        guard let item = model.selectedPlugin else { return }
         switch item.installationState {
         case .installed, .updateAvailable, .updateReady, .updating:
             installRequestID = UUID()
@@ -130,7 +139,7 @@ struct NewConnectionFlowView: View {
     }
 
     private func requestUninstall() {
-        guard model.selectedItem?.installationState.hasInstalledDriver == true else {
+        guard model.selectedPlugin?.installationState.hasInstalledDriver == true else {
             return
         }
         isShowingUninstallConfirmation = true

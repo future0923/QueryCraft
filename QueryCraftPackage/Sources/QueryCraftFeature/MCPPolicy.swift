@@ -106,6 +106,13 @@ struct MCPPolicy: Codable, Equatable, Sendable {
     }
     func effectiveMode(_ profile: ConnectionProfile, database: String?) -> MCPExecutionMode {
         let rule = connectionRule(profile)
+        if profile.databaseType == .redis, let database, let index = RedisLogicalDatabase.index(from: database) {
+            let modes = rule.databaseModes.filter { RedisLogicalDatabase.index(from: $0.key) == index }.map(\.value)
+            // Conflicting legacy aliases must not let a caller select a stronger grant.
+            if modes.contains(.readOnly) { return .readOnly }
+            if modes.contains(.dataWrite) { return .dataWrite }
+            if !modes.isEmpty { return .fullAccess }
+        }
         // The nearest explicit rule wins. Missing rules inherit; the final default is read-only.
         return database.flatMap { rule.databaseModes[$0] }
             ?? rule.mode
@@ -117,15 +124,18 @@ struct MCPPolicy: Codable, Equatable, Sendable {
         guard !disabledTools.contains(tool) else { throw MCPFailure("This tool is disabled by MCP settings.", code: .accessDenied) }
         if let profile {
             guard permits(profile) else { throw MCPFailure("Connection is not authorized for MCP.", code: .accessDenied) }
+            // These routes discover capabilities, delegate to a separately authorized
+            // tool, or manage the saved connection; they do not select/read a database.
+            if ["plugin_tools", "plugin_call", "duplicate_connection", "remove_connection"].contains(tool) { return }
             guard connectionRule(profile).allowedDatabases?.isEmpty != true else {
                 throw MCPFailure("Database access is denied for this connection.", code: .accessDenied)
             }
-            if ![.kafka, .elasticsearch].contains(profile.databaseType), let allowed = connectionRule(profile).allowedDatabases {
+            if tool != "list_databases", ![.kafka, .elasticsearch].contains(profile.databaseType), connectionRule(profile).allowedDatabases != nil {
                 let selected = database ?? (profile.databaseType == .redis ? "0" : nil)
                 if let selected {
-                    guard allowed.contains(selected) else { throw MCPFailure("Database is outside the authorized MCP scope.", code: .accessDenied) }
+                    guard permitsDatabaseName(selected, profile: profile) else { throw MCPFailure("Database is outside the authorized MCP scope.", code: .accessDenied) }
                 } else if tool != "list_databases" {
-                    throw MCPFailure("Select an authorized database first.", code: .accessDenied)
+                    throw MCPFailure("Select an authorized database first. Use list_databases to discover allowed databases, then pass database explicitly.", code: .accessDenied)
                 }
             }
         }
@@ -182,6 +192,36 @@ struct MCPPolicyStore: Sendable {
             current = policy
             current.ssh = ssh
         }
+    }
+    /// One settings draft and save action, while retaining grants changed by another process.
+    func saveSettings(_ draft: MCPPolicy, originalSSH: MCPSSHPolicy?, sshProfiles: [SSHConnection]) throws -> MCPPolicy {
+        let root = url.deletingLastPathComponent()
+        let accountLock = try MCPComponentLock(directory: root.appending(path: "SSHAccountOperations"))
+        defer { withExtendedLifetime(accountLock) {} }
+        var original = MCPPolicy(); original.ssh = originalSSH
+        let ids = (originalSSH?.connectionIDs ?? []).union(draft.ssh?.connectionIDs ?? [])
+        let edited = ids.filter { SSHAccountAccess(id: $0, policy: draft) != SSHAccountAccess(id: $0, policy: original) }
+        if !edited.isEmpty {
+            let currentProfiles = try SSHConnectionStore(directory: root).load()
+            for id in edited {
+                if SSHAccess.current(id: id, policy: draft) == .denied { continue }
+                guard let expected = sshProfiles.first(where: { $0.id == id }), currentProfiles.contains(expected) else {
+                    throw MCPFailure(AppCopy.current.text("连接已变化，请重新检查后再保存。", "A connection changed. Recheck before saving."))
+                }
+            }
+        }
+        var saved = draft
+        try update { current in
+            for id in edited {
+                guard SSHAccountAccess(id: id, policy: current) == SSHAccountAccess(id: id, policy: original) else {
+                    throw MCPFailure(AppCopy.current.text("连接权限已在其他位置修改，请重新打开设置后再保存。", "Connection access changed elsewhere. Reopen settings before saving."))
+                }
+                SSHAccountAccess(id: id, policy: draft).apply(id: id, to: &current)
+            }
+            saved.ssh = current.ssh
+            current = saved
+        }
+        return saved
     }
     private func write(_ policy: MCPPolicy) throws {
         try policy.validate()

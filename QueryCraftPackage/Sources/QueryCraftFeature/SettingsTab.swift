@@ -37,7 +37,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .plugins:
             "puzzlepiece.extension"
         case .ssh:
-            "server.rack"
+            "terminal"
         }
     }
 }

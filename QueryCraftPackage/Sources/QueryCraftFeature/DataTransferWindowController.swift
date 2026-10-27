@@ -50,9 +50,26 @@ final class DataTransferWindowController: NSWindowController, NSWindowDelegate {
 }
 
 public struct WorkspaceToolsCommands: Commands {
+    @FocusedValue(\.sshTerminalWorkspace) private var sshWorkspace
     public init() {}
     public var body: some Commands {
         CommandMenu(AppCopy.current.text("工具", "Tools")) {
+            Button(AppCopy.current.text("SSH 终端…", "SSH Terminal…"), systemImage: "terminal", action: SSHTerminalWindowController.show)
+                .keyboardShortcut("t", modifiers: [.command, .option])
+            if let sshWorkspace {
+                Button(AppCopy.current.text("新建 SSH 终端", "New SSH Terminal")) {
+                    if let profile = sshWorkspace.accounts.profiles.first(where: { $0.id == sshWorkspace.selectedServer }) { sshWorkspace.connect(profile) }
+                }.keyboardShortcut("t", modifiers: [.command, .shift]).disabled(sshWorkspace.selectedServer == nil)
+                Button(AppCopy.current.text("断开当前 SSH 连接", "Disconnect Current SSH Session")) { sshWorkspace.current?.disconnect() }
+                    .disabled(sshWorkspace.current?.isActive != true)
+                Button(AppCopy.current.text("下一个 SSH 终端", "Next SSH Terminal")) {
+                    if let index = sshWorkspace.sessions.firstIndex(where: { $0.id == sshWorkspace.selection }), !sshWorkspace.sessions.isEmpty {
+                        let session = sshWorkspace.sessions[(index + 1) % sshWorkspace.sessions.count]
+                        sshWorkspace.selection = session.id; sshWorkspace.selectedServer = session.profile.id
+                    }
+                }.keyboardShortcut(.tab, modifiers: .control).disabled(sshWorkspace.sessions.count < 2)
+            }
+            Divider()
             Button(AppCopy.current.text("结构对比与同步…", "Schema Comparison and Synchronization…"),
                    systemImage: "arrow.left.arrow.right", action: WorkspaceSchemaComparisonWindowController.show)
                 .keyboardShortcut("s", modifiers: [.control, .option, .command])

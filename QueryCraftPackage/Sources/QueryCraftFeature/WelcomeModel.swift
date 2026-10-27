@@ -6,6 +6,9 @@ import Observation
 final class WelcomeModel {
     private(set) var profiles: [ConnectionProfile] = []
     private(set) var groups: [ConnectionGroup] = []
+    private(set) var hasLoadedProfiles = false
+    let ssh: SSHSettingsModel?
+    var connectionCount: Int { profiles.count + (ssh?.profiles.count ?? 0) }
     var loadErrorMessage = ""
     var isShowingLoadError = false
 
@@ -21,9 +24,12 @@ final class WelcomeModel {
         connectionTester: any ConnectionTester,
         profiles: [ConnectionProfile] = [],
         groups: [ConnectionGroup] = [],
+        ssh: SSHSettingsModel? = nil,
         profileOwnsOpenWorkspace:
             @escaping @MainActor (ConnectionProfile.ID) -> Bool = { _ in false }
     ) {
+        self.ssh = ssh
+        self.hasLoadedProfiles = !profiles.isEmpty || !groups.isEmpty
         self.repository = repository
         self.credentialStore = credentialStore
         self.connectionTester = connectionTester
@@ -33,6 +39,7 @@ final class WelcomeModel {
     }
 
     func loadProfiles() async {
+        await ssh?.load()
         do {
             try await refresh()
         } catch {
@@ -222,11 +229,16 @@ final class WelcomeModel {
         return ConnectionDeletionRequest(
             target: .group(id: group.id, name: group.name),
             profileIDs: profileIDs,
-            impact: impact
+            impact: impact,
+            sshProfiles: try await ssh?.service.snapshot().profiles.filter { $0.groupID == group.id } ?? []
         )
     }
 
     func delete(_ request: ConnectionDeletionRequest) async throws {
+        if case .group(let id, _) = request.target {
+            let current = try await ssh?.service.snapshot().profiles.filter { $0.groupID == id } ?? []
+            guard current == request.sshProfiles else { throw WelcomeManagementError.deletionContentsChanged }
+        }
         let affectedProfiles: [ConnectionProfile]
         switch request.target {
         case .profile(let id, _):
@@ -261,7 +273,9 @@ final class WelcomeModel {
             throw error
         }
 
+        var sshBackup: SSHGroupDeletionBackup?
         do {
+            if !request.sshProfiles.isEmpty { sshBackup = try await ssh?.service.removeGroup(request.sshProfiles) }
             switch request.target {
             case .profile:
                 try await repository.deleteProfiles(
@@ -272,9 +286,11 @@ final class WelcomeModel {
             }
         } catch {
             await restoreCredentials(savedPasswords)
+            if let sshBackup { try await ssh?.service.restoreGroup(sshBackup) }
             throw error
         }
         try await refresh()
+        await ssh?.load()
     }
 
     func moveProfile(
@@ -334,6 +350,7 @@ final class WelcomeModel {
             repository: SQLiteConnectionProfileRepository(),
             credentialStore: KeychainCredentialStore(),
             connectionTester: DatabaseDriverConnectionTester(),
+            ssh: SSHSettingsModel(),
             profileOwnsOpenWorkspace: {
                 WorkspaceWindowManager.shared.hasOpenWorkspace(
                     profileID: $0
@@ -346,6 +363,7 @@ final class WelcomeModel {
         let snapshot = try await repository.fetchManagementSnapshot()
         groups = snapshot.groups
         profiles = snapshot.profiles
+        hasLoadedProfiles = true
     }
 
     private func validate(groupID: ConnectionGroup.ID?) throws {
