@@ -39,6 +39,13 @@ extension TextLineStorage {
             root = nodeV
         } else if isLeftChild(nodeU) {
             nodeU.parent?.left = nodeV
+            if nodeV == nil {
+                // Subtracting the final child's fractional height can leave a
+                // rounding remainder. An absent subtree has an exact zero size.
+                nodeU.parent?.leftSubtreeOffset = 0
+                nodeU.parent?.leftSubtreeHeight = 0
+                nodeU.parent?.leftSubtreeCount = 0
+            }
         } else {
             nodeU.parent?.right = nodeV
         }

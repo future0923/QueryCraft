@@ -31,7 +31,7 @@ struct ApplicationPreferencesTests {
         #expect(preferences.editorIndentationWidth == 4)
         #expect(preferences.editorCompletionKey == .returnOrTab)
         #expect(preferences.sqlKeywordCase == .uppercase)
-        #expect(preferences.queryTimeout == .seconds60)
+        #expect(preferences.queryTimeout == .unlimited)
         #expect(preferences.queryResultRowLimit == .rows1_000)
         #expect(preferences.confirmsDangerousSQL)
         #expect(preferences.tableDataPageSize == 200)
@@ -110,6 +110,20 @@ struct ApplicationPreferencesTests {
         #expect(restored.copyIncludesColumnNames)
         #expect(!restored.automaticallyResolvesVisibleRedisKeyTypes)
         #expect(restored.redisVisibleKeyTypeBatchSize == 200)
+    }
+
+    @Test
+    func existingQueryDeadlineMigratesOnceToUnlimited() throws {
+        let (defaults, suiteName) = try makeUserDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(QueryTimeoutOption.seconds60.rawValue, forKey: "preferences.query.timeout")
+
+        let preferences = ApplicationPreferences(userDefaults: defaults)
+        #expect(preferences.queryExecutionOptions.statementTimeout == nil)
+        #expect(ApplicationPreferences(userDefaults: defaults).queryTimeout == .unlimited)
+
+        preferences.queryTimeout = .seconds120
+        #expect(ApplicationPreferences(userDefaults: defaults).queryTimeout == .seconds120)
     }
 
     @Test
@@ -209,7 +223,7 @@ struct ApplicationPreferencesTests {
         #expect(preferences.editorFontSize == 18)
         #expect(preferences.dataGridFontSize == 18)
         #expect(preferences.editorIndentationWidth == 4)
-        #expect(preferences.queryTimeout == .seconds60)
+        #expect(preferences.queryTimeout == .unlimited)
         #expect(preferences.queryResultRowLimit == .rows1_000)
         #expect(preferences.tableDataPageSize == 200)
         #expect(preferences.redisVisibleKeyTypeBatchSize == 50)
@@ -228,13 +242,13 @@ struct ApplicationPreferencesTests {
 
         preferences.resetQuery()
 
-        #expect(preferences.queryTimeout == .seconds60)
+        #expect(preferences.queryTimeout == .unlimited)
         #expect(preferences.queryResultRowLimit == .rows1_000)
         #expect(preferences.confirmsDangerousSQL)
         #expect(
             preferences.queryExecutionOptions
                 == QueryExecutionOptions(
-                    statementTimeout: .seconds(60),
+                    statementTimeout: nil,
                     maximumResultRows: 1_000
                 )
         )

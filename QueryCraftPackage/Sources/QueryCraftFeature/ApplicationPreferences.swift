@@ -352,11 +352,17 @@ public final class ApplicationPreferences {
             in: userDefaults,
             default: .uppercase
         )
+        // Migrate the old implicit 60-second deadline once. Long DDL must be
+        // allowed to finish; users can still deliberately choose a limit later.
+        if !userDefaults.bool(forKey: Key.unlimitedQueryTimeoutMigrated) {
+            userDefaults.set(QueryTimeoutOption.unlimited.rawValue, forKey: Key.queryTimeout)
+            userDefaults.set(true, forKey: Key.unlimitedQueryTimeoutMigrated)
+        }
         queryTimeout = Self.value(
             QueryTimeoutOption.self,
             forKey: Key.queryTimeout,
             in: userDefaults,
-            default: .seconds60
+            default: .unlimited
         )
         queryResultRowLimit = Self.value(
             QueryResultRowLimit.self,
@@ -486,7 +492,7 @@ public final class ApplicationPreferences {
     }
 
     func resetQuery() {
-        queryTimeout = .seconds60
+        queryTimeout = .unlimited
         queryResultRowLimit = .rows1_000
         confirmsDangerousSQL = true
     }
@@ -561,6 +567,7 @@ public final class ApplicationPreferences {
         static let editorCompletionKey = EditorPreferenceKey.completionKey
         static let sqlKeywordCase = EditorPreferenceKey.keywordCase
         static let queryTimeout = "preferences.query.timeout"
+        static let unlimitedQueryTimeoutMigrated = "preferences.query.unlimitedTimeoutMigrated"
         static let queryResultRowLimit = "preferences.query.resultRowLimit"
         static let confirmsDangerousSQL =
             "preferences.query.confirmsDangerousSQL"

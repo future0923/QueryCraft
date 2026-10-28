@@ -156,9 +156,13 @@ public final class TextLineStorage<Data: Identifiable> {
 
         var currentNode = root
         var currentOffset: Int = root?.leftSubtreeOffset ?? 0
-        var currentYPosition: CGFloat = root?.leftSubtreeHeight ?? 0
+        // Carry the subtree origin forwards. Subtracting accumulated subtree
+        // heights while walking left can leave the first line a few ulps above
+        // zero, making a lookup at y == 0 miss every line after a deletion.
+        var subtreeYPosition: CGFloat = 0
         var currentIndex: Int = root?.leftSubtreeCount ?? 0
         while let node = currentNode {
+            let currentYPosition = subtreeYPosition + node.leftSubtreeHeight
             // If index is in the range [currentOffset..<currentOffset + length) it's in the line
             if posY >= currentYPosition && posY < currentYPosition + node.height {
                 return TextLinePosition(
@@ -171,12 +175,11 @@ public final class TextLineStorage<Data: Identifiable> {
             } else if currentYPosition > posY {
                 currentNode = node.left
                 currentOffset = (currentOffset - node.leftSubtreeOffset) + (node.left?.leftSubtreeOffset ?? 0)
-                currentYPosition = (currentYPosition - node.leftSubtreeHeight) + (node.left?.leftSubtreeHeight ?? 0)
                 currentIndex = (currentIndex - node.leftSubtreeCount) + (node.left?.leftSubtreeCount ?? 0)
             } else if node.leftSubtreeHeight < posY {
                 currentNode = node.right
                 currentOffset += node.length + (node.right?.leftSubtreeOffset ?? 0)
-                currentYPosition += node.height + (node.right?.leftSubtreeHeight ?? 0)
+                subtreeYPosition = currentYPosition + node.height
                 currentIndex += 1 + (node.right?.leftSubtreeCount ?? 0)
             } else {
                 currentNode = nil
@@ -339,21 +342,24 @@ private extension TextLineStorage {
     func search(for offset: Int) -> NodePosition? {
         var currentNode = root
         var currentOffset: Int = root?.leftSubtreeOffset ?? 0
-        var currentYPosition: CGFloat = root?.leftSubtreeHeight ?? 0
+        // Carry the subtree origin forwards. Subtracting accumulated subtree
+        // heights while walking left can leave the first line a few ulps above
+        // zero, making a lookup at y == 0 miss every line after a deletion.
+        var subtreeYPosition: CGFloat = 0
         var currentIndex: Int = root?.leftSubtreeCount ?? 0
         while let node = currentNode {
+            let currentYPosition = subtreeYPosition + node.leftSubtreeHeight
             // If index is in the range [currentOffset..<currentOffset + length) it's in the line
             if offset == currentOffset || (offset >= currentOffset && offset < currentOffset + node.length) {
                 return NodePosition(node: node, yPos: currentYPosition, textPos: currentOffset, index: currentIndex)
             } else if currentOffset > offset {
                 currentNode = node.left
                 currentOffset = (currentOffset - node.leftSubtreeOffset) + (node.left?.leftSubtreeOffset ?? 0)
-                currentYPosition = (currentYPosition - node.leftSubtreeHeight) + (node.left?.leftSubtreeHeight ?? 0)
                 currentIndex = (currentIndex - node.leftSubtreeCount) + (node.left?.leftSubtreeCount ?? 0)
             } else if node.leftSubtreeOffset < offset {
                 currentNode = node.right
                 currentOffset += node.length + (node.right?.leftSubtreeOffset ?? 0)
-                currentYPosition += node.height + (node.right?.leftSubtreeHeight ?? 0)
+                subtreeYPosition = currentYPosition + node.height
                 currentIndex += 1 + (node.right?.leftSubtreeCount ?? 0)
             } else {
                 currentNode = nil
@@ -368,20 +374,23 @@ private extension TextLineStorage {
     func search(forIndex index: Int) -> NodePosition? {
         var currentNode = root
         var currentOffset: Int = root?.leftSubtreeOffset ?? 0
-        var currentYPosition: CGFloat = root?.leftSubtreeHeight ?? 0
+        // Carry the subtree origin forwards. Subtracting accumulated subtree
+        // heights while walking left can leave the first line a few ulps above
+        // zero, making a lookup at y == 0 miss every line after a deletion.
+        var subtreeYPosition: CGFloat = 0
         var currentIndex: Int = root?.leftSubtreeCount ?? 0
         while let node = currentNode {
+            let currentYPosition = subtreeYPosition + node.leftSubtreeHeight
             if index == currentIndex {
                 return NodePosition(node: node, yPos: currentYPosition, textPos: currentOffset, index: currentIndex)
             } else if currentIndex > index {
                 currentNode = node.left
                 currentOffset = (currentOffset - node.leftSubtreeOffset) + (node.left?.leftSubtreeOffset ?? 0)
-                currentYPosition = (currentYPosition - node.leftSubtreeHeight) + (node.left?.leftSubtreeHeight ?? 0)
                 currentIndex = (currentIndex - node.leftSubtreeCount) + (node.left?.leftSubtreeCount ?? 0)
             } else {
                 currentNode = node.right
                 currentOffset += node.length + (node.right?.leftSubtreeOffset ?? 0)
-                currentYPosition += node.height + (node.right?.leftSubtreeHeight ?? 0)
+                subtreeYPosition = currentYPosition + node.height
                 currentIndex += 1 + (node.right?.leftSubtreeCount ?? 0)
             }
         }

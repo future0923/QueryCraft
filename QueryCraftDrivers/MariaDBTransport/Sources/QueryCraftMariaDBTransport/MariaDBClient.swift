@@ -418,10 +418,14 @@ public final class MariaDBConnection: @unchecked Sendable {
         var reconnect: my_bool = 0
         mysql_options(mysql, MYSQL_OPT_RECONNECT, &reconnect)
 
-        var timeout: UInt32 = 10
-        mysql_options(mysql, MYSQL_OPT_CONNECT_TIMEOUT, &timeout)
-        mysql_options(mysql, MYSQL_OPT_READ_TIMEOUT, &timeout)
-        mysql_options(mysql, MYSQL_OPT_WRITE_TIMEOUT, &timeout)
+        var connectTimeout: UInt32 = 10
+        mysql_options(mysql, MYSQL_OPT_CONNECT_TIMEOUT, &connectTimeout)
+        // A server can stay silent throughout a long ALTER TABLE. Packet I/O
+        // must not impose a query deadline; cancellation uses KILL QUERY on a
+        // separate connection. Zero is the connector's unlimited I/O timeout.
+        var ioTimeout: UInt32 = 0
+        mysql_options(mysql, MYSQL_OPT_READ_TIMEOUT, &ioTimeout)
+        mysql_options(mysql, MYSQL_OPT_WRITE_TIMEOUT, &ioTimeout)
 
         var protocolTCP = UInt32(MYSQL_PROTOCOL_TCP.rawValue)
         mysql_options(mysql, MYSQL_OPT_PROTOCOL, &protocolTCP)

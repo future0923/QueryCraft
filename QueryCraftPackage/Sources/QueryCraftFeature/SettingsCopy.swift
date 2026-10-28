@@ -434,8 +434,8 @@ struct SettingsCopy {
     var queryTimeout: String { text("查询超时", "Query timeout") }
     var queryTimeoutDescription: String {
         text(
-            "每条语句允许执行的最长时间。",
-            "The maximum time allowed for each statement."
+            "默认不限时，持续等待执行结果；可手动停止。",
+            "Unlimited by default. Waits for the result until you stop it manually."
         )
     }
 
