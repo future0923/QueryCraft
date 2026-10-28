@@ -24,7 +24,7 @@ final class NewConnectionFlowModel {
             }
         }
     }
-    var matchesSSH: Bool { allowsSSH && (searchText.isEmpty || "SSH 服务器 Secure Shell".localizedCaseInsensitiveContains(searchText)) }
+    var matchesSSH: Bool { catalogLoaded && allowsSSH && (searchText.isEmpty || "SSH 服务器 Secure Shell".localizedCaseInsensitiveContains(searchText)) }
     func configureSSH() { step = .configureSSH }
     private(set) var step = Step.selectDatabase
     private(set) var catalogItems: [DatabaseDriverCatalogItem] = []
@@ -75,8 +75,13 @@ final class NewConnectionFlowModel {
     var isInstalling: Bool { selectedPlugin?.installationState.isBusy == true }
 
     func loadCatalog() async {
-        catalogItems = await driverManager.catalogItems()
+        let items = await driverManager.catalogItems()
+        guard !Task.isCancelled else { return }
         if allowsSSH { await sshPlugin.refresh() }
+        guard !Task.isCancelled else { return }
+        // Publish all connection choices together, after their initial state is ready.
+        // Keep the existing choices visible while a later refresh is in flight.
+        catalogItems = items
         catalogLoaded = true
         if selectedDatabaseProduct == nil {
             selectedDatabaseProduct = productItems.first?.entry.databaseProduct

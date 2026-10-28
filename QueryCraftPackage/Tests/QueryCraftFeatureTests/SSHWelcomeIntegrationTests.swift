@@ -71,8 +71,12 @@ import Testing
         #expect(SSHWelcomeSearch.filter([profile], query: "missing").isEmpty)
     }
     @Test func creationKeepsSSHOutOfDatabaseTypesAndDrivers() async {
-        let plugin = SSHPluginSettingsModel(); plugin.installed = "0.9.0"; plugin.checked = true
-        let flow = NewConnectionFlowModel(sshPlugin: plugin)
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let catalog = MCPComponentCatalog(identity: .development, environment: [:])
+        let plugin = SSHPluginSettingsModel(manager: SSHPluginManager(directory: root, catalog: catalog))
+        plugin.installed = "0.9.0"; plugin.checked = true
+        let flow = NewConnectionFlowModel(driverManager: DatabaseDriverManager(registry: DatabaseDriverRegistry()), sshPlugin: plugin)
         flow.selectedDatabaseProduct = .defaultProduct(for: .mysql)
         flow.selectedConnection = .ssh
         #expect(flow.selectsSSH && flow.selectedItem == nil && !flow.isInstalling)
@@ -81,7 +85,10 @@ import Testing
         flow.selectedConnection = .database(.defaultProduct(for: .kafka))
         #expect(!flow.selectsSSH && flow.selectedDatabaseType == .kafka)
         #expect(DatabaseType.allCases.count == 6)
-        flow.searchText = "SSH"; #expect(flow.matchesSSH)
+        flow.searchText = "SSH"
+        #expect(!flow.catalogLoaded && !flow.matchesSSH && flow.visibleItems.isEmpty)
+        await flow.loadCatalog()
+        #expect(flow.catalogLoaded && flow.matchesSSH)
         let disabled = NewConnectionFlowModel(allowsSSH: false); #expect(!disabled.matchesSSH)
     }
 }
