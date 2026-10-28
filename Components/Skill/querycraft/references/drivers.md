@@ -20,6 +20,8 @@ Restricted scopes reject encoded paths, unauthorized query lookups, ingest pipel
 
 ## Kafka
 
-Use `peek_messages` for bounded reads; it does not commit consumer offsets. `consumer_groups` reports the selected Topic's groups and lag without changing offsets. A specific offset requires a partition.
+Use `peek_messages` for bounded reads; it does not commit consumer offsets. `consumer_groups` reports the selected Topic's groups and lag without changing offsets. A specific `offset` requires a `partition`; it is mutually exclusive with `timestamp_ms` (Unix milliseconds, per-partition seek) and `latest_count` (last N offset positions per partition). Exact `key` and top-level JSON `event_id` filters match full messages before output truncation; both supplied means AND. `max_scan_messages` bounds work; inspect `scan.complete`/`scan.status` before interpreting an empty result as absence. Use a specific partition/offset plus `cell_char_offset`/`cell_char_limit` to expand the same message. `read_committed=true` enables native transactional isolation, independently of whether consumer offsets are committed. Old drivers reject unsupported filtering/isolation instead of silently degrading.
+
+`consumer_groups` includes decimal-string `beginning_offset`, `end_offset`, `committed_offset` and `lag`. A null lag has `lag_reason` and optional `error`; do not convert missing metadata to zero. Lag counts offset positions, not necessarily message count.
 
 `send_message` requires data-write/full access to the actual Topic and returns the broker-confirmed partition/offset when available; an empty string is a valid empty message value. A connection's full-access default never overrides a Topic's explicit read-only mode. A timeout can mean the broker accepted the message but its acknowledgment was lost. Do not automatically resend. Metadata caching concerns Topic structure only, never messages or consumer lag.

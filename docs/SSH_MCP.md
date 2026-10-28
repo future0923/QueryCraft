@@ -402,3 +402,11 @@ The plugin accumulates precise trackpad deltas and batches wheel work once per f
 - SSH：0.9.0 (11)，独立 renderer 与 PTY 扩展，基础 ABI 仍为 1；Intel/ARM 已构建签名打包，Intel 原生加载与真实 Vim 验证通过。ARM 尚未做实机运行。
 - MCP：共享 SSH 账号/授权逻辑有变化，后续发布时需要独立 MCP 检查；本次不替换 MCP 安装、不发布 MCP。Skill 未改动。
 - Core verification: 34 initial and 30 final focused host tests, five renderer tests, native PTY/UI tests, 30,000-line output and Vim mouse/no-mouse scrolling passed. Final Dev build passed. Component/artifact selection tests passed. Public catalog/API compatibility will be rechecked before any release; no online rollout is claimed here.
+
+## 权限发现与诊断
+
+`ssh_list_connections` 在各已授权连接的 `mcp_access` 中返回独立 `grants`（`connection`、`execution`、`file_read`、`file_transfer`、`file_management`）、`effective_permissions`、`route_authorized`、`allowed_tools` 及 `transfer_directions`。grants 是保存的授权；实际可用性还受工具开关、插件能力和跳板授权约束。下载必须同时具备 file_read 和 file_transfer，上传只需要 file_transfer；命令执行授权不会自动授予 SFTP 权限。这些值不证明远端操作系统文件权限，也不替代实际操作时的重新校验。
+
+SSH 的 `ACCESS_DENIED` 在 `error.details` 中给出 `required_grants` 与 `missing_grants`，通常还包含当前 `tool`、`connection_id`、`mcp_enabled`、`tool_enabled`；跳板未授权时返回 `reason=jump_host_not_authorized`。工具关闭但授权已满足时 missing_grants 为空，应检查 tool_enabled。远端文件系统拒绝和指纹不匹配分别以 denial_source=remote_filesystem/host_fingerprint 区分，不伪装成 MCP 缺少授权。直接调用和 plugin_call 使用同一授权链路，不会自动扩大权限或重试传输。
+
+设置中的 SSH 文件范围使用锚定在“设置范围”按钮上的原生弹出框与复选框。连续勾选不会关闭，点击框外或按 Escape 关闭，撤销连接授权也会关闭；修改仍需通过原有“检查并保存”流程生效。

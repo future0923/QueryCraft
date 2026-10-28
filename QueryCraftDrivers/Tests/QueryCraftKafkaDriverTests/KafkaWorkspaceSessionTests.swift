@@ -286,6 +286,30 @@ struct KafkaWorkspaceSessionTests {
         await session.close()
     }
 
+    @Test("Exact key and JSON eventId search uses full messages and retains bounded scan status", arguments: [false, true])
+    func exactMessageSearch(_ bounded: Bool) async throws {
+        let body = "{\"padding\":\"" + String(repeating: "x", count: 1000) + "\",\"eventId\":\"evt-1\"}"
+        let messages = [
+            KafkaMessage(partition: 1, offset: 80, timestamp: 1, key: Data("k".utf8), value: Data(body.utf8), headers: []),
+            KafkaMessage(partition: 1, offset: 81, timestamp: 2, key: Data("other".utf8), value: Data(body.utf8), headers: [])
+        ]
+        let fixture = KafkaClientFixture(responses: [.success(.init(messages: messages, nextOffsets: [1: 82], exhausted: bounded ? [] : [1]))])
+        let session = try session(fixture)
+        try await session.configureReadIsolation(.readCommitted)
+        try await session.connect()
+        await #expect(throws: KafkaError.self) { try await session.configureReadIsolation(.readUncommitted) }
+        try await session.prepareReading(topic: "events", request: .init(partition: 1, start: .offset(80)))
+        let progress = try await session.prepareMessageSearch(topic: "events", filter: .init(key: "k", eventID: "evt-1", maximumMessages: bounded ? 1 : 100))
+        #expect(progress.scanned == (bounded ? 1 : 2))
+        #expect(progress.matched == 1)
+        #expect(progress.status == (bounded ? .messageLimit : .reachedEnd))
+        #expect(try await page(session).count == 1)
+        #expect(fixture.state.withLock { $0.fetches } == [[1: 80]])
+        #expect(try await page(session).first?.values.contains(.text(body)) == true)
+        #expect(fixture.state.withLock { $0.fetches.count } == 1)
+        await session.close()
+    }
+
     @Test("Scan budgets count nonmatching records and pagination never scans again")
     func boundedScan() async throws {
         let fixture = KafkaClientFixture(responses: [.success(.init(

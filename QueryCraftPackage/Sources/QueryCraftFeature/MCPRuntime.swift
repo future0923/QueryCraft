@@ -117,7 +117,7 @@ actor MCPRuntime {
                     durationMilliseconds: Int(Date().timeIntervalSince(started) * 1000), succeeded: false,
                     errorCode: MCPFailure.normalized(error).code.rawValue, resultBytes: 0))
             }
-            throw error
+            throw detailedSSHFailure(error, name: name, args: args)
         }
     }
 
@@ -283,7 +283,8 @@ actor MCPRuntime {
                 while sessions.count + pendingConnections + idleConnections.count > policy.maximumSessions, !idleConnections.isEmpty {
                     let retired = idleConnections.removeFirst(); await retired.connection.close()
                 }
-                connection = try await connect(profile, database: database, mode: mode)
+                connection = try await connect(profile, database: database, mode: mode,
+                    readCommitted: tool == "peek_messages" && args.flag("read_committed"))
             }
         }
         do {
@@ -359,7 +360,7 @@ actor MCPRuntime {
         }
     }
 
-    func connect(_ profile: ConnectionProfile, database: String?, mode: MCPExecutionMode) async throws -> any WorkspaceSession {
+    func connect(_ profile: ConnectionProfile, database: String?, mode: MCPExecutionMode, readCommitted: Bool = false) async throws -> any WorkspaceSession {
         let secret = profile.storesCredential ? try await credentials.password(for: profile.id) : nil
         if profile.storesCredential && secret == nil { throw MCPFailure("Saved credential is unavailable. Restore it in the QueryCraft connection editor.", code: .credentialUnavailable) }
         let configuration = DatabaseConnectionConfiguration(databaseType: profile.databaseType, databaseProduct: profile.databaseProduct,
@@ -371,6 +372,12 @@ actor MCPRuntime {
                 group.addTask {
                     try await withTaskCancellationHandler {
                         try await WorkspaceKafkaAuthentication.configure(session, configuration: configuration, mechanism: profile.kafkaSASLMechanism ?? .plain)
+                        if readCommitted {
+                            guard let isolated = session as? any WorkspaceKafkaReadIsolationConfiguring else {
+                                throw MCPFailure("Update the Kafka driver for read_committed reads.", code: .unsupported)
+                            }
+                            try await isolated.configureReadIsolation(.readCommitted)
+                        }
                         try await session.connect()
 
                     } onCancel: { Task { await session.close() } }

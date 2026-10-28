@@ -6,6 +6,8 @@ actor KafkaWorkspaceSession: WorkspaceSession,
     WorkspaceTopicCreationProviding,
     WorkspaceKafkaTopicDeleting,
     WorkspaceKafkaReading,
+    WorkspaceKafkaReadIsolationConfiguring,
+    WorkspaceKafkaMessageSearching,
     WorkspaceKafkaScanning,
     WorkspaceKafkaTailing,
     WorkspaceKafkaProducing,
@@ -35,6 +37,7 @@ actor KafkaWorkspaceSession: WorkspaceSession,
     private var readRequests: [String: WorkspaceKafkaReadRequest] = [:]
     private var completedScans: [String: (WorkspaceKafkaScanRequest, WorkspaceKafkaScanProgress)] = [:]
     private var scanIDs: [String: UUID] = [:]
+    private var readIsolation = WorkspaceKafkaReadIsolation.readUncommitted
     private var connected = false
     private var topics: [String: KafkaTopicMetadata] = [:]
     private var brokers: [Int32: KafkaBrokerAddress] = [:]
@@ -55,6 +58,13 @@ actor KafkaWorkspaceSession: WorkspaceSession,
         configuration.saslMechanism = mechanism
     }
 
+    func configureReadIsolation(_ isolation: WorkspaceKafkaReadIsolation) async throws {
+        guard !connected, client == nil else {
+            throw KafkaError.invalidConfiguration("Read isolation must be set before connecting")
+        }
+        readIsolation = isolation
+    }
+
     func connect() async throws {
         try await LicenseAccessGate.shared.requireDatabaseAccess()
         try Task.checkCancellation()
@@ -68,7 +78,7 @@ actor KafkaWorkspaceSession: WorkspaceSession,
         readRequests.removeAll()
         completedScans.removeAll()
         scanIDs.removeAll()
-        let newClient = makeClient?() ?? KafkaRdkafkaClient(configuration: configuration)
+        let newClient = makeClient?() ?? KafkaRdkafkaClient(configuration: configuration, readIsolation: readIsolation)
         do {
             try newClient.connect()
             client = newClient
@@ -164,13 +174,31 @@ actor KafkaWorkspaceSession: WorkspaceSession,
     ) async throws {
         try Task.checkCancellation()
         try requireConnection()
-        guard request.isValid, let client, let metadata = topics[topic] else {
+        guard request.isValid, client != nil, topics[topic] != nil else {
             throw WorkspaceSessionError.invalidPageRequest
         }
         if let (previousRequest, progress) = completedScans[topic], previousRequest == request {
             await onProgress(progress)
             return
         }
+        _ = try await scanMessages(topic: topic, maximumMessages: request.maximumMessages,
+            cacheRequest: request, matches: { request.matches(key: $0, value: $1) }, onProgress: onProgress)
+    }
+
+    func prepareMessageSearch(topic: String, filter: WorkspaceKafkaMessageFilter) async throws -> WorkspaceKafkaScanProgress {
+        guard filter.isValid else { throw WorkspaceSessionError.invalidPageRequest }
+        completedScans[topic] = nil
+        return try await scanMessages(topic: topic, maximumMessages: filter.maximumMessages,
+            matches: { filter.matches(key: $0, value: $1) }, onProgress: { _ in })
+    }
+
+    private func scanMessages(topic: String, maximumMessages: Int,
+        cacheRequest: WorkspaceKafkaScanRequest? = nil, matches predicate: @Sendable (String?, String?) -> Bool,
+        onProgress: @escaping @Sendable (WorkspaceKafkaScanProgress) async -> Void
+    ) async throws -> WorkspaceKafkaScanProgress {
+        try Task.checkCancellation()
+        try requireConnection()
+        guard let client, let metadata = topics[topic] else { throw WorkspaceSessionError.invalidPageRequest }
         let scanID = UUID()
         scanIDs[topic] = scanID
         defer { if scanIDs[topic] == scanID { scanIDs[topic] = nil } }
@@ -187,14 +215,14 @@ actor KafkaWorkspaceSession: WorkspaceSession,
         while !offsets.isEmpty {
             try Task.checkCancellation()
             guard self.client === client, scanIDs[topic] == scanID else { throw CancellationError() }
-            if scanned >= request.maximumMessages { status = .messageLimit; break }
+            if scanned >= maximumMessages { status = .messageLimit; break }
             if ContinuousClock.now >= deadline { status = .timeLimit; break }
             let response = try client.fetch(topic: topic, offsets: offsets,
-                                            maximumMessages: min(1_000, request.maximumMessages - scanned))
+                                            maximumMessages: min(1_000, maximumMessages - scanned))
             try Task.checkCancellation()
             for message in response.messages {
                 guard let start = offsets[message.partition], message.offset >= start else { continue }
-                if scanned >= request.maximumMessages { status = .messageLimit; break }
+                if scanned >= maximumMessages { status = .messageLimit; break }
                 bytes += message.key?.count ?? 0
                 bytes += message.value?.count ?? 0
                 for header in message.headers {
@@ -203,7 +231,7 @@ actor KafkaWorkspaceSession: WorkspaceSession,
                 }
                 if bytes > byteLimit { status = .byteLimit; break }
                 scanned += 1
-                if request.matches(key: Self.displayText(message.key), value: Self.displayText(message.value)) {
+                if predicate(Self.displayText(message.key), Self.displayText(message.value)) {
                     matches.append(message)
                 }
             }
@@ -217,7 +245,7 @@ actor KafkaWorkspaceSession: WorkspaceSession,
             }
             if status == .scanning {
                 if offsets.isEmpty { status = .reachedEnd }
-                else if scanned >= request.maximumMessages { status = .messageLimit }
+                else if scanned >= maximumMessages { status = .messageLimit }
             }
             await onProgress(.init(scanned: scanned, matched: matches.count, status: status))
             try Task.checkCancellation()
@@ -232,8 +260,9 @@ actor KafkaWorkspaceSession: WorkspaceSession,
         try Task.checkCancellation()
         guard self.client === client, scanIDs[topic] == scanID else { throw CancellationError() }
         caches[topic] = TopicCache(messages: matches, exhausted: Set(metadata.partitions.map(\.partition)))
-        completedScans[topic] = (request, progress)
+        completedScans[topic] = cacheRequest.map { ($0, progress) }
         await onProgress(progress)
+        return progress
     }
 
     func fetchDatabases() async throws -> [String] {

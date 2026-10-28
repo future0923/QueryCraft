@@ -236,3 +236,19 @@ SSH 0.6.0 还支持保存的跳板链、本机 SSH agent，以及在 SSH 设置�
 ### 常用 Shell 脚本
 
 支持 `querycraft_shell_list/get/create/update/delete`，通过 `plugin_id=shell` 也可发现和调用。本机库独立于 SSH 插件，名称、说明、正文持久化保存；写操作要求对应工具已启用，修改/删除必须匹配 expected_revision。查询有分页及响应大小上限。保存不执行，运行仍使用原有 SSH 工具及连接授权、命令确认。完整字段和示例见 [SSH MCP：保存常用 Shell](SSH_MCP.md#保存常用-shell本机脚本库)。
+
+## Kafka 排障读取参数
+
+`peek_messages` 默认从最早位点读取，且不提交消费位点。`offset`（必须同时给出 `partition`）、`timestamp_ms`（Unix 毫秒，按各分区定位）和 `latest_count`（各分区末尾 N 个 offset 位置）互斥；后者不是跨分区时间排序或精确消息计数。
+
+可用 `key` 精确匹配完整 key（区分大小写，二进制 key 使用表格显示的 base64），用 `event_id` 精确匹配正文顶层 JSON `eventId` 字符串或数字；同时提供时为 AND。不会把嵌套字段、正文任意子串、布尔值或 tombstone 当成事件 ID。筛选发生在正文截断之前。扫描默认最多 10000 条，可用 `max_scan_messages` 设为 1～100000，并同时受 30 秒和 64 MiB 扫描预算约束。
+
+筛选响应的 `scan` 包含 `scanned_messages`、`matched_messages`、`status`、`complete`。`complete=false` 表示扫描提前达到上限，空结果不代表整个 Topic 都不存在匹配；`truncated=true` 也可能表示返回行数、响应大小或扫描范围受限。`cell_char_limit` 默认 200、最多 65536；按确切分区和 offset 定位到同一消息后，使用 `cell_char_offset` 和返回单元格中的 `next_offset` 展开正文。全局正文展开说明不代表每个工具都支持窗口参数，具体以该工具 schema 为准。
+
+`read_committed=true` 使用 librdkafka 原生事务隔离，隐藏未提交与已中止事务记录，不会提交消费位点；默认 false 保持原有 `read_uncommitted` 行为。精确筛选和隔离为新增可选驱动协议；旧驱动仍可加载，但请求其不支持的能力时返回 `UNSUPPORTED_CAPABILITY`，不会默默忽略筛选或隔离参数。新版 Kafka 驱动须和包含这些协议的主程序/MCP 配套构建；公开分发前按发版流程设置匹配的最低主程序版本。
+
+`consumer_groups` 的每个分区返回 `beginning_offset`、`end_offset`、`committed_offset`、`lag`、`lag_reason`、`error`。位点与 lag 使用十进制字符串，避免客户端 JSON 数字精度损失。无提交、watermark 缺失、提交位点越界或查询失败时 lag 为 null，`lag_reason` 提供稳定原因；lag 统计 offset 位置，压缩日志或事务记录下不等于消息条数。以上只适用于 Kafka，不改变 MySQL、PostgreSQL、Doris、Redis 和 Elasticsearch 的查询行为。
+
+工具公共使用说明统一由 MCP 初始化响应的 `instructions` 提供。平铺 `tools/list` 和 `plugin_tools` 均只返回该工具的用途、参数及特殊限制；六类驱动均使用同一份描述来源。旧客户端进程需要断开重连才能加载更新后的 schema 和实现。
+
+本轮本地验证覆盖六类驱动的授权与发现、MCP 的 stdio/HTTP 传输，以及打包后六类驱动加载。Kafka 另行编译、签名打包并验证实际 Dev 安装路径加载；本地 mock 覆盖消息读取、筛选、预算、缓存/取消和原生隔离配置。真实 broker 的时间戳索引、提交/中止事务可见性及认证/TLS 尚需独立实库验证，不能由 mock 测试替代。

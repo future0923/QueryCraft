@@ -20,7 +20,9 @@ struct VerifyKafkaDriver {
             databaseType: .kafka, host: "127.0.0.1", port: 9092,
             authentication: .none, database: nil, tlsMode: .disabled
         ))
-        guard session is any WorkspaceKafkaReading,
+        guard let isolation = session as? any WorkspaceKafkaReadIsolationConfiguring,
+              session is any WorkspaceKafkaMessageSearching,
+              session is any WorkspaceKafkaReading,
               session is any WorkspaceKafkaScanning,
               session is any WorkspaceKafkaTailing,
               session is any WorkspaceKafkaProducing,
@@ -36,7 +38,8 @@ struct VerifyKafkaDriver {
         for mechanism in KafkaSASLMechanism.allCases {
             try await authentication.configureSASL(mechanism)
         }
+        for mode in WorkspaceKafkaReadIsolation.allCases { try await isolation.configureReadIsolation(mode) }
         await session.close()
-        print("Packaged Kafka plugin verified: reading, bounded scanning, live reading, producing, topic details, configuration editing, topic deletion, topic group membership, consumer groups and members, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512")
+        print("Packaged Kafka plugin verified: reading, read_committed isolation, exact key/eventId search, bounded scanning, live reading, producing, topic details, configuration editing, topic deletion, topic group membership, consumer groups and members, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512")
     }
 }

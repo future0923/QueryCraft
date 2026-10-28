@@ -35,13 +35,15 @@ final class KafkaRdkafkaClient: KafkaClient {
     private static let adminTimeoutMilliseconds: Int32 = 10_000
 
     private let configuration: KafkaConnectionConfiguration
+    private let readIsolation: WorkspaceKafkaReadIsolation
     private(set) var handle: OpaquePointer?
     private var tailTopic: String?
     private var tailOffsets: [Int32: Int64] = [:]
     private var tailHealthCheck = ContinuousClock.now
 
-    init(configuration: KafkaConnectionConfiguration) {
+    init(configuration: KafkaConnectionConfiguration, readIsolation: WorkspaceKafkaReadIsolation = .readUncommitted) {
         self.configuration = configuration
+        self.readIsolation = readIsolation
     }
 
     deinit {
@@ -606,6 +608,7 @@ final class KafkaRdkafkaClient: KafkaClient {
         try set(conf, key: "client.id", value: "QueryCraft")
         if !producer {
             try set(conf, key: "group.id", value: "querycraft-viewer-" + UUID().uuidString)
+            try set(conf, key: "isolation.level", value: readIsolation.rawValue)
             try set(conf, key: "enable.auto.commit", value: "false")
             try set(conf, key: "enable.auto.offset.store", value: "false")
             try set(conf, key: "enable.partition.eof", value: "true")

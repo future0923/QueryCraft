@@ -42,6 +42,21 @@ struct KafkaRdkafkaClientTests {
         #expect(throws: WorkspaceSessionError.self) { try client.consumerGroupDetails(groupID: "group", topic: "events") }
     }
 
+    @Test("Read isolation reaches the native consumer without enabling commits", arguments: WorkspaceKafkaReadIsolation.allCases)
+    func readIsolationConfiguration(_ mode: WorkspaceKafkaReadIsolation) throws {
+        let client = KafkaRdkafkaClient(configuration: try KafkaConnectionConfiguration(DatabaseConnectionConfiguration(
+            databaseType: .kafka, host: "127.0.0.1", port: 1, authentication: .none, database: nil, tlsMode: .disabled)), readIsolation: mode)
+        try client.connect()
+        defer { client.close() }
+        let conf = rd_kafka_conf(try #require(client.handle))
+        for (key, expected) in ["isolation.level": mode.rawValue, "enable.auto.commit": "false", "enable.auto.offset.store": "false"] {
+            var length = 256
+            var bytes = [CChar](repeating: 0, count: length)
+            #expect(rd_kafka_conf_get(conf, key, &bytes, &length) == RD_KAFKA_CONF_OK)
+            #expect(String(decoding: bytes.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self) == expected)
+        }
+    }
+
     @Test("Native configuration supports every SASL mechanism", arguments: KafkaSASLMechanism.allCases)
     func saslConfiguration(mechanism: KafkaSASLMechanism) throws {
         var configuration = try KafkaConnectionConfiguration(DatabaseConnectionConfiguration(

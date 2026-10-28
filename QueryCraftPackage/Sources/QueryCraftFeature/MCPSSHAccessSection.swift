@@ -4,6 +4,7 @@ import SwiftUI
 struct MCPSSHConnectionPermissionRow: View {
     @Bindable var model: MCPSettingsModel
     let profile: SSHConnection
+    @State private var scopePresented = false
     @Environment(\.mcpCompactPermissionRows) private var compact
     private func copy(_ zh: String, _ en: String) -> String { AppCopy.current.text(zh, en) }
     private var access: SSHAccountAccess { SSHAccountAccess(id: profile.id, policy: model.policy) }
@@ -53,12 +54,25 @@ struct MCPSSHConnectionPermissionRow: View {
 
     private var scopeControl: some View {
         VStack(alignment: .trailing, spacing: 5) {
-            Menu(copy("设置范围…", "Configure scope…")) {
-                Toggle(copy("读取文件", "Read files"), isOn: grant(\.fileRead))
-                Toggle(copy("上传与下载", "Upload and download"), isOn: grant(\.fileTransfer))
-                Toggle(copy("创建、移动与删除", "Create, move and delete"), isOn: grant(\.fileManagement))
+            Button { scopePresented.toggle() } label: {
+                HStack(spacing: 4) {
+                    Text(copy("设置范围…", "Configure scope…"))
+                    Image(systemName: "chevron.down").imageScale(.small)
+                }
             }
-            .menuStyle(.borderlessButton).fixedSize().frame(height: 22)
+            .buttonStyle(.borderless).fixedSize().frame(height: 22)
+            .popover(isPresented: $scopePresented, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(copy("读取文件", "Read files"), isOn: grant(\.fileRead))
+                    Toggle(copy("上传与下载", "Upload and download"), isOn: grant(\.fileTransfer))
+                    Toggle(copy("创建、移动与删除", "Create, move and delete"), isOn: grant(\.fileManagement))
+                }
+                .toggleStyle(.checkbox).padding(12)
+                .onExitCommand { scopePresented = false }
+            }
+            .onChange(of: access.access) { _, value in
+                if value == .denied { scopePresented = false }
+            }
             .disabled(access.access == .denied)
             .accessibilityLabel(copy("\(profile.name)文件范围", "\(profile.name) file scope"))
             Text(MCPPermissionSummary.sshScope(access))

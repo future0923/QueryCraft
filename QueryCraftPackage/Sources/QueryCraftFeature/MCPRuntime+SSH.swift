@@ -52,7 +52,10 @@ extension MCPRuntime {
     func permittedSSHRoute(_ profile: SSHConnection, policy: MCPPolicy, profiles: [SSHConnection]) throws -> [SSHConnection] {
         let jumps = try SSHConnectionStore.route(to: profile, in: profiles)
         guard jumps.allSatisfy({ policy.ssh?.connectionIDs.contains($0.id) == true && !mutatingSSHConnections.contains($0.id) }) else {
-            throw MCPFailure("Each saved SSH jump host requires its own explicit connection grant.", code: .accessDenied)
+            throw MCPFailure("Each saved SSH jump host requires its own explicit connection grant.", code: .accessDenied,
+                details: .object(["required_grants": .array(["connection"]),
+                    "missing_grants": .array(["connection"]),
+                    "reason": "jump_host_not_authorized"]))
         }
         if !jumps.isEmpty || profile.authenticationMethod == .agent {
             guard sshTransport?.supportsRoutes == true else { throw MCPFailure("Install SSH 0.6.0 or later and reconnect for agent/jump-host connections.", code: .unsupported) }
@@ -66,26 +69,19 @@ extension MCPRuntime {
         return jumps == operation.jumps
     }
     func sshPermitted(_ profile: SSHConnection, tool: String, policy: MCPPolicy) -> Bool {
-        guard policy.enabled, !policy.disabledTools.contains(tool), policy.ssh?.connectionIDs.contains(profile.id) == true else { return false }
-        if MCPToolCatalog.sshFileWrites.contains(tool) { return policy.ssh?.fileManagementConnectionIDs.contains(profile.id) == true }
-        if MCPToolCatalog.sshRecoveryReads.contains(tool) { return policy.ssh?.fileTransferConnectionIDs.contains(profile.id) == true }
-        if MCPToolCatalog.sshRecoveryWrites.contains(tool) { return policy.ssh?.fileTransferConnectionIDs.contains(profile.id) == true }
-        if MCPToolCatalog.sshFileReads.contains(tool) { return policy.ssh?.fileReadConnectionIDs.contains(profile.id) == true }
-        if MCPToolCatalog.sshTransfers.contains(tool) {
-            return policy.ssh?.fileTransferConnectionIDs.contains(profile.id) == true
-                && (tool != "ssh_download_file" || policy.ssh?.fileReadConnectionIDs.contains(profile.id) == true)
-        }
-        if MCPToolCatalog.sshTaskReads.contains(tool) { return policy.ssh?.executionConnectionIDs.contains(profile.id) == true }
-        if tool == "ssh_execute" || MCPToolCatalog.sshTaskWrites.contains(tool) {
-            return policy.ssh?.executionConnectionIDs.contains(profile.id) == true
-        }
-        return true
+        policy.enabled && !policy.disabledTools.contains(tool)
+            && MCPSSHGrant.required(for: tool).allSatisfy { $0.permits(profile.id, policy: policy) }
     }
 
     func callSSH(_ tool: String, args: [String: MCPJSONValue], policy: MCPPolicy) async throws -> MCPJSONValue {
         guard sshTransport != nil else { throw MCPFailure("Install a compatible signed SSH plugin in Plugins/SSH first, then restart this MCP client.", code: .unsupported) }
         if tool == "ssh_list_connections" {
-            return .array(try sshConnections.load().filter { policy.ssh?.connectionIDs.contains($0.id) == true }.map(\.value))
+            let profiles = try sshConnections.load()
+            return .array(profiles.filter { policy.ssh?.connectionIDs.contains($0.id) == true }.map { profile in
+                var value = profile.value.objectValue ?? [:]
+                value["mcp_access"] = sshAccessValue(profile, policy: policy, profiles: profiles)
+                return .object(value)
+            })
         }
         if tool == "ssh_add_connection" {
             let lock = try MCPComponentLock(directory: store.url.deletingLastPathComponent().appending(path: "SSHAccountOperations"))

@@ -57,8 +57,11 @@ struct SSHResult: Sendable {
         case QC_SSH_LOCAL_IO: ("The local path must be an accessible regular file with an existing parent directory. Symlink inputs are not accepted.", .invalidArgument)
         default: ("SSH connection or operation failed. Check the server and plugin.", commandMayHaveRun ? .outcomeUnknown : .driverFailure)
         }
+        var details: [String: MCPJSONValue] = diagnostic.map { ["ssh": $0.value] } ?? [:]
+        if Int(status) == QC_SSH_PERMISSION { details["denial_source"] = "remote_filesystem" }
+        if Int(status) == QC_SSH_HOST_KEY { details["denial_source"] = "host_fingerprint" }
         throw MCPFailure(message + (diagnostic.map { " " + $0.message } ?? "") + detail, code: code,
-                         details: diagnostic.map { .object(["ssh": $0.value]) })
+                         details: details.isEmpty ? nil : .object(details))
     }
 }
 

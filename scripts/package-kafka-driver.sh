@@ -54,7 +54,7 @@ querycraft_validate_driver_package_inputs \
 # Test targets can compile fresh Swift objects without rebuilding the dynamic
 # framework. Reject that older framework instead of silently packaging it.
 source_symbols="$(nm -u "$source_binary" | swift demangle)"
-for capability in WorkspaceKafkaReading WorkspaceKafkaScanning WorkspaceKafkaTailing WorkspaceKafkaProducing WorkspaceKafkaMessageCopying WorkspaceKafkaConsumerGroupProviding WorkspaceKafkaAuthenticationConfiguring WorkspaceKafkaTopicDetailsProviding WorkspaceKafkaTopicConfigurationEditing WorkspaceKafkaTopicDeleting WorkspaceKafkaGroupTopicMembershipProviding WorkspaceKafkaConsumerGroupDetailsProviding; do
+for capability in WorkspaceKafkaReadIsolationConfiguring WorkspaceKafkaMessageSearching WorkspaceKafkaReading WorkspaceKafkaScanning WorkspaceKafkaTailing WorkspaceKafkaProducing WorkspaceKafkaMessageCopying WorkspaceKafkaConsumerGroupProviding WorkspaceKafkaAuthenticationConfiguring WorkspaceKafkaTopicDetailsProviding WorkspaceKafkaTopicConfigurationEditing WorkspaceKafkaTopicDeleting WorkspaceKafkaGroupTopicMembershipProviding WorkspaceKafkaConsumerGroupDetailsProviding; do
     if [[ "$source_symbols" != *"protocol descriptor for QueryCraftFeature.$capability"* ]]; then
         print -u2 "Kafka framework is missing $capability. Build the QueryCraftKafkaDriver scheme before packaging (running tests is not sufficient)."
         exit 1

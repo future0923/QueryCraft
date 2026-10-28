@@ -185,14 +185,32 @@ extension MCPRuntime {
             let topic = try args.requiredString("topic")
             try authorizeTopic(topic, profile: profile, policy: policy)
             let partition = args["partition"]?.intValue.flatMap(Int32.init(exactly:))
-            let request = WorkspaceKafkaReadRequest(partition: partition, start: args["offset"]?.intValue.map { .offset(Int64($0)) } ?? .earliest)
+            let start: WorkspaceKafkaReadRequest.Start
+            if let timestamp = args["timestamp_ms"]?.intValue { start = .timestamp(Int64(timestamp)) }
+            else if let latest = args["latest_count"]?.intValue { start = .latest(latest) }
+            else { start = args["offset"]?.intValue.map { .offset(Int64($0)) } ?? .earliest }
+            let request = WorkspaceKafkaReadRequest(partition: partition, start: start)
             guard request.isValid else { throw MCPFailure("Invalid Kafka partition/offset.") }
             try await kafka.prepareReading(topic: topic, request: request)
+            var scan: WorkspaceKafkaScanProgress?
+            if args["key"] != nil || args["event_id"] != nil {
+                guard let searching = connection as? any WorkspaceKafkaMessageSearching else {
+                    throw MCPFailure("Update the Kafka driver for exact key/event_id searches.", code: .unsupported)
+                }
+                scan = try await searching.prepareMessageSearch(topic: topic, filter: .init(key: args.string("key"),
+                    eventID: args.string("event_id"), maximumMessages: args.integer("max_scan_messages", default: 10_000)))
+            }
             let objects = try await connection.fetchObjects(in: database ?? "").filter { policy.permitsObject($0, profile: profile, schema: args.string("schema")) }
             guard let object = objects.first(where: { $0.name == topic }) else { throw MCPFailure("Topic not found.") }
             let result = try await connection.fetchDataPage(for: object, in: database ?? "", offset: 0, limit: limit,
                 sort: .none, filter: .empty, onBatch: { batch in try? await buffer.append(batch) })
-            return await buffer.value(hasMore: result.hasNextPage)
+            var value = await buffer.value(hasMore: result.hasNextPage || scan.map { $0.status != .reachedEnd } == true).objectValue ?? [:]
+            if let scan {
+                value["scan"] = .object(["scanned_messages": .int(scan.scanned), "matched_messages": .int(scan.matched),
+                    "status": .string(String(describing: scan.status)), "complete": .bool(scan.status == .reachedEnd)])
+            }
+            value["read_isolation"] = .string(args.flag("read_committed") ? "read_committed" : "read_uncommitted")
+            return .object(value)
         case "send_message":
             invalidateMetadata(for: profile.id)
             defer { invalidateMetadata(for: profile.id) }
@@ -217,7 +235,13 @@ extension MCPRuntime {
                     } else if !offsets.contains(where: { $0.committedOffset != nil }) { continue }
                 }
                 values.append(.object(["id": .string(group.id), "state": .string(group.state), "partitions": .array(offsets.map {
-                    .object(["partition": .int(Int($0.partition)), "lag": $0.lag.map { .string(String($0)) } ?? .null])
+                    .object(["partition": .int(Int($0.partition)),
+                        "beginning_offset": $0.beginningOffset.map { .string(String($0)) } ?? .null,
+                        "end_offset": $0.endOffset.map { .string(String($0)) } ?? .null,
+                        "committed_offset": $0.committedOffset.map { .string(String($0)) } ?? .null,
+                        "lag": $0.lag.map { .string(String($0)) } ?? .null,
+                        "lag_reason": $0.lagUnavailableReason.map(MCPJSONValue.string) ?? .null,
+                        "error": $0.error.map(MCPJSONValue.string) ?? .null])
                 })]))
             }
             return .array(values)

@@ -36,6 +36,17 @@ public struct WorkspaceKafkaConsumerOffset: Equatable, Identifiable, Sendable {
         return endOffset - committedOffset
     }
 
+    /// Stable machine-readable reason; absent metadata must never become zero lag.
+    public var lagUnavailableReason: String? {
+        if error != nil { return "offset_query_failed" }
+        guard let committedOffset else { return "no_committed_offset" }
+        guard let beginningOffset, let endOffset else { return "watermarks_unavailable" }
+        if beginningOffset < 0 || endOffset < beginningOffset { return "invalid_watermarks" }
+        if committedOffset < beginningOffset { return "committed_before_log_start" }
+        if committedOffset > endOffset { return "committed_after_log_end" }
+        return nil
+    }
+
     public var isOutsideLog: Bool {
         guard let committedOffset, let beginningOffset, let endOffset else { return false }
         return committedOffset < beginningOffset || committedOffset > endOffset
