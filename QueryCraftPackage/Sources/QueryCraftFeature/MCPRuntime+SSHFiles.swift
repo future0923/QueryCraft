@@ -23,7 +23,7 @@ extension MCPRuntime {
         var file = SSHFileRequest(operation: operation, remotePath: try args.requiredString(transferring ? "remote_path" : "path"))
         file.offset = args.integer("offset", default: 0)
         file.maximumEntries = args.integer("max_entries", default: 100)
-        file.maximumTransferBytes = args.integer("max_transfer_bytes", default: 67_108_864)
+        file.maximumTransferBytes = args.integer("max_transfer_bytes", default: SSHFileRequest.defaultMaximumTransferBytes)
         file.overwrite = args.flag("overwrite")
         if transferring { file.localPath = try args.requiredString("local_path") }
         if operation == .list && file.offset > 100_000 { throw MCPFailure("Directory offset exceeds the scan limit. Narrow the directory.") }
@@ -46,6 +46,7 @@ extension MCPRuntime {
             let policy = try store.load()
             guard !stopped, sshTransfers.count < min(8, policy.maximumSessions) else { throw MCPFailure("Background transfer capacity reached.", code: .capacity) }
         }
+        try file.validateUploadSize()
         let ownership = try record.map { try TransferOwnership(store: records, record: $0) }
         let recorder = try record.map { try SSHTransferRecorder(store: records, id: $0.id, progressAvailable: sshTransport?.supportsTransferProgress == true) }
         if let recorder { file.progress = { recorder.receive($0) } }
@@ -113,7 +114,7 @@ extension MCPRuntime {
             if let record {
                 let failure = MCPFailure.normalized(error)
                 recorder?.fail(failure)
-                throw MCPFailure(failure.message + " Inspect transfer_id=" + record.id.uuidString + " with ssh_transfer_status/ssh_inspect_transfer before cleanup or repetition.", code: failure.code, details: failure.details)
+                throw MCPFailure(failure.message + " Inspect transfer_id=" + record.id.uuidString + " with ssh_transfer_status/ssh_inspect_transfer before cleanup or repetition.", code: failure.code, details: failure.details, recovery: failure.recovery)
             }
             throw error
         }

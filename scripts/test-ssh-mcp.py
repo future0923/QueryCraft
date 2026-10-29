@@ -150,7 +150,19 @@ def main():
                 failure('ssh_upload_file', transfer, 'ACCESS_DENIED')
                 settings['ssh']['fileTransferConnectionIDs'] = [connection]; save()
                 failure('ssh_upload_file', dict(transfer, confirm_high_risk=False), 'CONFIRMATION_REQUIRED')
-                uploaded = success('ssh_upload_file', transfer)
+                oversized = root / 'oversized.jar'
+                with oversized.open('wb') as handle: handle.truncate(221054869)
+                before_limits = success('ssh_list_transfers', selector)['total_records']
+                for tool, extra in [('ssh_upload_file', {}), ('ssh_start_transfer', {'direction': 'upload'})]:
+                    error = failure(tool, dict(transfer, local_path=str(oversized), **extra), 'CAPACITY_EXCEEDED')['error']
+                    assert error['details']['reason'] == 'transfer_byte_limit', error
+                    assert error['details']['size_bytes'] == 221054869 and error['details']['max_transfer_bytes'] == 67108864, error
+                    assert error['details']['destination_outcome'] == 'not_started', error
+                    assert 'max_transfer_bytes' in error['recovery'] and 'Close unused sessions' not in error['recovery'], error
+                assert success('ssh_list_transfers', selector)['total_records'] == before_limits
+                small_limit = failure('ssh_upload_file', dict(transfer, max_transfer_bytes=1024), 'CAPACITY_EXCEEDED')['error']
+                assert small_limit['details']['size_bytes'] == len(content) and small_limit['details']['max_transfer_bytes'] == 1024
+                uploaded = success('ssh_upload_file', dict(transfer, max_transfer_bytes=len(content)))
                 assert uploaded['sha256'] == digest and uploaded['bytes_transferred'] == len(content), uploaded
                 completed_id = uploaded['transfer_id']
                 completed = success('ssh_transfer_status', dict(selector, transfer_id=completed_id))
@@ -176,7 +188,12 @@ def main():
                 assert downloaded['sha256'] == digest and destination.read_bytes() == content
                 failure('ssh_download_file', download, 'INVALID_ARGUMENT')
                 destination.write_bytes(b'preserve-me')
-                failure('ssh_download_file', dict(download, overwrite=True, max_transfer_bytes=1024), 'CAPACITY_EXCEEDED')
+                download_error = failure('ssh_download_file', dict(download, overwrite=True, max_transfer_bytes=1024), 'CAPACITY_EXCEEDED')['error']
+                assert download_error['details']['reason'] == 'transfer_byte_limit' and download_error['details']['max_transfer_bytes'] == 1024
+                assert 'max_transfer_bytes' in download_error['recovery'] and 'Close unused sessions' not in download_error['recovery']
+                failed_record = next(item for item in success('ssh_list_transfers', selector)['transfers'] if item['local_path'] == str(destination))
+                retained = success('ssh_transfer_status', dict(selector, transfer_id=failed_record['transfer_id']))['error']
+                assert retained['details'] == download_error['details'] and retained['recovery'] == download_error['recovery']
                 assert destination.read_bytes() == b'preserve-me'
                 success('ssh_download_file', dict(download, overwrite=True)); assert destination.read_bytes() == content
                 # A transfer grant must not acquire arbitrary file deletion rights.

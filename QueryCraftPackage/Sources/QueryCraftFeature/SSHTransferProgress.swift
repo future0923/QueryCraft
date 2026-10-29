@@ -20,6 +20,7 @@ struct SSHTransferStatus: Codable, Sendable {
     var result: MCPJSONValue?
     var errorCode: MCPFailureCode?
     var sshDiagnostic: SSHDiagnostic? = nil
+    var error: MCPJSONValue? = nil
     var terminal: Bool { [.completed, .failed, .cancelled].contains(state) }
     var value: [String: MCPJSONValue] {
         ["state": .string(state.rawValue), "phase": .string(phase), "progress_available": .bool(progressAvailable),
@@ -28,6 +29,7 @@ struct SSHTransferStatus: Codable, Sendable {
          "average_bytes_per_second": averageBytesPerSecond.map(MCPJSONValue.double) ?? .null,
          "updated_at_unix": .double(updatedAt.timeIntervalSince1970), "result": result ?? .null,
          "error_code": errorCode.map { .string($0.rawValue) } ?? .null,
+         "error": error ?? .null,
          "ssh_diagnostic": sshDiagnostic?.value ?? .null,
          "destination_outcome": state == .completed ? "published_at_completion; current contents not reverified" : "unknown",
          "automatic_retry": false]
@@ -146,6 +148,7 @@ final class SSHTransferRecorder: @unchecked Sendable {
             snapshot.state = failure.code == .cancelled ? .cancelled : .failed
             snapshot.errorCode = failure.code; snapshot.updatedAt = Date(); snapshot.averageBytesPerSecond = nil
             snapshot.sshDiagnostic = failure.details?.objectValue?["ssh"].flatMap(SSHDiagnostic.init(value:))
+            snapshot.error = failure.value.objectValue?["error"]
             try? store.saveStatus(snapshot, id: id)
         }
     }

@@ -207,7 +207,7 @@ extension MCPRuntime {
         pendingSSHConnections -= 1; reserved = false
         defer { sshOperations.removeValue(forKey: operationID) }
         let result = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
-        try result.validate()
+        try result.validate(file: file)
         return result
     }
 }

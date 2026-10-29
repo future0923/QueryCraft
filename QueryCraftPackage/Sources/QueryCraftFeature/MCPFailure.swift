@@ -44,13 +44,14 @@ struct MCPFailure: LocalizedError, Sendable {
     let message: String
     let code: MCPFailureCode
     let details: MCPJSONValue?
-    init(_ message: String, code: MCPFailureCode = .invalidArgument, details: MCPJSONValue? = nil) {
-        self.message = message; self.code = code; self.details = details
+    let recovery: String?
+    init(_ message: String, code: MCPFailureCode = .invalidArgument, details: MCPJSONValue? = nil, recovery: String? = nil) {
+        self.message = message; self.code = code; self.details = details; self.recovery = recovery
     }
     var errorDescription: String? { "[\(code.rawValue)] \(message)" }
     var value: MCPJSONValue {
         var error: [String: MCPJSONValue] = ["code": .string(code.rawValue), "message": .string(message),
-                                           "recovery": .string(code.recovery), "automatic_retry": false]
+                                           "recovery": .string(recovery ?? code.recovery), "automatic_retry": false]
         if let details { error["details"] = details }
         return .object(["error": .object(error)])
     }

@@ -38,8 +38,11 @@ struct SSHResult: Sendable {
                  "truncated": .bool(truncated), "output_bytes": .int(Int(clamping: outputBytes)), "automatic_retry": false])
     }
 
-    func validate() throws {
+    func validate(file: SSHFileRequest? = nil) throws {
         guard status != 0 else { return }
+        if Int(status) == QC_SSH_LIMIT, let file, [.upload, .download].contains(file.operation) {
+            throw file.transferLimitFailure(diagnostic: diagnostic)
+        }
         let detail = commandMayHaveRun ? " The command or target file may have changed; check its outcome before repeating the operation." : ""
         let (message, code): (String, MCPFailureCode) = switch Int(status) {
         case QC_SSH_HOST_KEY: ("SSH host fingerprint does not match. Verify it with the server administrator.", .accessDenied)

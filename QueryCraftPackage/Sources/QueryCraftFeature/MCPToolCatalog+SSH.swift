@@ -45,7 +45,7 @@ extension MCPToolCatalog {
     ]
     private static let transferFields: [String: MCPJSONValue] = ["local_path": string("Absolute local file path; parent must exist. Upload input cannot be a symlink or special file."),
         "remote_path": string("Absolute remote file path; parent must exist."), "overwrite": .object(["type": "boolean", "description": "Default false. Explicitly confirm replacement of the exact destination before true."]),
-        "max_transfer_bytes": integer("1–1073741824, default 67108864 (64 MiB)."), "confirm_high_risk": .object(["type": "boolean"])]
+        "max_transfer_bytes": integer("Maximum source file size in bytes: 1–\(SSHFileRequest.supportedMaximumTransferBytes), default \(SSHFileRequest.defaultMaximumTransferBytes) (64 MiB). For larger files explicitly set this to at least the source size; maximum 1 GiB. Oversized local uploads fail before connecting. No automatic retry."), "confirm_high_risk": .object(["type": "boolean"])]
     static let sshTaskDefinitions: [MCPToolDefinition] = [
         ssh("ssh_start_task", "Start a bounded remote background task that survives MCP disconnection. Uses existing /bin/bash and standard system utilities; requires explicit execution grant and exact-command confirmation. An unknown result includes task_id: inspect it, never relaunch automatically. Output logs are capped, no PTY/input is available.", [
             "command": string("Exact remote shell command, maximum 16384 UTF-8 bytes."), "working_directory": string("Optional absolute remote working directory; default account home."),

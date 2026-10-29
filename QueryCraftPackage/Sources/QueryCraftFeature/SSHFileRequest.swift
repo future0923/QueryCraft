@@ -1,12 +1,15 @@
 import Foundation
+import Darwin
 
 struct SSHFileRequest: Sendable {
+    static let defaultMaximumTransferBytes = 67_108_864
+    static let supportedMaximumTransferBytes = 1_073_741_824
     enum Operation: UInt32, Sendable { case stat = 1, list, read, upload, download, mkdir, move, unlink, rmdir }
     let operation: Operation
     let remotePath: String
     var localPath: String? = nil
     var offset = 0
-    var maximumTransferBytes = 67_108_864
+    var maximumTransferBytes = Self.defaultMaximumTransferBytes
     var maximumEntries = 100
     var overwrite = false
     var temporaryPath: String? = nil
@@ -22,11 +25,42 @@ struct SSHFileRequest: Sendable {
         let paths = [remotePath, localPath, temporaryPath].compactMap { $0 }
         guard paths.allSatisfy({ $0.hasPrefix("/") && !$0.contains("\0") && $0.utf8.count <= 4096 }),
               (0...9_007_199_254_740_991).contains(offset), (1...500).contains(maximumEntries),
-              (1...1_073_741_824).contains(maximumTransferBytes),
+              (1...Self.supportedMaximumTransferBytes).contains(maximumTransferBytes),
               ![Operation.upload, .download].contains(operation) || localPath != nil,
               operation != .upload || (temporaryPath != nil && temporaryPath != remotePath) else {
             throw MCPFailure("Use absolute paths, valid byte/entry limits and an exact local path for transfers.")
         }
+    }
+    /// Best-effort metadata preflight only. The plugin still opens with
+    /// O_NOFOLLOW, validates the actual descriptor and checks growth in flight.
+    private var uploadSize: UInt64? {
+        guard operation == .upload, let localPath else { return nil }
+        var info = stat()
+        guard Darwin.lstat(localPath, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size >= 0 else { return nil }
+        return UInt64(info.st_size)
+    }
+    func validateUploadSize() throws {
+        if let size = uploadSize, size > UInt64(maximumTransferBytes) {
+            throw transferLimitFailure(size: size, beforeConnection: true)
+        }
+    }
+    func transferLimitFailure(size: UInt64? = nil, beforeConnection: Bool = false,
+                              diagnostic: SSHDiagnostic? = nil) -> MCPFailure {
+        let knownSize = size ?? uploadSize
+        let description = knownSize.map { "File size is \($0) bytes;" } ?? "File transfer exceeded its byte limit;"
+        var details: [String: MCPJSONValue] = ["reason": "transfer_byte_limit",
+            "size_bytes": knownSize.map { .int(Int(clamping: $0)) } ?? .null,
+            "max_transfer_bytes": .int(maximumTransferBytes),
+            "maximum_supported_transfer_bytes": .int(Self.supportedMaximumTransferBytes),
+            "destination_outcome": .string(beforeConnection ? "not_started" : "requires_inspection")]
+        if let diagnostic { details["ssh"] = diagnostic.value }
+        let nextStep = knownSize.map { $0 > UInt64(Self.supportedMaximumTransferBytes) } == true
+            ? "This file exceeds the supported 1073741824-byte (1 GiB) maximum; use another authorized transfer method."
+            : "For an authorized new transfer, set max_transfer_bytes to at least the source size, up to 1073741824 (1 GiB). The default is 67108864 (64 MiB)."
+        let inspection = beforeConnection ? "No SSH connection was opened or destination written. "
+            : "Inspect the transfer and destination before repeating it. "
+        return MCPFailure("\(description) max_transfer_bytes=\(maximumTransferBytes) bytes (default 67108864 / 64 MiB; supported maximum 1073741824 / 1 GiB)."
+            + (diagnostic.map { " " + $0.message } ?? ""), code: .capacity, details: .object(details), recovery: inspection + nextStep)
     }
     static func validateMutationPath(_ path: String) throws {
         let components = path.split(separator: "/", omittingEmptySubsequences: false)
@@ -36,7 +70,7 @@ struct SSHFileRequest: Sendable {
         }
     }
     func result(_ result: SSHResult, encoding: String = "utf8") throws -> MCPJSONValue {
-        try result.validate()
+        try result.validate(file: self)
         switch operation {
         case .mkdir, .move, .unlink, .rmdir:
             return .object(["status": "completed", "path": .string(remotePath), "destination_path": operation == .move ? temporaryPath.map(MCPJSONValue.string) ?? .null : .null, "automatic_retry": false])

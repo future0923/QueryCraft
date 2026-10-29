@@ -138,6 +138,8 @@ python3 scripts/package-ssh-catalog.py \
 
 文件路径必须为绝对路径。本机路径属于运行 MCP 的机器。默认拒绝覆盖目标；传输要求确认两端的具体路径，覆盖还需明确指定 `overwrite: true`。默认大小上限 64 MiB，最多 1 GiB；流式传输不把文件内容放入 MCP JSON。上传只接受普通本机文件，拒绝最终路径符号链接与 FIFO。临时文件以 0600 创建，完成后发布到目标；覆盖上传要求服务器支持 POSIX rename，不支持时保留原目标。目标文件权限不会继承旧目标。上传摘要对应读取的源字节，下载摘要对应接收的字节，没有额外重读远端做端到端摘要校验。
 
+大于 64 MiB 的文件需显式设置 `max_transfer_bytes`，例如约 211 MiB 的文件可设 `268435456`（256 MiB），同步上传/下载和 `ssh_start_transfer` 使用相同规则。普通本机上传源的大小超过本次上限时，在连接 SSH/SFTP 和创建传输恢复记录前拒绝；底层插件仍会检查实际打开的文件及传输期间的大小变化。超限保留 `CAPACITY_EXCEEDED` 错误码，`error.details.reason=transfer_byte_limit`，并返回 `size_bytes`（不可获得时为 null）、`max_transfer_bytes`、`maximum_supported_transfer_bytes` 和 `destination_outcome`；`error.recovery` 说明调整参数或改用已授权传输方式，不再建议关闭会话或等待。提前拒绝的 `destination_outcome=not_started`；已经进入传输的错误仍需核对实际结果，不能自动重试。后台传输失败后，`ssh_transfer_status` 和列表中的 `error` 会保留完整的结构化错误及恢复建议，旧状态文件仍可读取。
+
 传输检查源大小与修改时间，不能保证正在被其他进程改写的文件获得一致快照。连接中断时可能遗留 `.querycraft-<UUID>.upload` 临时文件；目标发布结果不确定时先检查目标，禁止自动重试。目录按服务器顺序分页，目录变化会影响偏移；非法 UTF-8 名称保留 `name_base64`，当前工具路径参数只支持 UTF-8。二进制文件或截断 UTF-8 字符的窗口使用 `encoding: "base64"`。返回缺失属性为 null，不按名称猜测。
 
 ## 文件管理与恢复（SSH 插件 0.3.0）
