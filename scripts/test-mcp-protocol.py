@@ -54,6 +54,12 @@ def stdio(executable, root, settings):
         schema = next(t for t in tools if t['name'] == 'querycraft_get_schema_context')
         assert schema['annotations']['readOnlyHint'] is True
         assert schema['inputSchema']['properties']['max_tables']['type'] == 'integer'
+        assert schema['inputSchema']['properties']['table_offset']['type'] == 'integer'
+        batch = next(t for t in tools if t['name'] == 'querycraft_execute_batch')
+        assert batch['inputSchema']['properties']['result_mode']['enum'] == ['summary', 'detailed']
+        details = next(t for t in tools if t['name'] == 'querycraft_get_batch_results')
+        assert details['annotations']['readOnlyHint'] is True
+        assert details['inputSchema']['required'] == ['connection_id', 'batch_id']
         bad = send(process, {'jsonrpc':'2.0','id':40,'method':'tools/call','params':{'name':'querycraft_execute_query','arguments':{'connection_id':'invalid','sql':'private-protocol-secret'}}})['result']
         assert bad['isError'] is True
         assert bad['structuredContent']['error']['code'] == 'CONNECTION_NOT_FOUND'

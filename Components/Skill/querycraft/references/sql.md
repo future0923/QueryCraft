@@ -29,7 +29,7 @@ Full access allows supported SQL functions in the authorized namespace; read-onl
 
 ## Scripts and sessions
 
-`execute_batch` parses the entire script before running it. It stops on failure by default. `continue_on_error` permits partial success only outside a transaction: inspect every statement result.
+`execute_batch` parses the entire script before running it. It stops on failure by default. `continue_on_error` permits partial success only outside a transaction. On servers exposing compact batch receipts, inspect `succeeded`, `failed`, `not_executed`, `completed` and `transaction`; counts describe statement execution, not durable writes. A stop-on-error summary may be in `error.details`. Read only needed statement details with `get_batch_results(connection_id, database, batch_id, offset, limit)`; use `next_offset` to continue. Receipts belong to the executing MCP runtime, expire after at most 10 minutes or eviction, and require the original connection/database and unchanged permissions. Never repeat writes to retrieve missing or expired details. Older servers may return inline `results`; follow their actual schema and inspect errors there.
 
 `use_transaction: true` requires an independent MySQL/PostgreSQL connection. Do not combine it with `session_id` or `continue_on_error`. MCP rejects DDL inside transactions on both drivers. Session-control and unclassified SQL are rejected even under full access because the driver cannot reliably track their state.
 

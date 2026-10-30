@@ -19,7 +19,7 @@ enum MCPPermissionToolGroup: String, CaseIterable, Identifiable, Sendable {
 
     private static let groupedTools: [Self: [MCPToolDefinition]] = {
         let names: [Self: Set<String>] = [
-            .schema: MCPToolCatalog.metadataTools.union(["execute_query", "execute_batch"]),
+            .schema: MCPToolCatalog.metadataTools.union(["execute_query", "execute_batch", "get_batch_results"]),
             .sessions: ["open_session", "close_session", "begin_transaction", "commit_transaction", "rollback_transaction"],
             .drivers: ["execute_redis_command", "execute_request", "peek_messages", "send_message", "consumer_groups"],
             .connections: Set(["runtime_info", "list_connections", "add_connection", "duplicate_connection", "remove_connection", "plugin_list", "plugin_tools", "plugin_call"]).union(MCPToolCatalog.sshTools).union(MCPToolCatalog.shellTools),

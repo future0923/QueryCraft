@@ -106,7 +106,7 @@ Doris 没有与 MySQL / PostgreSQL 相同的事务只读保证。Elasticsearch �
 所有工具以 `querycraft_` 开头，可在设置中逐项关闭：
 
 - 元数据：`list_connections`、`list_databases`、`list_tables`、`describe_table`、`get_schema_context`、`list_routines`、`get_routine_source`。
-- SQL：`execute_query`、`execute_batch`、`open_session`、`close_session`、`begin_transaction`、`commit_transaction`、`rollback_transaction`。
+- SQL：`execute_query`、`execute_batch`、`get_batch_results`、`open_session`、`close_session`、`begin_transaction`、`commit_transaction`、`rollback_transaction`。
 - Redis：`execute_redis_command`；Elasticsearch：`execute_request`。
 - Kafka：`peek_messages`、`send_message`、`consumer_groups`。
 - 连接：`add_connection`、`duplicate_connection`、`remove_connection`。
@@ -137,8 +137,26 @@ MySQL / PostgreSQL 的查询和 DML。两类驱动的事务中均不执行 DDL�
 MCP 初始化会提供连接发现、结构核对、限量查询、长字段展开和失败处理说明。
 工具附带只读/破坏性提示；这些提示不替代服务端权限检查。
 
-- `get_schema_context` 默认返回 8 张表的紧凑字段上下文，可用 `max_tables`（最多 20）、
-  `max_chars` 调整；`format: "detailed"` 返回含 DDL 的结构。需要完整单表结构时用 `describe_table`。
+- `execute_batch` 默认返回 `total_statements`、`succeeded`、`failed`、`not_executed`、
+  `completed`、`transaction` 和失败摘要，避免重复输出每条 SQL。计数表示语句执行结果，不代表持久化写入；
+  只有工具自管事务确认提交后 `committed` 才为 true，`active` 表示仍由会话持有事务。
+  失败停止时相同摘要放在 `error.details` 中；继续执行遇到错误仍按部分失败记录历史。
+  使用返回的 `batch_id` 调用 `get_batch_results(connection_id, database, batch_id, offset, limit)` 分页读取明细，
+  不建立数据库连接、不再次执行 SQL。页默认 20 条、最多 100 条，且按响应字节限制缩小；语句下标从 0 开始。
+  明细仅保留在执行它的同一 MCP 进程内，最多 10 分钟、16 批、合计 32 MiB，单批最多 8 MiB；
+  超额批次返回 `details_available: false`，到期、重启或容量淘汰后无法读取。
+  读取须使用原连接配置、数据库及未变更的权限，并同时允许 `execute_batch` 和 `get_batch_results`。
+  小批次可显式传 `result_mode: "detailed"` 获取内联结果；绝不能为重新取结果而重复执行写入。
+- `get_schema_context` 默认返回 8 张表的紧凑字段上下文，可用 `max_tables`（每页最多 20）、
+  `max_chars` 调整；`format: "detailed"` 返回含 DDL 的结构。
+  两种格式均返回 `total_tables`、`returned_tables`、`remaining_tables`、`has_more`、`next_table_offset`；
+  保持数据库、schema、tables 和格式不变，将下一页位置作为 `table_offset` 继续读取。默认目录按完整对象名称排序；
+  显式 `tables` 保留请求顺序。分页期间外部目录变化时应从首重新读取，不跨目录版本合并结果。
+  紧凑模式还受字符预算约束：后续表放不下时留到下一页；单表过大则在 `incomplete_tables` 明确列出，
+  用 `describe_table` 获取完整列和 DDL。若连表头都放不下，应增大 `max_chars` 后重读该页。
+  表注释优先取详情元数据，缺失时复用 SQL 对象总览，按完整 schema、对象名及类型匹配；不解析 DDL 猜测。
+  MySQL、PostgreSQL、Doris 展示驱动实际提供的表注释；Redis、Elasticsearch、Kafka 无 SQL 表注释时不伪造，
+  详细结构的 `comment` 返回 null。字段注释及 ES 映射保持原数据来源。
 - 字符串默认每格 200 个字符，展开返回 `offset`、`next_offset` 和 `truncated`。
   先把查询缩小到目标行和列，再用 `cell_char_offset` 续读，避免反复拉取整张结果表。
 - 设置支持直接工具、按需发现和两者同时。按需模式用 `plugin_list` →
@@ -147,7 +165,7 @@ MCP 初始化会提供连接发现、结构核对、限量查询、长字段展�
 - 元数据缓存默认 30 秒，可设置为 0 关闭；`refresh: true` 绕过缓存。
   缓存绑定连接配置、数据库、schema、参数和权限快照；当前运行时执行 DDL 前后失效。
   其他客户端或外部程序的变更最多等待缓存 TTL，需要立即确认时强制刷新。
-  Redis 键不缓存，SQL 结果、消息内容和消费组积压也不缓存。
+  Redis 键、普通 SQL 结果、消息内容和消费组积压不进入元数据缓存；批量执行明细使用上述独立短期缓存。
 - 最多保留 4 个空闲元数据连接，60 秒回收，可配置为 0 关闭。
   普通 SQL 继续使用独立连接，跨调用复用通过显式会话进行；避免连接状态串扰。
 - 错误返回结构化 `code`、`message`、`recovery` 和 `automatic_retry: false`。

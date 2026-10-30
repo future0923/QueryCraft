@@ -30,6 +30,7 @@ actor MCPRuntime {
     var pendingConnections = 0
     var metadataCache: [String: MetadataCacheEntry] = [:]
     var metadataGeneration: UInt64 = 0
+    var batchResults: [String: BatchResultEntry] = [:]
     var idleConnections: [IdleConnection] = []
     let history: MCPHistoryStore
     var stopped = false
@@ -59,6 +60,7 @@ actor MCPRuntime {
     private func maintainSessions() async {
         await reconcileSSHConnections()
         let policy = try? store.load()
+        pruneBatchResults()
         let profiles = try? sshConnections.load()
         for operation in sshOperations.values {
             if let policy, let profiles, sshOperationPermitted(operation, policy: policy, profiles: profiles) { continue }
@@ -105,7 +107,9 @@ actor MCPRuntime {
                 throw MCPFailure("Result exceeds the configured limit. The operation may have completed.", code: .resultTooLarge)
             }
             if recordsHistory {
-                let partial = result.objectValue?["results"]?.arrayValue?.contains { $0.objectValue?["error"] != nil } == true
+                let partial = (result.objectValue?["failed"]?.intValue ?? 0) > 0
+                    || (result.objectValue?["total_results"] == nil
+                        && result.objectValue?["results"]?.arrayValue?.contains { $0.objectValue?["error"] != nil } == true)
                 try? await history.append(.init(id: UUID().uuidString, startedAt: started, tool: tool, connectionID: connectionID,
                     durationMilliseconds: Int(Date().timeIntervalSince(started) * 1000), succeeded: !partial,
                     errorCode: partial ? "PARTIAL_FAILURE" : nil, resultBytes: bytes))
@@ -233,6 +237,7 @@ actor MCPRuntime {
         policy = try store.load()
         if let savedEntry, database != savedEntry.database { throw MCPFailure("Database cannot change on a pinned session. Open another session.") }
         try policy.authorize(tool: tool, profile: profile, database: database)
+        if tool == "get_batch_results" { return try readBatchResults(args: args, profile: profile, database: database, policy: policy) }
         if tool == "plugin_tools" || tool == "plugin_call" {
             guard await registry.isInstalled(profile.databaseType) else { throw MCPFailure("Install this connection driver first.", code: .unsupported) }
             let names = MCPToolCatalog.driverTools(profile.databaseType).subtracting(policy.disabledTools)
@@ -420,6 +425,7 @@ actor MCPRuntime {
     }
     func shutdown() async {
         stopped = true
+        batchResults.removeAll()
         maintenance?.cancel(); maintenance = nil
         let transfers = Array(sshTransfers.values)
         for task in transfers { task.cancel() }
