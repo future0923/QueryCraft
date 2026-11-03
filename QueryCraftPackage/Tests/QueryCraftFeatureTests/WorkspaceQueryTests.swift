@@ -302,16 +302,94 @@ struct WorkspaceQueryDocumentTests {
 
         await document.execute(try await executionPlan(for: sql))
 
-        guard case let .failed(message, _) = document.executionState else {
-            Issue.record("Expected the write batch to fail closed.")
-            return
-        }
+        #expect(document.executionState == .idle)
         #expect(
-            message
+            document.executionNotice?.message
                 == SQLExecutionPolicyError.safetyLockEnabled
                     .localizedDescription
         )
         #expect(document.statementResults.isEmpty)
+        #expect(await factory.configurations.isEmpty)
+        await document.close()
+    }
+
+    @Test(arguments: [DatabaseType.mysql, .postgresql, .doris])
+    func lockedSQLPresentsConfirmationAndCancellationKeepsResults(_ databaseType: DatabaseType) async throws {
+        let session = FailingBatchQuerySession(failingStatementIndex: .max)
+        let document = WorkspaceQueryDocumentModel(
+            title: "Query 1",
+            configuration: DatabaseConnectionConfiguration(
+                databaseType: databaseType, host: "127.0.0.1", port: 3306,
+                username: "root", password: nil, database: "app", tlsMode: .disabled
+            ),
+            sessionFactory: SingleQuerySessionFactory(session: session)
+        )
+        await document.execute(try await executionPlan(for: "SELECT 1; SELECT 2;"))
+        try #require(document.statementResults.count == 2)
+        document.selectedStatementResultIndex = 1
+        let previousState = document.executionState
+        let previousResults = document.statementResults
+        let previousElapsed = document.elapsedSeconds
+        let safetyLock = WorkspaceSafetyLock()
+        document.sql = "UPDATE users SET active = 0;"
+        let plan = try await executionPlan(for: document.sql)
+
+        #expect(document.prepareExecution(plan, safetyLock: safetyLock) == nil)
+        #expect(document.executionNotice?.confirmation?.plan == plan)
+        #expect(document.executionNotice?.message == SQLExecutionPolicyError.safetyLockEnabled.localizedDescription)
+        #expect(safetyLock.isEnabled)
+        document.executionNotice = nil // Cancel the native alert.
+
+        #expect(document.executionState == previousState)
+        #expect(document.statementResults == previousResults)
+        #expect(document.selectedStatementResultIndex == 1)
+        #expect(document.elapsedSeconds == previousElapsed)
+        #expect(await session.executedStatements() == ["SELECT 1;", "SELECT 2;"])
+        await document.execute(try executionTarget(for: "SELECT 3;"))
+        #expect(document.statementResults.count == 1)
+        #expect(document.selectedStatementResultIndex == 0)
+        await document.close()
+    }
+
+    @Test(arguments: ["UPDATE users SET active = 0;", "SELECT 1 /*!80000 SQL_NO_CACHE */;"])
+    func confirmingSafetyLockExecutesTheExactBlockedSQL(_ sql: String) async throws {
+        let session = FailingBatchQuerySession(failingStatementIndex: .max)
+        let document = WorkspaceQueryDocumentModel(
+            title: "Query 1", configuration: makeConfiguration(database: nil),
+            sessionFactory: SingleQuerySessionFactory(session: session)
+        )
+        let safetyLock = WorkspaceSafetyLock()
+        document.sql = sql
+        #expect(document.prepareExecution(try await executionPlan(for: sql), safetyLock: safetyLock) == nil)
+        let confirmation = try #require(document.executionNotice?.confirmation)
+        document.executionNotice = nil // SwiftUI may dismiss before invoking the action.
+        await document.confirmSafetyLockExecution(confirmation, safetyLock: safetyLock)
+
+        #expect(safetyLock.isEnabled == false)
+        #expect(document.executionNotice == nil)
+        #expect(await session.executedStatements() == [sql])
+        #expect(await session.writableStatements() == [sql])
+        await document.close()
+    }
+
+    @Test(arguments: [false, true])
+    func changingSQLOrDatabaseInvalidatesUnlockConfirmation(_ changeDatabase: Bool) async throws {
+        let factory = RecordingQuerySessionFactory()
+        let document = WorkspaceQueryDocumentModel(
+            title: "Query 1", configuration: makeConfiguration(database: nil), sessionFactory: factory
+        )
+        let safetyLock = WorkspaceSafetyLock()
+        document.sql = "UPDATE users SET active = 0;"
+        #expect(document.prepareExecution(try await executionPlan(for: document.sql), safetyLock: safetyLock) == nil)
+        let confirmation = try #require(document.executionNotice?.confirmation)
+        if changeDatabase { document.databaseName = "other" }
+        else { document.sql = "DELETE FROM users;" }
+        await document.confirmSafetyLockExecution(confirmation, safetyLock: safetyLock)
+
+        #expect(safetyLock.isEnabled)
+        #expect(document.executionNotice?.message != nil)
+        #expect(document.executionNotice?.confirmation == nil)
+        #expect(document.executionState == .idle)
         #expect(await factory.configurations.isEmpty)
         await document.close()
     }
@@ -756,7 +834,7 @@ struct WorkspaceQueryDocumentTests {
     }
 
     @Test
-    func targetFailureAfterSuccessReplacesThePreviousResult() async throws {
+    func targetFailureAfterSuccessPresentsNoticeAndKeepsThePreviousResult() async throws {
         let document = WorkspaceQueryDocumentModel(
             title: "Query 1",
             configuration: makeConfiguration(database: nil),
@@ -769,19 +847,18 @@ struct WorkspaceQueryDocumentTests {
             return
         }
 
+        let previousState = document.executionState
+        let previousResults = document.statementResults
         document.reportExecutionTargetFailure(
             SQLExecutionTargetError.unreliableCurrentStatement
         )
 
-        guard case let .failed(message, page) = document.executionState else {
-            Issue.record("Expected target resolution to fail.")
-            return
-        }
         #expect(
-            message == SQLExecutionTargetError.unreliableCurrentStatement
+            document.executionNotice?.message == SQLExecutionTargetError.unreliableCurrentStatement
                 .localizedDescription
         )
-        #expect(page == nil)
+        #expect(document.executionState == previousState)
+        #expect(document.statementResults == previousResults)
         await document.close()
     }
 

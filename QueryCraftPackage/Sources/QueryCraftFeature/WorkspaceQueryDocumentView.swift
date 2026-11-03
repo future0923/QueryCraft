@@ -160,6 +160,33 @@ struct WorkspaceQueryDocumentView: View {
         } message: {
             Text(document.cancellationFailureMessage ?? "")
         }
+        .alert(
+            document.executionNotice?.confirmation == nil
+                ? AppCopy.current.text("无法执行 SQL", "Unable to Execute SQL")
+                : AppCopy.current.text("安全锁已启用", "Safety Lock Is Enabled"),
+            isPresented: Binding(
+                get: { document.executionNotice != nil },
+                set: { if !$0 { document.executionNotice = nil } }
+            ),
+            presenting: document.executionNotice
+        ) { notice in
+            if let confirmation = notice.confirmation {
+                Button(AppCopy.current.text("停用安全锁并执行", "Disable Safety Lock and Run"), role: .destructive) {
+                    Task {
+                        await document.confirmSafetyLockExecution(
+                            confirmation,
+                            safetyLock: safetyLock,
+                            options: executionOptions
+                        )
+                    }
+                }
+                Button(AppCopy.current.text("取消", "Cancel"), role: .cancel) {}
+            } else {
+                Button(AppCopy.current.text("好", "OK"), role: .cancel) {}
+            }
+        } message: { notice in
+            Text(notice.message)
+        }
         .accessibilityIdentifier("queryDocumentView")
     }
 
@@ -205,17 +232,8 @@ struct WorkspaceQueryDocumentView: View {
     }
 
     private func handleExecutionPlan(_ plan: SQLExecutionBatchPlan) {
-        let policy: SQLExecutionPolicy
-        do {
-            policy = try safetyLock.executionPolicy(for: plan)
-        } catch {
-            document.reportExecutionTargetFailure(error)
-            return
-        }
-        let options = QueryExecutionOptions(
-            statementTimeout: preferences.queryTimeout.duration,
-            maximumResultRows: document.resultRowLimit.maximumRows
-        )
+        guard let policy = document.prepareExecution(plan, safetyLock: safetyLock) else { return }
+        let options = executionOptions
         Task {
             await document.execute(
                 plan,
@@ -223,6 +241,13 @@ struct WorkspaceQueryDocumentView: View {
                 options: options
             )
         }
+    }
+
+    private var executionOptions: QueryExecutionOptions {
+        QueryExecutionOptions(
+            statementTimeout: preferences.queryTimeout.duration,
+            maximumResultRows: document.resultRowLimit.maximumRows
+        )
     }
 
     private func stop() {

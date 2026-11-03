@@ -4,6 +4,17 @@ import Observation
 @MainActor
 @Observable
 final class WorkspaceQueryDocumentModel: Identifiable {
+    struct SafetyLockConfirmation {
+        let plan: SQLExecutionBatchPlan
+        let configuration: DatabaseConnectionConfiguration
+        let schemaName: String?
+    }
+
+    struct ExecutionNotice {
+        let message: String
+        var confirmation: SafetyLockConfirmation? = nil
+    }
+
     let id: UUID
     private(set) var title: String
     private(set) var savedQueryID: SavedQuery.ID?
@@ -32,6 +43,7 @@ final class WorkspaceQueryDocumentModel: Identifiable {
     private(set) var statementResults: [WorkspaceStatementResult] = []
     private(set) var transactionState = WorkspaceQueryTransactionState.disconnected
     private(set) var cancellationFailureMessage: String?
+    var executionNotice: ExecutionNotice?
     var selectedStatementResultIndex = 0
 
     var isDirty: Bool {
@@ -221,8 +233,7 @@ final class WorkspaceQueryDocumentModel: Identifiable {
         options: QueryExecutionOptions = .unlimited
     ) async {
         guard !executionState.isRunning else { return }
-        statementResults = []
-        selectedStatementResultIndex = 0
+        executionNotice = nil
 
         let statement: String
         do {
@@ -230,11 +241,7 @@ final class WorkspaceQueryDocumentModel: Identifiable {
                 target.sql
             )
         } catch {
-            statementResults = []
-            executionState = .failed(
-                message: error.localizedDescription,
-                page: nil
-            )
+            reportExecutionTargetFailure(error)
             return
         }
 
@@ -262,6 +269,7 @@ final class WorkspaceQueryDocumentModel: Identifiable {
         executionStartedAt = .now
         statementStartedAt = .now
         elapsedSeconds = 0
+        selectedStatementResultIndex = 0
         executionState = .running(nil)
         statementResults = [
             WorkspaceStatementResult(
@@ -358,6 +366,7 @@ final class WorkspaceQueryDocumentModel: Identifiable {
         options: QueryExecutionOptions = .unlimited
     ) async {
         guard !executionState.isRunning else { return }
+        executionNotice = nil
 
         do {
             if plan.requiresWriteAccess, !policy.allowsWrites {
@@ -374,12 +383,7 @@ final class WorkspaceQueryDocumentModel: Identifiable {
                 )
             }
         } catch {
-            statementResults = []
-            selectedStatementResultIndex = 0
-            executionState = .failed(
-                message: error.localizedDescription,
-                page: nil
-            )
+            reportExecutionTargetFailure(error)
             return
         }
 
@@ -442,13 +446,51 @@ final class WorkspaceQueryDocumentModel: Identifiable {
         }
     }
 
+    func prepareExecution(
+        _ plan: SQLExecutionBatchPlan,
+        safetyLock: WorkspaceSafetyLock
+    ) -> SQLExecutionPolicy? {
+        guard !executionState.isRunning else { return nil }
+        executionNotice = nil
+        do {
+            return try safetyLock.executionPolicy(for: plan)
+        } catch {
+            executionNotice = ExecutionNotice(
+                message: error.localizedDescription,
+                confirmation: SafetyLockConfirmation(
+                    plan: plan,
+                    configuration: currentConnectionConfiguration,
+                    schemaName: schemaName
+                )
+            )
+            return nil
+        }
+    }
+
+    func confirmSafetyLockExecution(
+        _ confirmation: SafetyLockConfirmation,
+        safetyLock: WorkspaceSafetyLock,
+        options: QueryExecutionOptions = .unlimited
+    ) async {
+        executionNotice = nil
+        guard !executionState.isRunning else { return }
+        guard sql == confirmation.plan.target.source.text,
+              currentConnectionConfiguration == confirmation.configuration,
+              schemaName == confirmation.schemaName else {
+            executionNotice = ExecutionNotice(message: AppCopy.current.text(
+                "SQL 或执行目标已更改，请重新执行并确认。",
+                "The SQL or execution target has changed. Run it again to confirm."
+            ))
+            return
+        }
+        safetyLock.disable()
+        await execute(confirmation.plan, policy: .writesAllowed, options: options)
+    }
+
     func reportExecutionTargetFailure(_ error: Error) {
         guard !executionState.isRunning else { return }
-        statementResults = []
-        selectedStatementResultIndex = 0
-        executionState = .failed(
-            message: error.localizedDescription,
-            page: nil
+        executionNotice = ExecutionNotice(
+            message: error.localizedDescription
         )
     }
 
