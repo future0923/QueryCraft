@@ -24,6 +24,10 @@ struct WorkspaceQueryResultView: View {
     @State private var searchController = WorkspaceGridSearchController()
     @State private var pendingCellUpdates: [WorkspaceQueryResultPendingCellUpdate] = []
     @State private var pendingRowDeletes: [WorkspaceQueryResultPendingDelete] = []
+    @State private var rowInsertEditor = WorkspaceDatabaseDataRowInsertEditorState()
+    @State private var insertSheet: WorkspaceQueryResultInsertDraft?
+    @State private var insertSelections: [UUID: WorkspaceDatabaseObjectSelection] = [:]
+    @State private var insertFeedback: String?
     @State private var detailsBySelection: [
         WorkspaceDatabaseObjectSelection: WorkspaceDatabaseObjectDetails
     ] = [:]
@@ -104,69 +108,7 @@ struct WorkspaceQueryResultView: View {
                 Divider()
             }
 
-            ZStack {
-                HStack(spacing: 6) {
-                    if displayedSection == .statement || statementResults.count <= 1 {
-                        statusLabel
-                    } else {
-                        Text(batchStatusMessage)
-                    }
-                    if state != .idle {
-                        Text("·")
-                            .accessibilityHidden(true)
-                        Text(
-                            "\(displayedSection == .statement ? displayedElapsedSeconds : elapsedSeconds, format: .number.precision(.fractionLength(3))) s"
-                        )
-                    }
-                }
-                .lineLimit(1)
-                .monospacedDigit()
-
-                HStack {
-                    HStack(spacing: 8) {
-                        if displayedSection == .statement,
-                            displayedResult?.hasRowResult == true,
-                            displayedState.page?.rowCount ?? 0 > 0 {
-                            WorkspaceGridSearchControl(
-                                controller: searchController
-                            )
-
-                            if !state.isRunning {
-                                WorkspaceDataExportControl(
-                                    controller: exportController
-                                )
-                            }
-                        }
-                    }
-                    .foregroundStyle(.primary)
-
-                    Spacer()
-
-                    if !state.isRunning {
-                        Button(
-                            AppCopy.current.text(
-                                "关闭结果",
-                                "Close Results"
-                            ),
-                            systemImage: "xmark",
-                            action: dismiss
-                        )
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .help(
-                            AppCopy.current.text(
-                                "关闭结果",
-                                "Close Results"
-                            )
-                        )
-                        .accessibilityIdentifier("closeQueryResultsButton")
-                    }
-                }
-            }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .frame(height: 36)
+            resultFooter
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .focusedSceneValue(
@@ -180,6 +122,8 @@ struct WorkspaceQueryResultView: View {
         .onChange(of: state.isRunning, initial: true) { _, isRunning in
             if isRunning {
                 resultSection = .messages
+                insertFeedback = nil
+                insertSheet = nil
             }
         }
         .onChange(of: databaseType, initial: true) {
@@ -206,11 +150,30 @@ struct WorkspaceQueryResultView: View {
         .onChange(of: pendingRowDeletes, initial: true) { _, _ in
             publishPendingChangesActions()
         }
+        .onChange(of: rowInsertEditor) { _, _ in
+            publishPendingChangesActions()
+        }
         .onChange(of: isCommittingChanges) { _, _ in
             publishPendingChangesActions()
         }
         .task(id: displayedState.page?.store.id) {
             await preloadEditableDetails()
+        }
+        .sheet(item: $insertSheet) { draft in
+            WorkspaceQueryResultInsertSheet(editor: draft.editor) { editor in
+                guard !state.isRunning, !isCommittingChanges,
+                      displayedState.page?.store.id == draft.resultID,
+                      editor.request == nil || editor.request?.selection == insertSelections[draft.resultID],
+                      editor.request.map({ canStageChanges(for: $0.selection) }) ?? true
+                else { throw WorkspaceDatabaseDataRowInsertError.editingContextChanged }
+                // Validate SQL before replacing existing staged rows.
+                if editor.isPresented {
+                    for insert in try editor.makeInserts() {
+                        _ = try WorkspaceSQLPreviewStatement.make(rowInsert: insert, databaseType: databaseType)
+                    }
+                }
+                rowInsertEditor = editor
+            }
         }
         .alert(
             AppCopy.current.text("无法修改查询结果", "Unable to Edit Query Result"),
@@ -251,6 +214,79 @@ struct WorkspaceQueryResultView: View {
             pendingChangesRegistry.remove(for: contentID)
         }
         .accessibilityIdentifier("queryResultPane")
+    }
+
+    private var resultFooter: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                if displayedSection == .statement,
+                   displayedResult?.hasRowResult == true,
+                   displayedState.page?.rowCount ?? 0 > 0 {
+                    WorkspaceGridSearchControl(controller: searchController)
+                    if !state.isRunning {
+                        WorkspaceDataExportControl(controller: exportController)
+                    }
+                }
+            }
+            .foregroundStyle(.primary)
+
+            HStack(spacing: 6) {
+                if displayedSection == .statement || statementResults.count <= 1 {
+                    if let insertFeedback {
+                        Text(insertFeedback).help(insertFeedback)
+                    } else {
+                        statusLabel
+                    }
+                } else {
+                    Text(batchStatusMessage)
+                }
+                if state != .idle {
+                    Text("·").accessibilityHidden(true)
+                    Text("\(displayedSection == .statement ? displayedElapsedSeconds : elapsedSeconds, format: .number.precision(.fractionLength(3))) s")
+                }
+            }
+            .lineLimit(1)
+            .monospacedDigit()
+            .frame(maxWidth: .infinity)
+
+            if displayedSection == .statement,
+               let page = displayedState.page,
+               supportsDataEditing,
+               databaseType == .mysql || databaseType == .postgresql {
+                if rowInsertEditor.isPresented {
+                    Button(AppCopy.current.text(
+                        "待新增 \(rowInsertEditor.rowCount) 行",
+                        "\(rowInsertEditor.rowCount) Pending Inserts"
+                    )) {
+                        presentRowInsert(for: page, appending: false)
+                    }
+                    .disabled(isCommittingChanges || state.isRunning
+                        || rowInsertEditor.request?.selection != insertSelections[page.store.id])
+                    .accessibilityIdentifier("queryResultPendingInsertsButton")
+                }
+                Button(AppCopy.current.text("新增行", "Add Row"), systemImage: "plus") {
+                    presentRowInsert(for: page, appending: true)
+                }
+                .disabled(!canInsertRow(for: page))
+                .help(AppCopy.current.text(
+                    "向来源明确的单表查询新增数据；字段信息读取完成后可用。",
+                    "Add rows to an unambiguous single-table query once column details are loaded."
+                ))
+                .accessibilityIdentifier("addQueryResultRowButton")
+            }
+
+            if !state.isRunning {
+                Button(AppCopy.current.text("关闭结果", "Close Results"), systemImage: "xmark", action: dismiss)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help(AppCopy.current.text("关闭结果", "Close Results"))
+                    .accessibilityIdentifier("closeQueryResultsButton")
+            }
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .frame(height: 36)
     }
 
     @ViewBuilder
@@ -818,6 +854,7 @@ struct WorkspaceQueryResultView: View {
 
     private func preloadEditableDetails() async {
         guard let page = displayedState.page else { return }
+        let sql = displayedResult?.statement.sql
         // Resolve each source separately so aliases and joins show the correct comment.
         let selections = WorkspaceQueryResultColumnMetadata.selections(columns: page.columns, currentDatabase: currentDatabase)
         for selection in selections {
@@ -835,6 +872,54 @@ struct WorkspaceQueryResultView: View {
                 detailsErrorBySelection[selection] = error.localizedDescription
             }
         }
+        guard !Task.isCancelled, displayedState.page?.store.id == page.store.id,
+              let sql, supportsDataEditing,
+              databaseType == .mysql || databaseType == .postgresql else { return }
+        do {
+            let parser = try SQLStructuralParser()
+            let syntax = try await parser.parse(.init(revision: .init(1), text: sql))
+            try Task.checkCancellation()
+            guard displayedState.page?.store.id == page.store.id else { return }
+            insertSelections[page.store.id] = WorkspaceQueryResultInsertion.selection(
+                columns: page.columns, currentDatabase: currentDatabase,
+                databaseType: databaseType, supportsDataEditing: supportsDataEditing,
+                syntax: syntax
+            )
+        } catch {
+            // Insertion stays unavailable if the SQL cannot be resolved safely.
+            insertSelections[page.store.id] = nil
+        }
+    }
+
+    private func canInsertRow(for page: WorkspaceQueryResultPage) -> Bool {
+        guard !state.isRunning, !isCommittingChanges,
+              let selection = insertSelections[page.store.id],
+              detailsBySelection[selection] != nil,
+              canStageChanges(for: selection) else { return false }
+        return true
+    }
+
+    private func presentRowInsert(for page: WorkspaceQueryResultPage, appending: Bool) {
+        guard !state.isRunning, !isCommittingChanges else { return }
+        var editor = rowInsertEditor
+        if appending {
+            guard canInsertRow(for: page), let selection = insertSelections[page.store.id],
+                  let details = detailsBySelection[selection] else { return }
+            do {
+                if editor.isPresented {
+                    editor.appendRow()
+                } else {
+                    editor.present(try WorkspaceDatabaseDataRowInsertRequest.make(selection: selection, details: details))
+                }
+            } catch {
+                presentEditError(error.localizedDescription)
+                return
+            }
+        }
+        guard editor.isPresented else { return }
+        // A pending insert can be inspected only from its own base table.
+        guard editor.request?.selection == insertSelections[page.store.id] else { return }
+        insertSheet = WorkspaceQueryResultInsertDraft(resultID: page.store.id, editor: editor)
     }
 
     private func editableSelection(
@@ -850,6 +935,7 @@ struct WorkspaceQueryResultView: View {
     private var pendingChangeSelection: WorkspaceDatabaseObjectSelection? {
         pendingCellUpdates.first?.pendingUpdate.update.selection
             ?? pendingRowDeletes.first?.rowDelete.selection
+            ?? rowInsertEditor.request?.selection
     }
 
     private func canStageChanges(
@@ -859,12 +945,12 @@ struct WorkspaceQueryResultView: View {
     }
 
     private var pendingChangesActions: WorkspacePendingChangesActions? {
-        guard !pendingCellUpdates.isEmpty || !pendingRowDeletes.isEmpty else {
+        guard !pendingCellUpdates.isEmpty || !pendingRowDeletes.isEmpty || rowInsertEditor.isPresented else {
             return nil
         }
         let changeSet = WorkspaceDatabaseDataChangeSet(
             updates: pendingCellUpdates.map(\.pendingUpdate.update),
-            inserts: [],
+            inserts: (try? rowInsertEditor.makeInserts()) ?? [],
             deletes: pendingRowDeletes.map(\.rowDelete)
         )
         let deleteStatements = changeSet.deletes.compactMap {
@@ -879,9 +965,13 @@ struct WorkspaceQueryResultView: View {
                 databaseType: databaseType
             )
         }
+        let insertStatements = changeSet.inserts.compactMap {
+            try? WorkspaceSQLPreviewStatement.make(rowInsert: $0, databaseType: databaseType)
+        }
         return WorkspacePendingChangesActions(
             hasChanges: true,
-            statements: deleteStatements + updateStatements,
+            statements: deleteStatements + updateStatements + insertStatements,
+            canCommit: insertStatements.count == changeSet.inserts.count,
             isCommitting: isCommittingChanges,
             discard: discardPendingChanges,
             preview: {},
@@ -901,11 +991,12 @@ struct WorkspaceQueryResultView: View {
         guard !isCommittingChanges else { return }
         pendingCellUpdates.removeAll()
         pendingRowDeletes.removeAll()
+        rowInsertEditor.dismiss()
     }
 
     private func requestCommitPendingChanges() {
         guard
-            (!pendingCellUpdates.isEmpty || !pendingRowDeletes.isEmpty),
+            (!pendingCellUpdates.isEmpty || !pendingRowDeletes.isEmpty || rowInsertEditor.isPresented),
             !isCommittingChanges
         else { return }
         if safetyLock.isEnabled {
@@ -917,14 +1008,21 @@ struct WorkspaceQueryResultView: View {
 
     private func commitPendingChanges() {
         guard
-            (!pendingCellUpdates.isEmpty || !pendingRowDeletes.isEmpty),
+            (!pendingCellUpdates.isEmpty || !pendingRowDeletes.isEmpty || rowInsertEditor.isPresented),
             !isCommittingChanges
         else { return }
         let capturedUpdates = pendingCellUpdates
         let capturedDeletes = pendingRowDeletes
+        let capturedInserts: [WorkspaceDatabaseDataRowInsert]
+        do {
+            capturedInserts = rowInsertEditor.isPresented ? try rowInsertEditor.makeInserts() : []
+        } catch {
+            presentEditError(error.localizedDescription)
+            return
+        }
         let changeSet = WorkspaceDatabaseDataChangeSet(
             updates: capturedUpdates.map(\.pendingUpdate.update),
-            inserts: [],
+            inserts: capturedInserts,
             deletes: capturedDeletes.map(\.rowDelete)
         )
         isCommittingChanges = true
@@ -935,6 +1033,15 @@ struct WorkspaceQueryResultView: View {
             }
             do {
                 try await applyChanges(changeSet)
+                if !capturedInserts.isEmpty {
+                    // Generated IDs/defaults and SELECT filters/order are server-owned.
+                    // Do not fabricate rows in the cached query result or replay SQL.
+                    rowInsertEditor.dismiss()
+                    insertFeedback = AppCopy.current.text(
+                        "已新增 \(capturedInserts.count) 行 · 请重新运行查询",
+                        "Inserted \(capturedInserts.count) rows · Run the query again"
+                    )
+                }
                 do {
                     for (resultID, updates) in Dictionary(
                         grouping: capturedUpdates,
