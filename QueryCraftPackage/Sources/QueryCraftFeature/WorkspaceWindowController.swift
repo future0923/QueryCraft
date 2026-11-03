@@ -77,6 +77,7 @@ final class WorkspaceWindowController: NSWindowController,
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.title = model.profileName
         window.toolbar = workspaceToolbar.managedToolbar
+        window.configureTitlebarBackground()
 
         super.init(window: window)
 

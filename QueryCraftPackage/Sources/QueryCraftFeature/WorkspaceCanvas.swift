@@ -32,7 +32,9 @@ struct WorkspaceCanvasBackground: ViewModifier {
     @Environment(\.colorScheme) private var scheme
     func body(content: Content) -> some View {
         content.background {
-            if scheme == .dark { Color.black }
+            // Split-view hosting controllers inset their content below the native
+            // titlebar. Paint that inset too, without moving the sidebar controls.
+            if scheme == .dark { Color.black.ignoresSafeArea() }
         }
     }
 }
