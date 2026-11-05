@@ -111,11 +111,12 @@ struct WorkspaceQueryResultView: View {
             resultFooter
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .focusedSceneValue(
+        .workspaceFocusedValue(\.workspacePendingChangesActions, pendingChangesRegistry.actions(for: contentID))
+        .workspaceFocusedValue(
             \.workspaceDataExportActions,
             exportCommandActions
         )
-        .focusedSceneValue(
+        .workspaceFocusedValue(
             \.workspaceGridSearchActions,
             searchCommandActions
         )

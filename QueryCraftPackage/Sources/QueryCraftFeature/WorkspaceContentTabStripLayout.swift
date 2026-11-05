@@ -6,7 +6,7 @@ enum WorkspaceContentTabStripLayout {
     static let stripInset: CGFloat = 8
     static let tabHeight = nativeControlHeight(for: .large)
     static let trackHeight = tabHeight + trackPadding * 2
-    static let bandHeight = trackHeight + stripInset
+    static let bandHeight = trackHeight
     static let minimumTabWidth: CGFloat = 120
     static let separatorHeight: CGFloat = 16
     static let accessoryWidth: CGFloat = 16

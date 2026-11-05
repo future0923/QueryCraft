@@ -15,7 +15,7 @@ struct WorkspaceSQLGridHeaderTests {
         column.width = 220
         table.addTableColumn(column)
         WorkspaceSQLGridHeader.configure(
-            in: table, columns: [.init(id: 0, name: "id")], configuration: .init()
+            in: table, columns: [.init(id: 0, name: "id")], configuration: .init(columnDetails: [0: makeDetails()])
         )
         let cell = try #require(column.headerCell as? WorkspaceSQLGridHeaderCell)
         cell.comment = "用户编号"
@@ -54,7 +54,7 @@ struct WorkspaceSQLGridHeaderTests {
             sortData: { _ in }
         )
 
-        let expectedHeight = CGFloat(28 + (showsComments ? 18 : 0) + (showsTypes ? 18 : 0))
+        let expectedHeight = CGFloat(28 + (showsTypes ? 18 : 0))
         #expect(table.headerView?.frame.height == expectedHeight)
         #expect(table.tableColumns[1] === column)
         #expect(column.width == 275)
@@ -62,16 +62,16 @@ struct WorkspaceSQLGridHeaderTests {
         #expect(column.headerCell.textColor == .controlAccentColor)
         let cell = try #require(column.headerCell as? WorkspaceSQLGridHeaderCell)
         #expect(cell.stringValue == "user_name")
-        #expect(cell.showsComments == showsComments)
+        #expect(!cell.showsComments)
         #expect(cell.showsTypes == showsTypes)
     }
 
     @Test
-    func lateMetadataAndRepeatedRefreshPreserveLayoutAndViewport() throws {
+    func repeatedRefreshPreservesLayoutAndViewport() throws {
         let page = makePage()
         let coordinator = WorkspaceDatabaseDataTableCoordinator(
             page: page, isFetching: true,
-            sqlHeaderConfiguration: .init(), sortData: { _ in }
+            sqlHeaderConfiguration: .init(columnDetails: [0: makeDetails()]), sortData: { _ in }
         )
         let scrollView = coordinator.makeScrollView()
         scrollView.frame = NSRect(x: 0, y: 0, width: 420, height: 220)
@@ -84,7 +84,7 @@ struct WorkspaceSQLGridHeaderTests {
         scrollView.reflectScrolledClipView(scrollView.contentView)
         let origin = scrollView.contentView.bounds.origin
         let contentFrame = scrollView.contentView.frame
-        #expect(cell.comment.isEmpty)
+        #expect(cell.comment == "用户姓名")
         #expect(cell.columnType == "varchar(100)")
 
         for fetching in [false, true, true, false] {
@@ -122,6 +122,7 @@ struct WorkspaceSQLGridHeaderTests {
         #expect(cell.comment == "用户姓名")
         #expect(cell.columnType == "varchar(100)")
         #expect(column.width == 300)
+        #expect(table.headerView?.frame.height == 64)
 
         coordinator.update(
             page: .init(columns: columns, store: try WorkspaceQueryResultStore(temporary: false), rowCount: 0),
@@ -130,7 +131,7 @@ struct WorkspaceSQLGridHeaderTests {
         #expect(table.tableColumns[1] === column)
         #expect(cell.comment.isEmpty)
         #expect(cell.columnType == "varchar")
-        #expect(table.headerView?.frame.height == 64)
+        #expect(table.headerView?.frame.height == 46)
     }
 
     @Test
@@ -157,7 +158,7 @@ struct WorkspaceSQLGridHeaderTests {
             sortData: { _ in }
         )
         #expect(cell.comment.isEmpty)
-        #expect(table.headerView?.frame.height == 64)
+        #expect(table.headerView?.frame.height == 46)
     }
 
     private func makePage() -> WorkspaceDatabaseDataPage {

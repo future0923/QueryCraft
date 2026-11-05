@@ -88,6 +88,6 @@ private struct SSHShellScriptDetails: View {
             Divider()
             HStack { Spacer(); Button(AppCopy.current.text("关闭", "Close")) { dismiss() }.keyboardShortcut(.cancelAction) }
         }.padding(20).frame(width: 600, height: 440)
-            .background(colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
+            .background(colorScheme == .dark ? Color(nsColor: .queryCraftDarkCanvas) : Color(nsColor: .windowBackgroundColor))
     }
 }

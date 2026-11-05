@@ -10,6 +10,8 @@ struct WorkspaceDatabaseObjectDetailTabHost: NSViewRepresentable {
     let dataState: WorkspaceDatabaseDataState
     let retry: () -> Void
     let sortData: (WorkspaceDatabaseDataSort) -> Void
+    var sortCurrentPage: ((WorkspaceDatabaseDataSort) -> Void)? = nil
+    var supportsDatabaseSorting = true
     let appliedDataFilter: WorkspaceDatabaseDataFilter
     let dataFilterEditor: WorkspaceDatabaseDataFilterEditor
     let isDataFilterPresented: Bool
@@ -110,6 +112,8 @@ struct WorkspaceDatabaseObjectDetailTabHost: NSViewRepresentable {
             dataState: dataState,
             retry: retry,
             sortData: sortData,
+            sortCurrentPage: sortCurrentPage,
+            supportsDatabaseSorting: supportsDatabaseSorting,
             appliedDataFilter: appliedDataFilter,
             dataFilterEditor: dataFilterEditor,
             isDataFilterPresented: isDataFilterPresented,

@@ -155,7 +155,7 @@ struct ShellScriptEditor: View {
             }.controlSize(.regular).padding(.horizontal, 18).frame(height: 54)
         }
         .frame(width: 660, height: 520)
-        .background(colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
+        .background(colorScheme == .dark ? Color(nsColor: .queryCraftDarkCanvas) : Color(nsColor: .windowBackgroundColor))
         .onAppear { if draft.original == nil { nameFocused = true } }
         .interactiveDismissDisabled(draft.hasChanges || draft.busy)
         .onDisappear { operation?.cancel() }
@@ -204,7 +204,7 @@ struct ShellScriptSourceEditor: NSViewRepresentable {
         editor.string = text
         editor.setSelectedRange(NSRange(location: min(selection.location, text.utf16.count), length: 0))
     }
-    private var canvasColor: NSColor { colorScheme == .dark ? .black : .textBackgroundColor }
+    private var canvasColor: NSColor { colorScheme == .dark ? .queryCraftDarkCanvas : .textBackgroundColor }
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ShellScriptSourceEditor
         init(_ parent: ShellScriptSourceEditor) { self.parent = parent }

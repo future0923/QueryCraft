@@ -170,6 +170,7 @@ enum TransferCapabilities {
         case .redis: AppCopy.current.text("Key、类型和 TTL 需要专用迁移链路", "Keys, types and TTL require a dedicated transfer")
         case .elasticsearch: AppCopy.current.text("索引、Mapping 和文档需要专用迁移链路", "Indices, mappings and documents require a dedicated transfer")
         case .kafka: AppCopy.current.text("消息和分区需要专用转发链路", "Messages and partitions require a dedicated forwarding path")
+        case .milvus: AppCopy.current.text("Collection 和向量需要专用迁移链路", "Collections and vectors require a dedicated transfer")
         }
     }
 }

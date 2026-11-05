@@ -120,6 +120,7 @@ final class WorkspaceModel {
     private var objectDataStates: [
         WorkspaceDatabaseObjectSelection: WorkspaceDatabaseDataState
     ] = [:]
+    @ObservationIgnored private var localSortPages: [WorkspaceDatabaseObjectSelection: (original: WorkspaceDatabaseDataPage, displayed: UUID)] = [:]
     private var objectDataOffsets: [
         WorkspaceDatabaseObjectSelection: Int
     ] = [:]
@@ -188,6 +189,7 @@ final class WorkspaceModel {
         }
         objectDetailsStates[selection] = nil
         objectDataStates[selection] = nil
+        localSortPages[selection] = nil
         objectDataCountStates[selection] = nil
         kafkaReadRequests[selection] = nil
         kafkaScanRequests[selection] = nil
@@ -537,6 +539,16 @@ final class WorkspaceModel {
         guard let selectedObject else { return .notLoaded }
         if kafkaLive.isShowing(selectedObject) { return kafkaLive.dataState }
         return objectDataStates[selectedObject] ?? .notLoaded
+    }
+
+    func sortCurrentPage(_ sort: WorkspaceDatabaseDataSort, for selection: WorkspaceDatabaseObjectSelection) {
+        guard selectedObject == selection, let state = objectDataStates[selection],
+              !state.isFetching, let page = state.page, page.live == nil else { return }
+        let original = localSortPages[selection].flatMap { $0.displayed == page.revision ? $0.original : nil } ?? page
+        let result = sort == .none ? original : WorkspacePageSorting.sorted(original, by: sort)
+        if sort == .none { localSortPages[selection] = nil }
+        else { localSortPages[selection] = (original, result.revision) }
+        objectDataStates[selection] = state.isStopped ? .stopped(result) : .loaded(result)
     }
 
     var selectedObjectIndexesState: WorkspaceDatabaseIndexesState {
@@ -1303,6 +1315,7 @@ final class WorkspaceModel {
             tableDetailsNeedingRefresh.removeAll()
             objectIndexesStates.removeAll()
             objectDataStates.removeAll()
+            localSortPages.removeAll()
             objectDataOffsets.removeAll()
             objectDataLimits.removeAll()
             objectDataSorts.removeAll()
@@ -1496,6 +1509,7 @@ final class WorkspaceModel {
             databaseType != .redis,
             databaseType != .elasticsearch,
             databaseType != .kafka,
+            databaseType != .milvus,
             connectionState == .connected,
             let sessionConfiguration
         else {
@@ -2790,7 +2804,7 @@ final class WorkspaceModel {
             return
         }
 
-        if databaseType != .kafka {
+        if databaseType != .kafka && databaseType != .milvus {
             await startDataCountIfNeeded(
                 for: selection,
                 filter: filter,

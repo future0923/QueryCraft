@@ -33,12 +33,13 @@ enum WorkspaceDatabaseObjectDetailTab: String, CaseIterable, Hashable, Identifia
         guard kind == .elasticsearchIndex
                 || kind == .elasticsearchAlias
                 || kind == .elasticsearchDataStream
+                || kind == .milvusCollection
         else { return title }
         return switch self {
         case .data:
             AppCopy.current.text("文档", "Documents")
         case .structure:
-            "Mapping"
+            kind == .milvusCollection ? "Schema" : "Mapping"
         case .indexes, .options, .ddl:
             title
         }
@@ -91,6 +92,8 @@ enum WorkspaceDatabaseObjectDetailTab: String, CaseIterable, Hashable, Identifia
         case .elasticsearchIndex,
              .elasticsearchAlias,
              .elasticsearchDataStream:
+            [.data, .structure]
+        case .milvusCollection:
             [.data, .structure]
         }
     }

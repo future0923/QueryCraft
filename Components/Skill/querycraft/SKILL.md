@@ -1,6 +1,6 @@
 ---
 name: querycraft
-description: Use QueryCraft MCP to inspect saved database connections, verify schemas, query data, work with Redis/Elasticsearch/Kafka, and use explicitly authorized saved SSH servers or Shell scripts. Requires a configured QueryCraft MCP server.
+description: Use QueryCraft MCP to inspect saved database connections, verify schemas, query data, work with Redis/Elasticsearch/Kafka/Milvus, and use explicitly authorized saved SSH servers or Shell scripts. Requires a configured QueryCraft MCP server.
 metadata:
   version: "1.0.2"
 ---
@@ -34,5 +34,5 @@ Use explicit sessions only when state must persist across calls. Finish with `cl
 Permissions are enforced by the server. A skill does not grant access. For a destructive operation authorized by the user, use `confirm_high_risk: true` only for that intended operation; do not raise permissions or switch tools to bypass a rejection.
 
 - For SQL scripts, transactions, or uncertain write outcomes, read [SQL workflows](references/sql.md).
-- For Redis, Elasticsearch or Kafka, read [driver workflows](references/drivers.md).
+- For Redis, Elasticsearch, Kafka or Milvus, read [driver workflows](references/drivers.md).
 - For saved SSH accounts and Shell scripts, read [SSH and Shell authorization](references/ssh.md).

@@ -44,6 +44,22 @@ struct WorkspaceContentTabShortcutTests {
         #expect(recorder.selectedIndex == nil)
     }
 
+    @Test
+    func emptyContentDoesNotConsumeTabSelectionKeys() throws {
+        let recorder = WorkspaceContentTabActionRecorder()
+        var actions = recorder.actions
+        actions = .init(canCreateQuery: actions.canCreateQuery, hasContentTabs: false,
+            createDocumentTitle: actions.createDocumentTitle, createQuery: actions.createQuery,
+            closeSelected: actions.closeSelected, selectAtIndex: actions.selectAtIndex,
+            selectRelative: actions.selectRelative)
+        let coordinator = WorkspaceContentTabKeyCommandHandler.Coordinator(actions: actions)
+        #expect(coordinator.handle(try event(keyCode: 20, modifiers: .control)) == false)
+        #expect(coordinator.handle(try event(keyCode: 30, modifiers: [.command, .shift])) == false)
+        #expect(coordinator.handle(try event(keyCode: 33, modifiers: [.command, .shift])) == false)
+        #expect(recorder.selectedIndex == nil)
+        #expect(recorder.relativeSelections.isEmpty)
+    }
+
     private func event(
         keyCode: UInt16,
         modifiers: NSEvent.ModifierFlags

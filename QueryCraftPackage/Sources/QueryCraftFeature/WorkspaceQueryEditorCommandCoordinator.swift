@@ -55,6 +55,11 @@ final class WorkspaceQueryEditorCommandCoordinator: @preconcurrency TextViewCoor
         executionPlanHandler = handler
     }
 
+    func ownsFirstResponder(_ responder: NSResponder?) -> Bool {
+        guard let textView else { return false }
+        return responder === textView
+    }
+
     func activateEditor() {
         needsInitialFocus = true
         Task { @MainActor [weak self] in

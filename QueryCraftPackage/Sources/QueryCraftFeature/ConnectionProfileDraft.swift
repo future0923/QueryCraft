@@ -23,6 +23,9 @@ struct ConnectionProfileDraft: Equatable, Sendable {
         if databaseProduct == .redis {
             defaultDatabase = "DB 0"
             tlsMode = .disabled
+        } else if databaseProduct == .milvus {
+            defaultDatabase = "default"
+            tlsMode = .disabled
         } else if databaseProduct == .elasticsearch {
             tlsMode = .disabled
         } else if databaseProduct == .kafka {
@@ -143,6 +146,10 @@ struct ConnectionProfileDraft: Equatable, Sendable {
         }
         if newProduct == .redis {
             if defaultDatabase.isEmpty { defaultDatabase = "DB 0" }
+            tlsMode = .disabled
+            authenticationMethod = .usernamePassword
+        } else if newProduct == .milvus {
+            defaultDatabase = "default"
             tlsMode = .disabled
             authenticationMethod = .usernamePassword
         } else if newProduct == .elasticsearch {

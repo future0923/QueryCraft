@@ -37,6 +37,11 @@ struct MobileResourceService: MobileResourceServicing {
         guard let index = RedisConnectionConfiguration.databaseIndex(from: profile.database) else { throw MobileQueryError.invalidConnection }
         return RedisClient(configuration: .init(host: profile.host, port: profile.port, username: profile.username, password: password, databaseIndex: index))
     }
+    private func milvus() throws -> MilvusWorkspaceSession {
+        let configuration = DatabaseConnectionConfiguration(databaseType: .milvus, host: profile.host, port: profile.port,
+            username: profile.username, password: password, database: profile.database.isEmpty ? "default" : profile.database, tlsMode: profile.tlsMode)
+        return try MilvusWorkspaceSession(configuration: .init(configuration))
+    }
     private func elasticsearch() throws -> ElasticsearchHTTPClient {
         let auth: DatabaseConnectionAuthentication = switch profile.authentication {
         case .usernamePassword: .usernamePassword(username: profile.username, password: password)
@@ -46,6 +51,11 @@ struct MobileResourceService: MobileResourceServicing {
         return try ElasticsearchHTTPClient(configuration: .init(host: profile.host, port: profile.port, authentication: auth, tlsMode: profile.tlsMode))
     }
     func test() async throws {
+        if profile.driver == .milvus {
+            let session = try milvus()
+            do { try await session.connect(); await session.close(); return }
+            catch { await session.close(); throw error }
+        }
         if profile.driver == .redis {
             let client = try redis()
             do { try await client.connect(); _ = try await client.execute(["PING"]); await client.close(); try Task.checkCancellation() }
@@ -60,6 +70,11 @@ struct MobileResourceService: MobileResourceServicing {
         }
     }
     func scopes() async throws -> [String] {
+        if profile.driver == .milvus {
+            let session = try milvus()
+            do { try await session.connect(); let names = try await session.fetchDatabases(); await session.close(); return names }
+            catch { await session.close(); throw error }
+        }
         if profile.driver == .elasticsearch { try await test(); return ["Elasticsearch"] }
         let client = try redis()
         do {
@@ -80,6 +95,15 @@ struct MobileResourceService: MobileResourceServicing {
         } catch { await client.close(); throw error }
     }
     func catalog(scope: String, cursor: UInt64, search: String) async throws -> MobileResourceCatalog {
+        if profile.driver == .milvus {
+            let session = try milvus()
+            do {
+                try await session.connect()
+                let objects = try await session.fetchObjects(in: scope)
+                await session.close()
+                return .init(resources: objects.map { .init(name: $0.name, kind: "Collection") })
+            } catch { await session.close(); throw error }
+        }
         if profile.driver == .redis {
             let client = try redis()
             do {
@@ -115,6 +139,21 @@ struct MobileResourceService: MobileResourceServicing {
         } catch { await client.close(); throw error }
     }
     func details(resource: MobileResource, scope: String, offset: Int, cursor: UInt64) async throws -> MobileResourceDetails {
+        if profile.driver == .milvus {
+            let session = try milvus(), sink = MobileMilvusBatch()
+            do {
+                try await session.connect()
+                let object = WorkspaceDatabaseObject(name: resource.name, kind: .milvusCollection)
+                let schema = try await session.fetchDetails(for: object, in: scope)
+                let result = try await session.fetchDataPage(for: object, in: scope, offset: offset, limit: 100, sort: .none) { await sink.receive($0) }
+                let batch = await sink.value
+                await session.close()
+                return .init(data: .init(esColumns: result.columns, rows: batch?.rows ?? []),
+                    structure: .init(columns: ["字段", "类型", "主键", "说明"], rows: schema.columns.map { [$0.name, $0.type, $0.key, $0.comment] }),
+                    status: "只读 · 从第 \(offset + 1) 条开始 · Milvus 分页窗口小于 16384",
+                    hasNext: result.hasNextPage)
+            } catch { await session.close(); throw error }
+        }
         if resource.binaryKeyData != nil { throw MobileRedisMutationError.unsupportedBinaryKey }
         if profile.driver == .redis { return try await redisDetails(resource: resource, scope: scope, offset: offset, cursor: cursor) }
         guard offset >= 0, offset <= 9_900 else { throw ElasticsearchError.deepPageUnavailable }

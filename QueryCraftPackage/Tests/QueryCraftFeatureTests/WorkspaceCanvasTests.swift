@@ -25,13 +25,13 @@ import Testing
         }
     }
 
-    @Test func dynamicNativeCanvasIsBlackIncludingHighContrastAndRetainsLightSurfaces() throws {
+    @Test func dynamicNativeCanvasIsSoftGrayIncludingHighContrastAndRetainsLightSurfaces() throws {
         for name in [NSAppearance.Name.darkAqua, .accessibilityHighContrastDarkAqua] {
             let appearance = try #require(NSAppearance(named: name))
             appearance.performAsCurrentDrawingAppearance {
                 for color in [NSColor.queryCraftCanvas, .queryCraftWindowCanvas, .queryCraftPanelCanvas] {
                     let rgb = color.usingColorSpace(.sRGB)
-                    #expect(rgb?.redComponent == 0 && rgb?.greenComponent == 0 && rgb?.blueComponent == 0)
+                    #expect(rgb.map { abs($0.redComponent - 24 / 255) < 0.005 && abs($0.greenComponent - 24 / 255) < 0.005 && abs($0.blueComponent - 24 / 255) < 0.005 } == true)
                     #expect(rgb?.alphaComponent == 1)
                 }
             }
@@ -42,7 +42,7 @@ import Testing
             #expect(NSColor.queryCraftWindowCanvas.usingColorSpace(.sRGB) == NSColor.windowBackgroundColor.usingColorSpace(.sRGB))
         }
     }
-    @Test func expandedNativeSplitDrawsBlackInSidebarAndContent() async throws {
+    @Test func expandedNativeSplitDrawsSoftGrayInSidebarAndContent() async throws {
         let split = WorkspaceMainSplitViewController(sidebar: AnyView(Color.clear), detail: AnyView(Color.clear), inspector: AnyView(Color.clear), showsSidebar: true, showsInspector: false, sidebarMinimumWidth: 180, sidebarMaximumWidth: 600, detailMinimumWidth: 520, inspectorMinimumWidth: 240)
         let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 1400, height: 700), styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: .darkAqua); window.contentViewController = split
@@ -58,8 +58,8 @@ import Testing
             let view = item.viewController.view
             let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
             view.cacheDisplay(in: view.bounds, to: bitmap)
-            let color = try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
-            #expect(color.redComponent == 0 && color.greenComponent == 0 && color.blueComponent == 0)
+            let color = try sampledSRGB(bitmap, x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)
+            #expect(abs(color.redComponent - 24 / 255) < 0.005 && abs(color.greenComponent - 24 / 255) < 0.005 && abs(color.blueComponent - 24 / 255) < 0.005, "Rendered RGB: \(color)")
             #expect(color.alphaComponent == 1)
         }
     }
@@ -88,14 +88,24 @@ import Testing
             // Sample the titlebar inset and the ordinary sidebar content; a
             // borderless window or a centre-only sample misses the white corner.
             for y in [2, bitmap.pixelsHigh / 2] {
-                let color = try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: y)?.usingColorSpace(.sRGB))
+                let color = try sampledSRGB(bitmap, x: bitmap.pixelsWide / 2, y: y)
                 if appearance == .darkAqua {
-                    #expect(color.redComponent == 0 && color.greenComponent == 0 && color.blueComponent == 0)
+                    #expect(abs(color.redComponent - 24 / 255) < 0.005 && abs(color.greenComponent - 24 / 255) < 0.005 && abs(color.blueComponent - 24 / 255) < 0.005, "Rendered RGB: \(color)")
                     #expect(color.alphaComponent == 1)
                 } else {
                     #expect(color.alphaComponent == 0)
                 }
             }
         }
+    }
+
+    private func sampledSRGB(_ bitmap: NSBitmapImageRep, x: Int, y: Int) throws -> NSColor {
+        let sample = try #require(bitmap.colorAt(x: x, y: y))
+        // colorAt labels cached display pixels as calibrated RGB even when the
+        // bitmap is in the monitor's ICC space. Use the actual bitmap profile.
+        let tagged = NSColor(colorSpace: bitmap.colorSpace,
+            components: [sample.redComponent, sample.greenComponent, sample.blueComponent, sample.alphaComponent],
+            count: 4)
+        return try #require(tagged.usingColorSpace(.sRGB))
     }
 }

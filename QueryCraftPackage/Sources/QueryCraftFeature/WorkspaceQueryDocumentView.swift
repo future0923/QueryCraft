@@ -17,6 +17,7 @@ struct WorkspaceQueryDocumentView: View {
     let updateResultInspectorContext:
         @MainActor (WorkspaceQueryResultInspectorContext) -> Void
     @State private var showsCancellationFailure = false
+    @State private var editorHasFocus = false
     @State private var preferences = ApplicationPreferences.shared
 
     private var languageService: WorkspaceSQLLanguageService {
@@ -42,6 +43,13 @@ struct WorkspaceQueryDocumentView: View {
                         commandCoordinator: commandCoordinator,
                         completionService: completionService
                     )
+                    .background {
+                        WorkspaceNativeFocusObserver(
+                            matches: commandCoordinator.ownsFirstResponder,
+                            didChange: { editorHasFocus = $0 }
+                        )
+                        .allowsHitTesting(false)
+                    }
                     .contextMenu {
                         if document.databaseType == .mysql || document.databaseType == .doris {
                             Toggle(AppCopy.current.text("当前连接：双引号按标识符高亮（ANSI_QUOTES）", "Connection: Highlight Double Quotes as Identifiers (ANSI_QUOTES)"), isOn: Binding(
@@ -120,10 +128,7 @@ struct WorkspaceQueryDocumentView: View {
                 .frame(minHeight: 240, idealHeight: 320)
             }
         }
-        .focusedSceneValue(
-            \.workspaceQueryCommandActions,
-            commandActions
-        )
+        .focusedSceneValue(\.workspaceQueryCommandActions, editorHasFocus ? commandActions : nil)
         .onChange(of: schemaCatalog, initial: true) { _, schemaCatalog in
             completionService.updateSchemaCatalog(schemaCatalog)
         }

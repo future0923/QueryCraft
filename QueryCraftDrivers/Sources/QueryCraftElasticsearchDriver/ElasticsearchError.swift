@@ -5,7 +5,7 @@ import QueryCraftFeature
 import QueryCraftMobileCore
 #endif
 
-enum ElasticsearchError: LocalizedError, Equatable {
+enum ElasticsearchError: LocalizedError, CustomNSError, Equatable {
     case invalidEndpoint
     case invalidRelativePath
     case unsupportedProduct
@@ -23,6 +23,21 @@ enum ElasticsearchError: LocalizedError, Equatable {
     case mappingConflict(String)
     case deepPageUnavailable
     case pitExpired
+
+    static var errorDomain: String { "io.querycraft.driver.elasticsearch" }
+    var errorCode: Int {
+        switch self {
+        case .unauthorized: 401
+        case .forbidden: 403
+        case .rateLimited: 429
+        case .server(let status, _): status
+        case .network: -1
+        case .certificateValidationFailed: -2
+        case .timedOut: -3
+        default: 0
+        }
+    }
+    var errorUserInfo: [String: Any] { [NSLocalizedDescriptionKey: errorDescription ?? ""] }
 
     var errorDescription: String? {
         switch self {

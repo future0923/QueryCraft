@@ -4,7 +4,7 @@
 
 QueryCraft MCP 是独立的原生 macOS 程序。安装后，数据库工具不依赖
 QueryCraft 主窗口；只有 `open_table` 和 `execute_and_show` 需要打开桌面应用。
-支持范围跟随已安装的 MySQL、PostgreSQL、Doris、Redis、Elasticsearch、Kafka 驱动。
+支持范围跟随已安装的 MySQL、PostgreSQL、Doris、Redis、Elasticsearch、Kafka、Milvus 驱动。
 
 可选的独立 SSH 插件提供服务器账号、连接测试、命令执行、SFTP 文件操作和可断线重连的长任务，采用单独授权；安装、工具与限制见 [SSH_MCP.md](SSH_MCP.md)。
 不需要安装 Node.js、npm、Docker 或数据库代理中间件。
@@ -169,6 +169,27 @@ MCP 初始化会提供连接发现、结构核对、限量查询、长字段展�
 - 最多保留 4 个空闲元数据连接，60 秒回收，可配置为 0 关闭。
   普通 SQL 继续使用独立连接，跨调用复用通过显式会话进行；避免连接状态串扰。
 - 错误返回结构化 `code`、`message`、`recovery` 和 `automatic_retry: false`。
+  数据库原生错误与 MCP 权限拒绝分开：`DATABASE_NOT_FOUND`、`DATABASE_ACCESS_DENIED`、
+  `AUTHENTICATION_FAILED`、`CONNECTION_FAILED`、`TLS_FAILED`、`DRIVER_UNAVAILABLE` 和
+  `DATABASE_ERROR` 分别描述目标库、服务端权限、认证、连接、TLS、驱动不可用及其他数据库错误。
+  `ACCESS_DENIED` 仍表示 MCP 授权拒绝，不应据数据库账号权限错误要求用户扩大 MCP 授权。
+  `error.details` 按实际可用字段包含 `phase`、`database_type`、`native_code`、`sql_state`、
+  `http_status` 或允许列表内的 Redis `response_code`。阶段为 `driver_load`、`connect`、
+  `execution`、`statement`、`query_context` 或 `transaction`；批量失败保留原摘要和原生诊断。
+  不返回原生错误文本、连接串、密码、服务端响应体或任意 NSError 附加字段，也不根据文本猜测原因。
+  库不存在时应不传 `database` 调用 `list_databases` 核对授权范围内的准确库名，再显式选择；
+  不额外对每次查询预先列库，不自动替换相似库名，不自动重试写入。
+
+  | 驱动 | 可用原生诊断与降级 |
+  | --- | --- |
+  | MySQL / Doris | 共享 MariaDB 传输层的数字错误码及 SQLSTATE；包含连接选库失败。Doris 保留其实际返回的 MySQL 协议错误，不从错误文本推断。 |
+  | PostgreSQL | 服务端结果的 SQLSTATE；libpq 建连失败通常只保留文本而没有结构化 SQLSTATE，返回一般 `DATABASE_ERROR` 和连接阶段，不猜测认证或库不存在。 |
+  | Redis | 允许列表内的 RESP 错误 token，以及 hiredis 已保留的 IO/EOF/超时数字码；普通文本错误保持一般数据库错误。 |
+  | Elasticsearch | 已分类的 HTTP 状态、网络、TLS 和超时错误；404 不推断为数据库不存在。显式 REST 工具原有 HTTP 响应结果格式保持不变。 |
+  | Kafka | 已保留的协议数字码；旧 librdkafka 路径将多种失败存为文本时，保持一般数据库错误，不把所有 `.network` 枚举值认定为网络异常。 |
+
+  诊断需要新版 MCP 与对应新版驱动共同生效；旧驱动没有结构化标识时保留通用 `DRIVER_FAILURE`，
+  不反射私有错误字段或解析其描述。此传递使用 Foundation `CustomNSError`，不新增 Driver API 协议要求。
   超时、取消或输出过大可能发生在写入完成之后，不要自动重试写入。
   凭据问题分别返回 `CREDENTIAL_ACCESS_DENIED`、`CREDENTIAL_AUTHORIZATION_CANCELLED`、
   `CREDENTIAL_UNAVAILABLE`。在设置中重新授权或解锁钥匙串；缺失的密码需到连接编辑器重新保存。
@@ -180,7 +201,7 @@ MCP 初始化会提供连接发现、结构核对、限量查询、长字段展�
 
 QueryCraft Skill 独立发布和下载，主程序不内置 Skill 资源。设置页提供 Shared（`.agents/skills`）、
 Codex（`.codex/skills`）、Claude Code（`.claude/skills`）安装目标以及更新/卸载入口。
-Skill 教授六类驱动的工作流，依赖已配置好的 MCP；不需要 QueryCraft CLI。
+Skill 教授七类驱动的工作流，依赖已配置好的 MCP；不需要 QueryCraft CLI。
 安装器通过文件摘要识别自己管理的文件；发现本地修改、额外文件或符号链接时保留文件。
 不同客户端对 Skill 的发现方式不同，只有支持对应 Skill 目录的客户端会加载；MCP 始终可单独使用。
 
@@ -220,6 +241,10 @@ Elasticsearch。未提供凭据的 Kafka / Elasticsearch 默认使用无认证�
 macOS 后台项目，可能触发“App 后台活动”通知。临时项目在测试结束后清理，通知可能仍留在通知中心。
 `scripts/test-mcp-lifecycle.py` 验证客户端退出、并发断开重连及服务重启后的会话失效。
 实库脚本加 `--drivers mysql,doris --stress` 验证两库并发及断开时的事务回滚。
+`python3 scripts/test-mcp-database-errors.py <六类已打包驱动目录>` 验证签名、动态加载及错误诊断链路；
+使用本机临时协议模拟服务，不读取已保存账号、不访问真实数据库。覆盖 MySQL/Doris 未知库、
+PostgreSQL 建连缺失 SQLSTATE 的降级、Redis/Elasticsearch 认证失败，以及 Kafka 包加载；
+Kafka 原生协议错误映射另由驱动单元测试验证。此脚本不能替代六类服务的实库验收。
 `scripts/test-mcp-credentials.py` 仅操作新建的临时钥匙串条目并清理；
 `scripts/test-mcp-clients.py` 使用已安装的客户端 CLI 检查生成配置。
 `scripts/test-mcp-codex.py MCP可执行文件 --codex Codex可执行文件` 使用隔离配置验证 Codex 真正的聊天 MCP 连接、工具发现与调用；
@@ -270,3 +295,13 @@ SSH 0.6.0 还支持保存的跳板链、本机 SSH agent，以及在 SSH 设置�
 工具公共使用说明统一由 MCP 初始化响应的 `instructions` 提供。平铺 `tools/list` 和 `plugin_tools` 均只返回该工具的用途、参数及特殊限制；六类驱动均使用同一份描述来源。旧客户端进程需要断开重连才能加载更新后的 schema 和实现。
 
 本轮本地验证覆盖六类驱动的授权与发现、MCP 的 stdio/HTTP 传输，以及打包后六类驱动加载。Kafka 另行编译、签名打包并验证实际 Dev 安装路径加载；本地 mock 覆盖消息读取、筛选、预算、缓存/取消和原生隔离配置。真实 broker 的时间戳索引、提交/中止事务可见性及认证/TLS 尚需独立实库验证，不能由 mock 测试替代。
+
+## Milvus 实体与向量查询
+
+Milvus 的授权范围使用数据库名。通过 `list_databases` 选择已授权数据库，通过 `list_tables` 获取 Collection，再用 `describe_table` 获取主键、字段类型和向量维度。`get_schema_context` 复用同一元数据链路。
+
+`execute_milvus_request` 使用 `connection_id`、`database`、准确的 `collection`、`operation` 和 JSON 字符串 `body`。操作包括 `query`、`get` 和 `search`。Query 支持 Milvus 筛选表达式、字段选择和分页，Get 使用 `id` 读取实体，Search 使用 `data` 中的单个向量或 `ids` 中的单个主键，并可指定 `annsField` 和 `searchParams`。Search-by-ID 取决于服务端版本。
+
+`max_rows` 默认 100，并受 MCP 策略上限约束。Query/Search 的 `offset + limit` 必须小于 16384。Get 的 ID 数量受同一行数上限约束。每次 Search 处理一个查询，分组搜索仅支持 `groupSize=1`。响应保留原生 JSON `body`、距离和向量数据，并提供 `returned_entities`；超出字节预算时应减少行数或字段。大整数主键使用十进制字符串。
+
+库名和 Collection 名与选择器绑定，JSON 中的同名参数不能覆盖它们。驱动执行层仅接受上述三条读取路径。新版 MCP 与 Milvus 驱动需一起安装，客户端重连后可发现新工具。实库只读验收可运行 `scripts/test-mcp-milvus.py --help` 查看参数，该脚本使用已授权连接和已保存凭据。

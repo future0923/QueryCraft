@@ -36,6 +36,11 @@ let package = Package(
             type: .dynamic,
             targets: ["QueryCraftKafkaDriver"]
         ),
+        .library(
+            name: "QueryCraftMilvusDriver",
+            type: .dynamic,
+            targets: ["QueryCraftMilvusDriver"]
+        ),
     ],
     dependencies: [
         .package(path: "../QueryCraftPackage"),
@@ -149,6 +154,18 @@ let package = Package(
                 .linkedFramework("Security"),
             ]
         ),
+        .target(
+            name: "QueryCraftMilvusDriver",
+            dependencies: [
+                .product(
+                    name: "QueryCraftFeature",
+                    package: "QueryCraftPackage"
+                ),
+            ],
+            swiftSettings: [
+                .unsafeFlags(["-enable-testing"]),
+            ]
+        ),
         .testTarget(
             name: "QueryCraftMySQLDriverTests",
             dependencies: [
@@ -209,6 +226,16 @@ let package = Package(
             dependencies: [
                 "QueryCraftKafkaDriver",
                 "CRdkafka",
+                .product(
+                    name: "QueryCraftFeature",
+                    package: "QueryCraftPackage"
+                ),
+            ]
+        ),
+        .testTarget(
+            name: "QueryCraftMilvusDriverTests",
+            dependencies: [
+                "QueryCraftMilvusDriver",
                 .product(
                     name: "QueryCraftFeature",
                     package: "QueryCraftPackage"

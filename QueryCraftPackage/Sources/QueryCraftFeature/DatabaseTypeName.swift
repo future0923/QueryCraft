@@ -7,6 +7,7 @@ extension DatabaseType {
         case .redis: "Redis"
         case .elasticsearch: "Elasticsearch"
         case .kafka: "Kafka"
+        case .milvus: "Milvus"
         }
     }
 }

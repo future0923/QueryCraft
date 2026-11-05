@@ -54,4 +54,11 @@ struct DatabaseBrandPresentation: Equatable, Sendable {
         darkModeBrightness: 0.04,
         contrast: 1.04
     )
+
+    static let milvus = DatabaseBrandPresentation(
+        assetName: "DatabaseBrandMilvus",
+        opticalScale: 0.92,
+        darkModeBrightness: 0.04,
+        contrast: 1.04
+    )
 }

@@ -9,6 +9,7 @@ struct WorkspaceNewTableDetailView: View {
     let inspectorRegistry: WorkspaceInspectorRegistry
 
     @State private var showsSafetyLockConfirmation = false
+    @State private var ownsShortcutFocus = false
     @State private var errorMessage: String?
     @State private var submissionTask: Task<Void, Never>?
     @State private var schemaChoicesTask: Task<Void, Never>?
@@ -103,21 +104,27 @@ struct WorkspaceNewTableDetailView: View {
             .padding(.horizontal, 12)
             .frame(height: 40)
         }
-        .focusedSceneValue(
+        .workspaceFocusedValue(
             \.workspaceDatabaseSchemaRowActions,
-            schemaRowCommandActions
+            schemaRowCommandActions,
+            matches: { !WorkspaceDatabaseDataRowKeyCommandHandler.Coordinator.isTextEditingResponder($0) }
         )
-        .focusedSceneValue(
+        .workspaceFocusedValue(
             \.workspaceDatabaseObjectDetailTabActions,
             objectDetailTabActions
         )
+        .workspaceFocusedValue(\.workspacePendingChangesActions, pendingChangesRegistry.actions(for: contentID))
         .background {
+            WorkspaceNativeFocusObserver(matches: { _ in true }, requiresContainedResponder: true,
+                didChange: { ownsShortcutFocus = $0 })
+                .allowsHitTesting(false)
             WorkspaceDatabaseDataRowKeyCommandHandler(
                 actions: nil,
                 filterPresentationActions: nil,
                 objectDetailTabActions: objectDetailTabActions,
                 isSuspended: isSubmitting,
-                schemaActions: schemaRowCommandActions
+                schemaActions: schemaRowCommandActions,
+                isFocused: ownsShortcutFocus
             )
         }
         .alert(

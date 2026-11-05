@@ -4,6 +4,8 @@ struct WorkspaceDatabaseDataView: Equatable, View {
     let state: WorkspaceDatabaseDataState
     let retry: () -> Void
     let sortData: (WorkspaceDatabaseDataSort) -> Void
+    var sortCurrentPage: ((WorkspaceDatabaseDataSort) -> Void)? = nil
+    var supportsDatabaseSorting = true
     let appliedDataFilter: WorkspaceDatabaseDataFilter
     let dataFilterEditor: WorkspaceDatabaseDataFilterEditor
     let isDataFilterPresented: Bool
@@ -58,6 +60,7 @@ struct WorkspaceDatabaseDataView: Equatable, View {
             && lhs.pendingDeleteRowIndexes == rhs.pendingDeleteRowIndexes
             && lhs.selectedDataRowIndexes == rhs.selectedDataRowIndexes
             && lhs.rowActionKind == rhs.rowActionKind
+            && lhs.supportsDatabaseSorting == rhs.supportsDatabaseSorting
             && lhs.kafkaCopyAction?.topic == rhs.kafkaCopyAction?.topic
             && lhs.sqlHeaderScope == rhs.sqlHeaderScope
             && statesRenderEqually(lhs.state, rhs.state)
@@ -150,11 +153,11 @@ struct WorkspaceDatabaseDataView: Equatable, View {
             }
 
         }
-        .focusedSceneValue(
+        .workspaceFocusedValue(
             \.workspaceDataExportActions,
             exportCommandActions
         )
-        .focusedSceneValue(
+        .workspaceFocusedValue(
             \.workspaceGridSearchActions,
             searchCommandActions
         )
@@ -189,6 +192,8 @@ struct WorkspaceDatabaseDataView: Equatable, View {
             exportAllRowsProvider: exportAllRowsProvider,
             exportFileName: exportFileName,
             sortData: sortData,
+            sortCurrentPage: sortCurrentPage,
+            supportsDatabaseSorting: supportsDatabaseSorting,
             prepareCellEdit: prepareCellEdit,
             prepareCellEditAsync: prepareCellEditAsync,
             updateCellEdit: updateCellEdit,

@@ -134,7 +134,7 @@ import Security
 
     public static func failure(_ error: any Error) throws -> (text: String, json: Data, code: String) {
         let failure = MCPFailure.normalized(error)
-        return ("[\(failure.code.rawValue)] \(failure.message)\n\(failure.code.recovery)",
+        return ("[\(failure.code.rawValue)] \(failure.message)\n\(failure.recovery ?? failure.code.recovery)",
                 try JSONEncoder().encode(failure.value), failure.code.rawValue)
     }
 

@@ -147,7 +147,7 @@ struct WorkspaceSQLObjectOverviewView: View {
             .frame(height: 30)
         }
         .background(Color(nsColor: .controlBackgroundColor))
-        .focusedSceneValue(\.workspaceGridSearchActions, WorkspaceGridSearchCommandActions(
+        .workspaceFocusedValue(\.workspaceGridSearchActions, WorkspaceGridSearchCommandActions(
             search: { searchFocusRequest += 1 }
         ))
         .onAppear { refreshRegistry.updateOverview(refreshActions, owner: owner) }

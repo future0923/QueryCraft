@@ -13,7 +13,7 @@ enum WorkspaceSQLExportDialect: Equatable, Sendable {
         case .mysql: self = .mysql
         case .postgresql: self = .postgresql
         case .doris: self = .doris
-        case .redis, .elasticsearch, .kafka: return nil
+        case .redis, .elasticsearch, .kafka, .milvus: return nil
         }
     }
 

@@ -17,6 +17,8 @@ struct WorkspaceDatabaseDataFilterPanel: View {
     @State private var columnDismissalRequests: [UUID: Int] = [:]
     @State private var operatorDismissalRequests: [UUID: Int] = [:]
     @State private var conditionRemovalTask: Task<Void, Never>?
+    @State private var ownsNativeFocus = false
+    @State private var nativeTextHasFocus = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -81,13 +83,22 @@ struct WorkspaceDatabaseDataFilterPanel: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .background {
-            WorkspaceDatabaseDataFilterKeyCommandHandler(actions: commandActions)
+            WorkspaceDatabaseDataFilterKeyCommandHandler(
+                actions: commandActions,
+                isFocused: ownsNativeFocus
+            )
+                .allowsHitTesting(false)
+            WorkspaceNativeFocusObserver(matches: { _ in true }, requiresContainedResponder: true,
+                didChange: { ownsNativeFocus = $0 })
+                .allowsHitTesting(false)
+            WorkspaceNativeFocusObserver(matches: { $0 is NSTextView }, requiresContainedResponder: true,
+                didChange: { nativeTextHasFocus = $0 })
                 .allowsHitTesting(false)
         }
         .onExitCommand(perform: closeFilterIfPossible)
-        .focusedSceneValue(
+        .focusedValue(
             \.workspaceDatabaseDataFilterActions,
-            commandActions
+            ownsNativeFocus ? commandActions : nil
         )
         .onAppear {
             activeConditionID = editor.draft.conditions.first?.id
@@ -304,8 +315,8 @@ struct WorkspaceDatabaseDataFilterPanel: View {
             canAddCondition: columns.first != nil,
             canRemoveCondition: activeCondition != nil,
             canApplyAll: editor.draft.isValid,
-            canNavigateConditions: editor.draft.conditions.count > 1,
-            canEditActiveCondition: activeCondition != nil,
+            canNavigateConditions: ownsNavigationKeys && editor.draft.conditions.count > 1,
+            canEditActiveCondition: ownsNavigationKeys && activeCondition != nil,
             canToggleCondition: !isElasticsearch && activeCondition != nil,
             canCloseFilter: presentedPicker == nil,
             addCondition: { requestPanelCommand(.addCondition) },
@@ -318,6 +329,16 @@ struct WorkspaceDatabaseDataFilterPanel: View {
             toggleCondition: { requestPanelCommand(.toggleCondition) },
             close: { requestPanelCommand(.closeFilter) }
         )
+    }
+
+    private var ownsNavigationKeys: Bool {
+        guard ownsNativeFocus, !nativeTextHasFocus else { return false }
+        return switch focusedField {
+        case .none, .value, .secondValue:
+            false
+        default:
+            true
+        }
     }
 
     private var activeCondition: WorkspaceDatabaseDataFilterCondition? {

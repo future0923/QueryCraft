@@ -7,6 +7,7 @@ public enum DatabaseType: String, CaseIterable, Codable, Identifiable, Sendable 
     case redis
     case elasticsearch
     case kafka
+    case milvus
 
     public var id: String { rawValue }
 }
@@ -16,7 +17,7 @@ extension DatabaseType {
     var supportsSQLObjectOverview: Bool {
         switch self {
         case .mysql, .postgresql, .doris: true
-        case .redis, .elasticsearch, .kafka: false
+        case .redis, .elasticsearch, .kafka, .milvus: false
         }
     }
 }

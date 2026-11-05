@@ -26,7 +26,7 @@ struct MobileConnectionProfile: Codable, Equatable, Identifiable, Sendable {
 @MainActor @Observable
 final class MobileConnectionDraft: Identifiable {
     let id: UUID
-    var driver: MobileDriver { didSet { if oldValue != driver { port = String(driver.port); username = driver == .postgresql ? "postgres" : driver == .mysql || driver == .doris ? "root" : ""; database = ""; schemaName = ""; password = ""; tlsMode = driver == .redis || driver == .doris ? .disabled : .required; authentication = .usernamePassword } } }
+    var driver: MobileDriver { didSet { if oldValue != driver { port = String(driver.port); username = driver == .postgresql ? "postgres" : driver == .mysql || driver == .doris || driver == .milvus ? "root" : ""; database = driver == .milvus ? "default" : ""; schemaName = ""; password = ""; tlsMode = driver == .redis || driver == .doris || driver == .milvus ? .disabled : .required; authentication = .usernamePassword } } }
     var authentication: MobileAuthentication
     var name: String
     var host: String
@@ -92,10 +92,10 @@ extension MobileConnectionProfile {
 }
 
 enum MobileDriver: String, Codable, CaseIterable, Identifiable, Sendable {
-    case mysql, postgresql, doris, redis, elasticsearch
+    case mysql, postgresql, doris, redis, elasticsearch, milvus
     var id: Self { self }
-    var title: String { switch self { case .mysql: "MySQL"; case .postgresql: "PostgreSQL"; case .doris: "Doris"; case .redis: "Redis"; case .elasticsearch: "Elasticsearch" } }
-    var port: Int { switch self { case .mysql: 3306; case .postgresql: 5432; case .doris: 9030; case .redis: 6379; case .elasticsearch: 9200 } }
+    var title: String { switch self { case .mysql: "MySQL"; case .postgresql: "PostgreSQL"; case .doris: "Doris"; case .redis: "Redis"; case .elasticsearch: "Elasticsearch"; case .milvus: "Milvus" } }
+    var port: Int { switch self { case .mysql: 3306; case .postgresql: 5432; case .doris: 9030; case .redis: 6379; case .elasticsearch: 9200; case .milvus: 19530 } }
     var isSQL: Bool { self == .mysql || self == .postgresql || self == .doris }
 }
 enum MobileAuthentication: String, Codable, CaseIterable, Identifiable, Sendable {

@@ -59,17 +59,17 @@ struct WorkspaceContentTabKeyCommandHandler: NSViewRepresentable {
                 actions.closeSelected()
                 return true
             }
-            if modifiers == .control,
+            if actions.hasContentTabs, modifiers == .control,
                let index = Self.numberKeyCodes.firstIndex(of: event.keyCode)
             {
                 actions.selectAtIndex(index)
                 return true
             }
-            if event.keyCode == 30, modifiers == [.command, .shift] {
+            if actions.hasContentTabs, event.keyCode == 30, modifiers == [.command, .shift] {
                 actions.selectRelative(1)
                 return true
             }
-            if event.keyCode == 33, modifiers == [.command, .shift] {
+            if actions.hasContentTabs, event.keyCode == 33, modifiers == [.command, .shift] {
                 actions.selectRelative(-1)
                 return true
             }

@@ -36,9 +36,17 @@ struct PostgreSQLCQueryResult: Sendable, Equatable {
     }
 }
 
-struct PostgreSQLClientError: LocalizedError, Sendable {
+struct PostgreSQLClientError: LocalizedError, CustomNSError, Sendable {
     let message: String
     let sqlState: String?
+
+    static var errorDomain: String { "io.querycraft.driver.postgresql" }
+    var errorCode: Int { 0 } // libpq exposes SQLSTATE rather than a numeric server code.
+    var errorUserInfo: [String: Any] {
+        var info: [String: Any] = [NSLocalizedDescriptionKey: errorDescription ?? message]
+        if let sqlState { info["sql_state"] = sqlState }
+        return info
+    }
 
     var errorDescription: String? {
         if let sqlState, !sqlState.isEmpty {

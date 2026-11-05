@@ -7,6 +7,34 @@ import Testing
 @MainActor
 struct WorkspaceModelTests {
     @Test
+    func currentPageSortRestoresOrderAndDoesNotChangeQueryPagination() async throws {
+        let profile = makeProfile(storesCredential: false)
+        let selection = WorkspaceDatabaseObjectSelection(databaseName: "app_database", objectName: "users", kind: .table)
+        let data = WorkspaceDatabaseDataPage(columns: [.init(id: 0, name: "id", type: "int")],
+            rows: [.init(id: 0, values: [.text("10")]), .init(id: 1, values: [.text("2")])],
+            offset: 0, limit: 2, hasNextPage: false)
+        let model = WorkspaceModel(profileID: profile.id,
+            repository: InMemoryConnectionProfileRepository(profiles: [profile]),
+            credentialStore: InMemoryCredentialStore(),
+            sessionFactory: InMemoryWorkspaceSessionFactory(databases: ["app_database"],
+                objectsByDatabase: ["app_database": [selection.object]], dataByObject: [selection: data]))
+        await model.connect()
+        await model.selectObject(selection)
+        await model.loadData(for: selection, offset: 0, limit: 2)
+        let original = try #require(model.selectedObjectDataState.page)
+        model.sortCurrentPage(.ascending(columnName: "id"), for: selection)
+        let sorted = try #require(model.selectedObjectDataState.page)
+        #expect(sorted.rows.map(\.values) == [[.text("2")], [.text("10")]])
+        #expect(sorted.rows.map(\.id) == original.rows.reversed().map(\.id))
+        #expect(sorted.offset == original.offset && sorted.limit == original.limit)
+        #expect(sorted.sort == original.sort)
+        model.sortCurrentPage(.descending(columnName: "id"), for: selection)
+        model.sortCurrentPage(.none, for: selection)
+        #expect(model.selectedObjectDataState.page?.revision == original.revision)
+        #expect(model.selectedObjectDataState.page?.rows == original.rows)
+    }
+
+    @Test
     func elasticsearchAutomaticallyUsesItsImplicitWorkspaceContext() async {
         let profile = ConnectionProfile(
             id: UUID(),

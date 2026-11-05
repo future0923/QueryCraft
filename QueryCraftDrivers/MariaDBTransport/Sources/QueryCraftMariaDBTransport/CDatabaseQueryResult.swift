@@ -46,10 +46,18 @@ public struct CDatabaseQueryResult: Sendable, Equatable {
     }
 }
 
-public struct CDatabaseClientError: LocalizedError, Sendable {
+public struct CDatabaseClientError: LocalizedError, CustomNSError, Sendable {
     public let code: UInt32
     public let message: String
     public let sqlState: String?
+
+    public static var errorDomain: String { "io.querycraft.driver.mariadb" }
+    public var errorCode: Int { Int(code) }
+    public var errorUserInfo: [String: Any] {
+        var info: [String: Any] = [NSLocalizedDescriptionKey: errorDescription ?? message]
+        if let sqlState { info["sql_state"] = sqlState }
+        return info
+    }
 
     public var errorDescription: String? {
         if let sqlState, !sqlState.isEmpty {

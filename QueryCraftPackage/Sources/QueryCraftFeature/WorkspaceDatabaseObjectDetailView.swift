@@ -9,6 +9,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
     let objectDetailTabRegistry: WorkspaceDatabaseObjectDetailTabRegistry
 
     @State private var selectedTab = WorkspaceDatabaseObjectDetailTab.data
+    @State private var ownsShortcutFocus = false
     @State private var dataOffset = 0
     @State private var synchronizedDocumentPageLoadID: String?
     @State private var dataLimit: Int
@@ -175,6 +176,8 @@ struct WorkspaceDatabaseObjectDetailView: View {
                 selectedTab: selectedTab,
                 retry: retry,
                 sortData: sortData,
+                sortCurrentPage: sortCurrentPage,
+                supportsDatabaseSorting: model.databaseType.supportsSQLObjectOverview || isElasticsearchObject,
                 appliedDataFilter: currentAppliedDataFilter,
                 dataFilterEditor: dataFilterEditor,
                 isDataFilterPresented: isCurrentDataFilterPresented,
@@ -259,7 +262,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
                 searchController: searchController,
                 isDataFilterPresented: isCurrentDataFilterPresented,
                 hasActiveDataFilter: currentAppliedDataFilter.isActive,
-                isDataFilterVisible: model.databaseType != .kafka,
+                isDataFilterVisible: model.databaseType != .kafka && model.databaseType != .milvus,
                 isDataFilterDisabled: dataFilterDetailsTask != nil
                     && !isCurrentDataFilterPresented,
                 toggleDataFilter: toggleDataFilter,
@@ -275,7 +278,7 @@ struct WorkspaceDatabaseObjectDetailView: View {
                 mappingActions: isElasticsearchObject
                     ? WorkspaceElasticsearchMappingActionsView(editor: mappingEditor, workspace: model)
                     : nil,
-                showsSchemaAddControls: model.databaseType != .kafka,
+                showsSchemaAddControls: model.databaseType != .kafka && model.databaseType != .milvus,
                 showKafkaConsumerGroups: model.databaseType == .kafka
                     ? { showsKafkaConsumerGroups = true }
                     : nil,
@@ -479,30 +482,38 @@ struct WorkspaceDatabaseObjectDetailView: View {
                 "Preview and commit alias binding changes from the top toolbar. Safety Lock will remain disabled until this workspace closes."
             ))
         }
-        .focusedSceneValue(
+        .workspaceFocusedValue(
             \.workspaceDatabaseDataFilterPresentationActions,
             dataFilterPresentationActions
         )
-        .focusedSceneValue(
+        .workspaceFocusedValue(
             \.workspaceDatabaseDataRowActions,
-            dataRowCommandActions
+            dataRowCommandActions,
+            matches: { !WorkspaceDatabaseDataRowKeyCommandHandler.Coordinator.isTextEditingResponder($0) }
         )
-        .focusedSceneValue(
+        .workspaceFocusedValue(
             \.workspaceDatabaseSchemaRowActions,
-            schemaRowCommandActions
+            schemaRowCommandActions,
+            matches: { !WorkspaceDatabaseDataRowKeyCommandHandler.Coordinator.isTextEditingResponder($0) }
         )
-        .focusedSceneValue(
+        .workspaceFocusedValue(
             \.workspaceDatabaseObjectDetailTabActions,
             objectDetailTabActions
         )
+        .workspaceFocusedValue(\.workspacePendingChangesActions,
+            pendingChangesRegistry.actions(for: .databaseObject(selection)))
         .background {
+            WorkspaceNativeFocusObserver(matches: { _ in true }, requiresContainedResponder: true,
+                didChange: { ownsShortcutFocus = $0 })
+                .allowsHitTesting(false)
             WorkspaceDatabaseDataRowKeyCommandHandler(
                 actions: dataRowCommandActions,
                 filterPresentationActions: dataFilterPresentationActions,
                 objectDetailTabActions: objectDetailTabActions,
                 isSuspended: isCurrentDataFilterPresented,
                 schemaActions: schemaRowCommandActions,
-                handlesSchemaActionsInDataGrid: isElasticsearchObject && selectedTab == .structure
+                handlesSchemaActionsInDataGrid: isElasticsearchObject && selectedTab == .structure,
+                isFocused: ownsShortcutFocus
             )
         }
         .alert(
@@ -1984,10 +1995,17 @@ struct WorkspaceDatabaseObjectDetailView: View {
     }
 
     private func sortData(_ sort: WorkspaceDatabaseDataSort) {
+        guard model.databaseType != .milvus else { return }
         guard allowDocumentDraftInvalidation() else { return }
         guard dataSort != sort else { return }
         dataSort = sort
         dataOffset = 0
+    }
+
+    private func sortCurrentPage(_ sort: WorkspaceDatabaseDataSort) {
+        guard allowDocumentDraftInvalidation(), !model.selectedObjectDataState.isFetching else { return }
+        selectedDataRowIndexes = []
+        model.sortCurrentPage(sort, for: selection)
     }
 
     private func toggleDataFilter() {

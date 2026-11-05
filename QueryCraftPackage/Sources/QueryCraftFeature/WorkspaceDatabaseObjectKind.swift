@@ -10,6 +10,7 @@ public enum WorkspaceDatabaseObjectKind:
     case elasticsearchIndex
     case elasticsearchAlias
     case elasticsearchDataStream
+    case milvusCollection
 
     var title: String {
         switch self {
@@ -23,6 +24,8 @@ public enum WorkspaceDatabaseObjectKind:
             "Aliases"
         case .elasticsearchDataStream:
             AppCopy.current.text("数据流", "Data Streams")
+        case .milvusCollection:
+            AppCopy.current.text("集合", "Collections")
         }
     }
 
@@ -38,6 +41,8 @@ public enum WorkspaceDatabaseObjectKind:
             "arrow.triangle.branch"
         case .elasticsearchDataStream:
             "waveform.path.ecg"
+        case .milvusCollection:
+            "square.stack.3d.up"
         }
     }
 }

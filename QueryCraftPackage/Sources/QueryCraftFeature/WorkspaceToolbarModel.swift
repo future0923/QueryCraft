@@ -31,6 +31,7 @@ final class WorkspaceToolbarModel {
     var canCreateQuery: Bool {
         model.connectionState == .connected
             && model.databaseType != .kafka
+            && model.databaseType != .milvus
     }
 
     var showsDatabaseSelection: Bool {

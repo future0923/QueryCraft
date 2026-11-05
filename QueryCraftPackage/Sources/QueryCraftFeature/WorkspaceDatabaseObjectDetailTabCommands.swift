@@ -16,11 +16,9 @@ public struct WorkspaceDatabaseObjectDetailTabCommands: Commands {
                     actions?.selectIfAvailable(tab)
                 }
                 .keyboardShortcut(
-                    KeyEquivalent(
-                        actions?.shortcut(for: tab)?.character
-                            ?? tab.shortcutCharacter
-                    ),
-                    modifiers: .command
+                    actions?.shortcut(for: tab).map {
+                        KeyboardShortcut(KeyEquivalent($0.character), modifiers: .command)
+                    }
                 )
                 .disabled(actions == nil)
             }

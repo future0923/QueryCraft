@@ -10,6 +10,11 @@ final class WorkspaceElasticsearchEditorNavigationCoordinator: @preconcurrency T
     func controllerDidAppear(controller: TextViewController) { self.controller = controller }
     func destroy() {}
 
+    func ownsFirstResponder(_ responder: NSResponder?) -> Bool {
+        guard let textView = controller?.textView else { return false }
+        return responder === textView
+    }
+
     func navigate(to range: NSRange) {
         guard let textView = controller?.textView, !textView.hasMarkedText(),
               range.location != NSNotFound, range.location >= 0,

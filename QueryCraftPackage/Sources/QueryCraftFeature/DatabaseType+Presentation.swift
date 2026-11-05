@@ -7,6 +7,7 @@ extension DatabaseType {
         case .redis: 6_379
         case .elasticsearch: 9_200
         case .kafka: 9_092
+        case .milvus: 19_530
         }
     }
 
@@ -18,6 +19,7 @@ extension DatabaseType {
         case .redis: ""
         case .elasticsearch: "elastic"
         case .kafka: ""
+        case .milvus: "root"
         }
     }
 
@@ -33,6 +35,7 @@ extension DatabaseType {
         case .redis: .redis
         case .elasticsearch: .elasticsearch
         case .kafka: .kafka
+        case .milvus: .milvus
         }
     }
 
@@ -68,6 +71,11 @@ extension DatabaseType {
                 "分布式事件流平台",
                 "Distributed event streaming platform"
             )
+        case .milvus:
+            AppCopy.current.text(
+                "向量数据库与相似度检索",
+                "Vector database and similarity search"
+            )
         }
     }
 }
@@ -82,6 +90,7 @@ extension DatabaseProduct {
         case .redis: "Redis"
         case .elasticsearch: "Elasticsearch"
         case .kafka: "Kafka"
+        case .milvus: "Milvus"
         }
     }
 
@@ -101,6 +110,7 @@ extension DatabaseProduct {
         case .redis: .redis
         case .elasticsearch: .elasticsearch
         case .kafka: .kafka
+        case .milvus: .milvus
         }
     }
 
@@ -140,6 +150,11 @@ extension DatabaseProduct {
             AppCopy.current.text(
                 "分布式事件流平台",
                 "Distributed event streaming platform"
+            )
+        case .milvus:
+            AppCopy.current.text(
+                "向量数据库与相似度检索",
+                "Vector database and similarity search"
             )
         }
     }

@@ -48,6 +48,12 @@ public struct WorkspaceSessionCapabilities: Equatable, Sendable {
 
     public static let elasticsearchReadOnly = elasticsearch
 
+    public static let milvus = Self(
+        readOnlyExecution: .classifiedRequestsOnly,
+        supportsDataEditing: false,
+        supportsTransactions: false
+    )
+
     public static let kafka = Self(
         readOnlyExecution: .classifiedStatementsOnly,
         supportsDataEditing: false,

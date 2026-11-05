@@ -25,6 +25,8 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
     private var exportAllRowsProvider: WorkspaceDataExportAllRowsProvider?
     private var exportFileName: String
     private var sortData: (WorkspaceDatabaseDataSort) -> Void
+    private var sortCurrentPage: ((WorkspaceDatabaseDataSort) -> Void)?
+    private var supportsDatabaseSorting: Bool
     private var prepareCellEdit: ((WorkspaceDatabaseDataCellEditTarget) ->
         WorkspaceDatabaseDataCellInlineEditContext?)?
     private var prepareCellEditAsync: ((WorkspaceDatabaseDataCellEditTarget) async ->
@@ -108,6 +110,8 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         exportAllRowsProvider: WorkspaceDataExportAllRowsProvider? = nil,
         exportFileName: String = "table-data",
         sortData: @escaping (WorkspaceDatabaseDataSort) -> Void,
+        sortCurrentPage: ((WorkspaceDatabaseDataSort) -> Void)? = nil,
+        supportsDatabaseSorting: Bool = true,
         prepareCellEdit: ((WorkspaceDatabaseDataCellEditTarget) ->
             WorkspaceDatabaseDataCellInlineEditContext?)? = nil,
         prepareCellEditAsync: ((WorkspaceDatabaseDataCellEditTarget) async ->
@@ -154,6 +158,8 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         self.exportAllRowsProvider = exportAllRowsProvider
         self.exportFileName = exportFileName
         self.sortData = sortData
+        self.sortCurrentPage = sortCurrentPage
+        self.supportsDatabaseSorting = supportsDatabaseSorting
         self.prepareCellEdit = prepareCellEdit
         self.prepareCellEditAsync = prepareCellEditAsync
         self.updateCellEdit = updateCellEdit
@@ -187,6 +193,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         }
         headerView.frame.size.height = WorkspaceGridMetrics.headerHeight
         tableView.headerView = headerView
+        configureHeaderSorting(in: tableView)
         tableView.rowHeight = Self.rowHeight(for: cellFont)
         tableView.usesAutomaticRowHeights = false
         tableView.intercellSpacing = .zero
@@ -255,6 +262,8 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         exportAllRowsProvider: WorkspaceDataExportAllRowsProvider? = nil,
         exportFileName: String = "table-data",
         sortData: @escaping (WorkspaceDatabaseDataSort) -> Void,
+        sortCurrentPage: ((WorkspaceDatabaseDataSort) -> Void)? = nil,
+        supportsDatabaseSorting: Bool = true,
         prepareCellEdit: ((WorkspaceDatabaseDataCellEditTarget) ->
             WorkspaceDatabaseDataCellInlineEditContext?)? = nil,
         prepareCellEditAsync: ((WorkspaceDatabaseDataCellEditTarget) async ->
@@ -305,6 +314,8 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         self.isFetching = isFetching
         if isFetching { mappingOptionPresenter?.close() }
         self.sortData = sortData
+        self.sortCurrentPage = sortCurrentPage
+        self.supportsDatabaseSorting = supportsDatabaseSorting
         self.prepareCellEdit = prepareCellEdit
         self.prepareCellEditAsync = prepareCellEditAsync
         self.updateCellEdit = updateCellEdit
@@ -388,6 +399,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         self.sqlHeaderConfiguration = sqlHeaderConfiguration
         self.cellFont = cellFont
         if let tableView {
+            configureHeaderSorting(in: tableView)
             tableView.usesAlternatingRowBackgroundColors = usesAlternatingRows
             if let directDrawTableView =
                 tableView as? WorkspaceDirectDrawTableView {
@@ -515,7 +527,8 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             let tableColumn = NSTableColumn(identifier: identifier)
             tableColumn.title = column.name
             WorkspaceGridMetrics.configureHeaderCell(tableColumn.headerCell)
-            tableColumn.headerToolTip = mappingActions == nil ? AppCopy.current.sortBy(column.name) : column.name
+            tableColumn.headerToolTip = mappingActions == nil
+                ? AppCopy.current.text("选择整列：", "Select column: ") + column.name : column.name
             tableColumn.headerCell.setAccessibilityIdentifier(
                 "databaseDataColumnHeader.\(column.id)"
             )
@@ -574,7 +587,11 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
                     ceil((tableColumn.title as NSString).size(withAttributes: [.font: WorkspaceGridMetrics.headerFont]).width)
                         + WorkspaceGridMetrics.cellTrailingPadding)
             } else {
-                tableColumn.width = width + (mappingActions != nil && columnIndex == 1 ? WorkspaceGridInlineControls.disclosureWidth : 0)
+                let titleWidth = ceil((tableColumn.title as NSString).size(withAttributes: [.font: WorkspaceGridMetrics.headerFont]).width)
+                let hasSortControls = (tableView.headerView as? WorkspaceGridHeaderView)?.hasSortControls == true
+                let fittedWidth = hasSortControls
+                    ? max(width, min(WorkspaceGridColumnSizing.maximumAutomaticColumnWidth, titleWidth + 38)) : width
+                tableColumn.width = fittedWidth + (mappingActions != nil && columnIndex == 1 ? WorkspaceGridInlineControls.disclosureWidth : 0)
             }
         }
         isApplyingAutomaticColumnWidths = false
@@ -582,14 +599,25 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         tableView.headerView?.needsDisplay = true
     }
 
+    private var effectiveHeaderSort: WorkspaceDatabaseDataSort {
+        !isFetching && page.localSort != .none ? page.localSort : displayedSort
+    }
+
     private func updateSortIndicator(in tableView: NSTableView) {
+        defer { tableView.headerView?.needsLayout = true }
+        let effectiveSort = effectiveHeaderSort
+        (tableView.headerView as? WorkspaceGridHeaderView)?.sortDirections = Dictionary(uniqueKeysWithValues: tableView.tableColumns.map { column in
+            (column.identifier, columnIndexes[column.identifier].flatMap { id in
+                page.columns.first(where: { $0.id == id && $0.name == effectiveSort.columnName })
+            }.map { _ in effectiveSort } ?? .none)
+        })
         for tableColumn in tableView.tableColumns {
             tableView.setIndicatorImage(nil, in: tableColumn)
             tableColumn.headerCell.textColor = .labelColor
         }
 
         guard
-            let columnName = displayedSort.columnName,
+            let columnName = effectiveSort.columnName,
             let dataColumn = page.columns.first(where: { $0.name == columnName }),
             let tableColumn = tableView.tableColumns.first(where: {
                 $0.identifier.rawValue == "databaseData.column.\(dataColumn.id)"
@@ -600,7 +628,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
 
         let symbolName: String
         let accessibilityDescription: String
-        switch displayedSort {
+        switch effectiveSort {
         case .none:
             return
         case .ascending:
@@ -627,6 +655,59 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         tableView.headerView?.needsDisplay = true
     }
 
+    private func configureHeaderSorting(in tableView: NSTableView) {
+        guard let header = tableView.headerView as? WorkspaceGridHeaderView else { return }
+        let supportsSorting = supportsDatabaseSorting && mappingActions == nil && page.live == nil
+            && (sqlHeaderConfiguration != nil || rowActionKind == .elasticsearchDocument)
+        header.sortColumnHandler = nil
+        header.sortMenuProvider = supportsSorting ? { [weak self] column in
+            self?.makeSortMenu(for: column) ?? NSMenu()
+        } : nil
+        header.sortingEnabled = !isFetching
+    }
+
+    func makeSortMenu(for column: NSTableColumn) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        guard let index = columnIndexes[column.identifier],
+              let dataColumn = page.columns.first(where: { $0.id == index }) else { return menu }
+        let name = dataColumn.name
+        for (title, sort, local) in [
+            (AppCopy.current.text("数据库升序排序", "Sort Database Ascending"), WorkspaceDatabaseDataSort.ascending(columnName: name), false),
+            (AppCopy.current.text("数据库降序排序", "Sort Database Descending"), .descending(columnName: name), false),
+            (AppCopy.current.text("当前页升序排序", "Sort Current Page Ascending"), .ascending(columnName: name), true),
+            (AppCopy.current.text("当前页降序排序", "Sort Current Page Descending"), .descending(columnName: name), true)
+        ] {
+            if local && menu.items.count == 2 { menu.addItem(.separator()) }
+            let item = WorkspaceGridSortMenuItem(title: title) { [weak self] in
+                guard let self, !self.isFetching else { return }
+                if local { self.sortCurrentPage?(sort) }
+                else { self.requestDatabaseSort(sort) }
+            }
+            item.state = (local ? page.localSort : displayedSort) == sort ? .on : .off
+            item.isEnabled = !isFetching && (!local || (sortCurrentPage != nil && !page.rows.contains { $0.value(at: index).isBinaryForSorting }))
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let clear = WorkspaceGridSortMenuItem(title: AppCopy.current.text("清除排序", "Clear Sorting")) { [weak self] in
+            guard let self, !self.isFetching else { return }
+            if self.page.localSort != .none { self.sortCurrentPage?(.none) }
+            if self.displayedSort != .none { self.requestDatabaseSort(.none) }
+        }
+        clear.isEnabled = !isFetching && (displayedSort != .none || page.localSort != .none)
+        menu.addItem(clear)
+        return menu
+    }
+
+    private func requestDatabaseSort(_ sort: WorkspaceDatabaseDataSort) {
+        guard !isFetching, displayedSort != sort else { return }
+        displayedSort = sort
+        isFetching = true
+        (tableView?.headerView as? WorkspaceGridHeaderView)?.sortingEnabled = false
+        if let tableView { updateSortIndicator(in: tableView) }
+        sortData(sort)
+    }
+
     private func updateLoadedSortAccessibility(in tableView: NSTableView) {
         for tableColumn in tableView.tableColumns {
             tableColumn.headerCell.setAccessibilitySortDirection(.unknown)
@@ -634,7 +715,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         }
 
         guard
-            let columnName = page.sort.columnName,
+            let columnName = effectiveHeaderSort.columnName,
             let dataColumn = page.columns.first(where: { $0.name == columnName }),
             let tableColumn = tableView.tableColumns.first(where: {
                 $0.identifier.rawValue == "databaseData.column.\(dataColumn.id)"
@@ -643,7 +724,7 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             return
         }
 
-        switch page.sort {
+        switch effectiveHeaderSort {
         case .none:
             break
         case .ascending:
@@ -833,6 +914,10 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             guard let self, !self.isFetching else {
                 return false
             }
+            if self.mappingActions == nil, self.prepareCellEdit != nil,
+               self.selectedFillCoordinates(row: row, column: column).count != 1 {
+                return self.fillSelectedCells(row: row, column: column, mutation: .value(text))
+            }
             if self.isDraftRow(row) {
                 self.beginEditingDraftCell(
                     row: row,
@@ -851,6 +936,13 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
             }
             return true
         }
+        // SQL tables use synchronous preparation; ES document/mapping editors
+        // retain their own async editing and document-paste semantics.
+        tableView.selectedCellPasteHandler = !isFetching && prepareCellEdit != nil && mappingActions == nil
+            ? { [weak self] row, column, mutation in
+                guard let self, !self.isDraftRow(row) else { return false }
+                return self.fillSelectedCells(row: row, column: column, mutation: mutation)
+            } : nil
         tableView.cellContextMenuProvider = { [weak self] row, column in
             self?.draftContextMenu(row: row, tableColumnIndex: column)
         }
@@ -884,6 +976,28 @@ final class WorkspaceDatabaseDataTableCoordinator: NSObject {
         tableView.inlineEditorLayoutHandler = { [weak self] in
             self?.layoutInlineEditor()
         }
+    }
+
+    private func selectedFillCoordinates(row: Int, column: Int) -> [WorkspaceGridCoordinate] {
+        guard let tableView = tableView as? WorkspaceDirectDrawTableView else { return [] }
+        let columns = tableView.tableColumns.indices.filter {
+            columnIndexes[tableView.tableColumns[$0].identifier] != nil
+        }
+        return WorkspaceGridSelectedCellEditing.coordinates(in: tableView,
+            clicked: .init(row: row, column: column), dataColumns: columns)
+    }
+
+    private func fillSelectedCells(row: Int, column: Int, mutation: WorkspaceDatabaseInspectorMutation) -> Bool {
+        guard !isFetching, mappingActions == nil, let prepareCellEdit else { return false }
+        let applied = WorkspaceGridSelectedCellEditing.apply(mutation,
+            coordinates: selectedFillCoordinates(row: row, column: column), prepare: { coordinate in
+                guard !self.pendingDeleteRowIndexes.contains(coordinate.row),
+                      let target = self.loadedCellEditTarget(row: coordinate.row, tableColumnIndex: coordinate.column)
+                else { return nil }
+                return prepareCellEdit(target)
+            }, update: updateCellEdit)
+        if !applied { NSSound.beep() }
+        return true
     }
 
     private func updateDataRowActionHandlers(
@@ -2424,23 +2538,8 @@ extension WorkspaceDatabaseDataTableCoordinator: NSTableViewDelegate {
         didClick tableColumn: NSTableColumn
     ) {
         MainActor.assumeIsolated {
-            guard
-                !isFetching,
-                page.live == nil,
-                mappingActions == nil,
-                let columnIndex = columnIndexes[tableColumn.identifier],
-                page.columns.indices.contains(columnIndex)
-            else {
-                return
-            }
-
-            let sort = displayedSort.toggled(
-                for: page.columns[columnIndex].name
-            )
-            displayedSort = sort
-            isFetching = true
-            updateSortIndicator(in: tableView)
-            sortData(sort)
+            // The header body selects columns. Only its explicit sort button
+            // may start a new server request.
         }
     }
 
@@ -2710,4 +2809,20 @@ extension WorkspaceDatabaseDataTableCoordinator:
                 : nil
         })
     }
+}
+
+@MainActor
+private final class WorkspaceGridSortMenuItem: NSMenuItem {
+    private let perform: @MainActor () -> Void
+    init(title: String, perform: @escaping @MainActor () -> Void) {
+        self.perform = perform
+        super.init(title: title, action: #selector(invoke), keyEquivalent: "")
+        target = self
+    }
+    required init(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    @objc private func invoke() { perform() }
+}
+
+private extension WorkspaceDatabaseDataCell {
+    var isBinaryForSorting: Bool { if case .binary = self { true } else { false } }
 }

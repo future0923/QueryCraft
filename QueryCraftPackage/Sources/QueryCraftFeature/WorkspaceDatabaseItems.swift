@@ -92,6 +92,8 @@ struct WorkspaceDatabaseItems: View {
                         openObjectTab: openObjectTab,
                         deleteIndex: deleteIndex
                     )
+                } else if model.databaseType == .milvus {
+                    objectRows(kind: .milvusCollection, objects: visibleObjects)
                 } else {
                     objectRows(kind: .table, objects: visibleObjects)
                     if model.databaseType != .kafka {

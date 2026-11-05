@@ -12,7 +12,7 @@ public struct WorkspaceDatabaseCommands: Commands {
             ) {
                 actions?.openConnectionPicker()
             }
-            .keyboardShortcut("k", modifiers: [.command, .shift])
+            .keyboardShortcut(actions != nil ? KeyboardShortcut("k", modifiers: [.command, .shift]) : nil)
             .disabled(actions == nil)
 
             Button(
@@ -21,7 +21,7 @@ public struct WorkspaceDatabaseCommands: Commands {
             ) {
                 actions?.openDatabasePicker()
             }
-            .keyboardShortcut("k", modifiers: .command)
+            .keyboardShortcut(actions?.canOpenDatabasePicker == true ? KeyboardShortcut("k") : nil)
             .disabled(actions?.canOpenDatabasePicker != true)
 
             Button(
@@ -30,7 +30,7 @@ public struct WorkspaceDatabaseCommands: Commands {
             ) {
                 actions?.refreshWorkspace()
             }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .keyboardShortcut(actions != nil ? KeyboardShortcut("r", modifiers: [.command, .shift]) : nil)
             .disabled(actions == nil)
         }
     }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WorkspaceElasticsearchRequestDocumentView: View {
     @Bindable var document: WorkspaceElasticsearchRequestDocumentModel
+    @State private var editorHasFocus = false
 
     var body: some View {
         VSplitView {
@@ -17,7 +18,8 @@ struct WorkspaceElasticsearchRequestDocumentView: View {
                     },
                     completionResources: {
                         document.completionResourceNames()
-                    }
+                    },
+                    focusChanged: { editorHasFocus = $0 }
                 )
                 actionBar
             }
@@ -46,7 +48,7 @@ struct WorkspaceElasticsearchRequestDocumentView: View {
         }
         .focusedSceneValue(
             \.workspaceQueryCommandActions,
-            commandActions
+            editorHasFocus ? commandActions : nil
         )
         .accessibilityIdentifier("elasticsearchRequestDocument.\(document.id)")
     }
@@ -60,7 +62,6 @@ struct WorkspaceElasticsearchRequestDocumentView: View {
                 systemImage: document.isExecuting ? "stop.fill" : "play.fill",
                 action: runOrStop
             )
-            .keyboardShortcut(.return, modifiers: .command)
 
             Button(
                 AppCopy.current.text("运行全部", "Run All"),

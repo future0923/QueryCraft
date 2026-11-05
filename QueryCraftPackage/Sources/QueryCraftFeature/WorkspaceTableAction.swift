@@ -32,7 +32,7 @@ enum WorkspaceTableAction: String, CaseIterable, Identifiable, Sendable {
             case .resetAutoIncrement, .setAutoIncrement:
                 return AppCopy.current.text("Doris 不支持修改已有表的自增计数。", "Doris cannot alter an existing table's auto-increment counter.")
             }
-        case .redis, .elasticsearch, .kafka:
+        case .redis, .elasticsearch, .kafka, .milvus:
             return AppCopy.current.text("此驱动没有 SQL 表操作。", "This driver has no SQL table operations.")
         }
     }

@@ -7,9 +7,15 @@ struct WorkspaceSQLGridHeaderConfiguration: Equatable {
     var scope = ""
     var retainsMissingDetails = false
 
+    var showsCommentLine: Bool {
+        showsComments && columnDetails.values.contains {
+            !$0.comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
     @MainActor var height: CGFloat {
         WorkspaceGridMetrics.headerHeight
-            + CGFloat((showsComments ? 1 : 0) + (showsTypes ? 1 : 0)) * 18
+            + CGFloat((showsCommentLine ? 1 : 0) + (showsTypes ? 1 : 0)) * 18
     }
 }
 
@@ -35,6 +41,11 @@ enum WorkspaceSQLGridHeader {
            let previous = headerView.sqlHeaderConfiguration,
            incoming.scope == previous.scope {
             incoming.columnDetails = previous.columnDetails.merging(incoming.columnDetails) { _, new in new }
+            configuration = incoming
+        }
+        if var incoming = configuration {
+            let displayedIDs = Set(columns.map(\.id))
+            incoming.columnDetails = incoming.columnDetails.filter { displayedIDs.contains($0.key) }
             configuration = incoming
         }
         headerView.sqlHeaderConfiguration = configuration
@@ -68,7 +79,7 @@ enum WorkspaceSQLGridHeader {
             cell.comment = details?.comment ?? ""
             // Expressions have their own result type and no source-column comment.
             cell.columnType = details?.type ?? column.type ?? ""
-            cell.showsComments = configuration.showsComments
+            cell.showsComments = configuration.showsCommentLine
             cell.showsTypes = configuration.showsTypes
             let tooltip = ([column.name]
                 + (configuration.showsComments ? [cell.comment] : [])
@@ -115,7 +126,8 @@ final class WorkspaceSQLGridHeaderCell: NSTableHeaderCell {
             let rect = NSRect(
                 x: cellFrame.minX + 6,
                 y: y + (lineHeight - line.1.ascender + line.1.descender) / 2,
-                width: max(0, cellFrame.width - (index == 0 ? 24 : 12)),
+                width: max(0, cellFrame.width - (index == 0
+                    ? ((controlView as? WorkspaceGridHeaderView)?.hasSortControls == true ? 32 : 24) : 12)),
                 height: lineHeight
             )
             let text = line.0.components(separatedBy: .newlines).joined(separator: " ")
@@ -126,6 +138,7 @@ final class WorkspaceSQLGridHeaderCell: NSTableHeaderCell {
             ])
         }
         if let header = controlView as? NSTableHeaderView,
+           (header as? WorkspaceGridHeaderView)?.hasSortControls != true,
            let table = header.tableView,
            let column = table.tableColumns.first(where: { $0.headerCell === self }),
            let indicator = table.indicatorImage(in: column) {

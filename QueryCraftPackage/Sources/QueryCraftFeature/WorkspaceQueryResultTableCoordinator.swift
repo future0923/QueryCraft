@@ -574,6 +574,7 @@ private extension WorkspaceQueryResultTableCoordinator {
             tableView.cellEditHandler = nil
             tableView.canEditCellHandler = nil
             tableView.cellTypingHandler = nil
+            tableView.selectedCellPasteHandler = nil
             tableView.inlineEditorLayoutHandler = nil
             return
         }
@@ -602,6 +603,9 @@ private extension WorkspaceQueryResultTableCoordinator {
             )
             return true
         }
+        tableView.selectedCellPasteHandler = { [weak self] row, column, mutation in
+            self?.fillSelectedCells(row: row, column: column, mutation: mutation) ?? false
+        }
         tableView.inlineEditorLayoutHandler = { [weak self] in
             self?.inlineEditor.layout()
         }
@@ -618,33 +622,20 @@ private extension WorkspaceQueryResultTableCoordinator {
             clickedRow: clickedRow,
             clickedTableColumnIndex: clickedTableColumnIndex
         )
-        guard coordinates.count > 1 else { return false }
+        guard coordinates.count != 1 else { return false }
 
-        let contexts = coordinates.compactMap { coordinate ->
-            WorkspaceDatabaseDataCellInlineEditContext? in
-            guard
-                let target = loadedCellEditTarget(
-                    row: coordinate.row,
-                    tableColumnIndex: coordinate.column
-                ),
-                canEditCell(
-                    row: coordinate.row,
-                    tableColumnIndex: coordinate.column
-                ),
-                let context = prepareCellEdit?(target)
-            else {
-                return nil
-            }
-            return context
-        }
-        guard contexts.count == coordinates.count else {
-            NSSound.beep()
-            return true
-        }
+        return fillSelectedCells(row: clickedRow, column: clickedTableColumnIndex, mutation: .value(text))
+    }
 
-        for context in contexts {
-            updateCellEdit(context, .value(text))
-        }
+    func fillSelectedCells(row: Int, column: Int, mutation: WorkspaceDatabaseInspectorMutation) -> Bool {
+        let coordinates = selectedTypingCoordinates(clickedRow: row, clickedTableColumnIndex: column)
+        let applied = WorkspaceGridSelectedCellEditing.apply(mutation, coordinates: coordinates, prepare: { coordinate in
+            guard self.canEditCell(row: coordinate.row, tableColumnIndex: coordinate.column),
+                  let target = self.loadedCellEditTarget(row: coordinate.row, tableColumnIndex: coordinate.column)
+            else { return nil }
+            return self.prepareCellEdit?(target)
+        }, update: updateCellEdit)
+        if !applied { NSSound.beep() }
         return true
     }
 
@@ -655,42 +646,11 @@ private extension WorkspaceQueryResultTableCoordinator {
         guard let tableView = tableView as? WorkspaceDirectDrawTableView else {
             return []
         }
-        if !tableView.gridSelection.isEmpty {
-            guard tableView.gridSelection.contains(
-                row: clickedRow,
-                column: clickedTableColumnIndex
-            ) else {
-                return [WorkspaceGridCoordinate(
-                    row: clickedRow,
-                    column: clickedTableColumnIndex
-                )]
-            }
-            return selectedLoadedCoordinates(
-                clickedRow: clickedRow,
-                clickedTableColumnIndex: clickedTableColumnIndex
-            )
-        }
-
-        guard tableView.selectedDataRowIndexesForActions.contains(clickedRow)
-        else {
-            return [WorkspaceGridCoordinate(
-                row: clickedRow,
-                column: clickedTableColumnIndex
-            )]
-        }
         let dataColumnIndexes = tableView.tableColumns.indices.filter {
             columnIndexes[tableView.tableColumns[$0].identifier] != nil
         }
-        return tableView.selectedDataRowIndexesForActions.flatMap { row in
-            dataColumnIndexes.compactMap { column in
-                loadedCellEditTarget(
-                    row: row,
-                    tableColumnIndex: column
-                ).map { _ in
-                    WorkspaceGridCoordinate(row: row, column: column)
-                }
-            }
-        }
+        return WorkspaceGridSelectedCellEditing.coordinates(in: tableView,
+            clicked: .init(row: clickedRow, column: clickedTableColumnIndex), dataColumns: dataColumnIndexes)
     }
 
     func canEditCell(row: Int, tableColumnIndex: Int) -> Bool {

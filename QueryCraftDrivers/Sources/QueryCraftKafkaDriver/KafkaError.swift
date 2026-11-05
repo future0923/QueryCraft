@@ -1,7 +1,7 @@
 import Foundation
 import QueryCraftFeature
 
-enum KafkaError: LocalizedError, Equatable, Sendable {
+enum KafkaError: LocalizedError, CustomNSError, Equatable, Sendable {
     case invalidConfiguration(String)
     case network(String)
     case invalidResponse
@@ -11,6 +11,15 @@ enum KafkaError: LocalizedError, Equatable, Sendable {
     case noLeader(topic: String, partition: Int32)
     case fetchNoProgress(topic: String, partition: Int32, offset: Int64, highWatermark: Int64)
     case messageDecode(String)
+
+    static var errorDomain: String { "io.querycraft.driver.kafka" }
+    var errorCode: Int {
+        if case .protocolError(let code, _) = self { return Int(code) }
+        // Legacy librdkafka paths retain text only, including non-network
+        // failures in .network. Do not infer authentication or network status.
+        return Int.min
+    }
+    var errorUserInfo: [String: Any] { [NSLocalizedDescriptionKey: errorDescription ?? ""] }
 
     var errorDescription: String? {
         switch self {

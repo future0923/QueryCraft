@@ -34,6 +34,7 @@ enum MCPPermissionSummary {
         case .redis: copy.text("Redis DB", "Redis DBs")
         case .elasticsearch: copy.text("索引、别名或数据流", "Indices, aliases or data streams")
         case .kafka: "Topic"
+        case .milvus: copy.text("数据库", "Databases")
         default: copy.text("数据库", "Databases")
         }
     }

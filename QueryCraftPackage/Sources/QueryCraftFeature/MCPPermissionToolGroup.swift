@@ -9,7 +9,7 @@ enum MCPPermissionToolGroup: String, CaseIterable, Identifiable, Sendable {
         return switch self {
         case .schema: copy.text("结构与查询", "Schema and queries")
         case .sessions: copy.text("会话与事务", "Sessions and transactions")
-        case .drivers: copy.text("Redis、Elasticsearch 与 Kafka", "Redis, Elasticsearch and Kafka")
+        case .drivers: copy.text("Redis、Elasticsearch、Kafka 与 Milvus", "Redis, Elasticsearch, Kafka and Milvus")
         case .connections: copy.text("连接与驱动", "Connections and drivers")
         case .desktop: copy.text("桌面集成", "Desktop integration")
         }
@@ -21,7 +21,7 @@ enum MCPPermissionToolGroup: String, CaseIterable, Identifiable, Sendable {
         let names: [Self: Set<String>] = [
             .schema: MCPToolCatalog.metadataTools.union(["execute_query", "execute_batch", "get_batch_results"]),
             .sessions: ["open_session", "close_session", "begin_transaction", "commit_transaction", "rollback_transaction"],
-            .drivers: ["execute_redis_command", "execute_request", "peek_messages", "send_message", "consumer_groups"],
+            .drivers: ["execute_milvus_request", "execute_redis_command", "execute_request", "peek_messages", "send_message", "consumer_groups"],
             .connections: Set(["runtime_info", "list_connections", "add_connection", "duplicate_connection", "remove_connection", "plugin_list", "plugin_tools", "plugin_call"]).union(MCPToolCatalog.sshTools).union(MCPToolCatalog.shellTools),
             .desktop: ["open_table", "execute_and_show"]
         ]

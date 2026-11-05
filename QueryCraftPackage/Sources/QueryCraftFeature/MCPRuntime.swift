@@ -228,10 +228,10 @@ actor MCPRuntime {
             profile = current
         }
         var database = args.string("database") ?? savedEntry?.database ?? profile.defaultDatabase
-            ?? (profile.databaseType == .redis ? "0" : profile.databaseType == .kafka ? "Kafka" : nil)
+            ?? (profile.databaseType == .redis ? "0" : profile.databaseType == .kafka ? "Kafka" : profile.databaseType == .milvus ? "default" : nil)
         if tool == "list_databases" {
             if [.mysql, .doris].contains(profile.databaseType) { database = nil }
-            else if profile.databaseType == .postgresql, let allowed = policy.connectionRule(profile).allowedDatabases,
+            else if [.postgresql, .milvus].contains(profile.databaseType), let allowed = policy.connectionRule(profile).allowedDatabases,
                     database.map({ !policy.permitsDatabaseName($0, profile: profile) }) ?? true { database = allowed.sorted().first }
         }
         policy = try store.load()
@@ -264,6 +264,7 @@ actor MCPRuntime {
             || (["list_routines", "get_routine_source"].contains(tool) && ![.mysql, .postgresql].contains(profile.databaseType))
             || (tool == "execute_redis_command" && profile.databaseType != .redis)
             || (tool == "execute_request" && profile.databaseType != .elasticsearch)
+            || (tool == "execute_milvus_request" && profile.databaseType != .milvus)
             || (["peek_messages", "send_message", "consumer_groups"].contains(tool) && profile.databaseType != .kafka) {
             throw MCPFailure("This tool is not supported by the selected connection's driver.", code: .unsupported)
         }
@@ -370,7 +371,9 @@ actor MCPRuntime {
         if profile.storesCredential && secret == nil { throw MCPFailure("Saved credential is unavailable. Restore it in the QueryCraft connection editor.", code: .credentialUnavailable) }
         let configuration = DatabaseConnectionConfiguration(databaseType: profile.databaseType, databaseProduct: profile.databaseProduct,
             host: profile.host, port: profile.port, authentication: profile.authentication(secret: secret), database: database, tlsMode: profile.tlsMode)
-        let session = try await registry.makeSession(configuration: configuration)
+        let session: any WorkspaceSession
+        do { session = try await registry.makeSession(configuration: configuration) }
+        catch { throw MCPFailure.databaseOperation(error, phase: .driverLoad, type: profile.databaseType) }
         do {
             let seconds = max(1, (try? store.load().effectiveQueryTimeoutSeconds).flatMap { $0 == 0 ? nil : $0 } ?? 30)
             try await withThrowingTaskGroup(of: Void.self) { group in
@@ -395,7 +398,10 @@ actor MCPRuntime {
                 _ = try await group.next()
             }
             return session
-        } catch { await session.close(); throw error }
+        } catch {
+            await session.close()
+            throw MCPFailure.databaseOperation(error, phase: .connect, type: profile.databaseType)
+        }
     }
 
     func transaction(_ operation: SQLStatementKind.TransactionOperation, entry: Session) async throws {
@@ -415,7 +421,8 @@ actor MCPRuntime {
                 throw MCPFailure("Transaction operation timed out; its outcome may be unconfirmed. Do not retry automatically.", code: .timeout)
             }
             defer { group.cancelAll() }
-            _ = try await group.next()
+            do { _ = try await group.next() }
+            catch { throw MCPFailure.databaseOperation(error, phase: .transaction, type: entry.profile.databaseType) }
         }
     }
     func expireSessions(policy: MCPPolicy) async {

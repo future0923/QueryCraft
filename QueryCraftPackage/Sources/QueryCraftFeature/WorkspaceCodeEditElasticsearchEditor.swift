@@ -13,6 +13,7 @@ struct WorkspaceCodeEditElasticsearchEditor: View {
     @State private var completionService: WorkspaceElasticsearchCompletionService
     @State private var navigationCoordinator = WorkspaceElasticsearchEditorNavigationCoordinator()
     private let navigationRequest: WorkspaceElasticsearchEditorNavigationRequest?
+    private let focusChanged: @MainActor (Bool) -> Void
 
     init(
         text: Binding<String>,
@@ -20,11 +21,13 @@ struct WorkspaceCodeEditElasticsearchEditor: View {
         navigationRequest: WorkspaceElasticsearchEditorNavigationRequest? = nil,
         completionFields: @escaping @MainActor (String?) async -> [String],
         completionResources: @escaping @MainActor ()
-            -> [WorkspaceElasticsearchCompletionResource]
+            -> [WorkspaceElasticsearchCompletionResource],
+        focusChanged: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
         _text = text
         _selectedRange = selectedRange
         self.navigationRequest = navigationRequest
+        self.focusChanged = focusChanged
         _editorState = State(initialValue: SourceEditorState(
             cursorPositions: [CursorPosition(range: selectedRange.wrappedValue)]
         ))
@@ -56,6 +59,13 @@ struct WorkspaceCodeEditElasticsearchEditor: View {
             coordinators: [navigationCoordinator],
             completionDelegate: completionService
         )
+        .background {
+            WorkspaceNativeFocusObserver(
+                matches: navigationCoordinator.ownsFirstResponder,
+                didChange: focusChanged
+            )
+            .allowsHitTesting(false)
+        }
         .onChange(of: editorState.cursorPositions) { _, positions in
             guard let range = positions?.first?.range,
                   range.location != NSNotFound

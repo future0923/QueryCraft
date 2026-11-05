@@ -603,7 +603,8 @@ final class RedisClient: @unchecked Sendable {
             return String(cString: baseAddress.assumingMemoryBound(to: CChar.self))
         }
         return RedisClientError(
-            message: message.isEmpty ? "Redis connection failed." : message
+            message: message.isEmpty ? "Redis connection failed." : message,
+            transportCode: Int(context.pointee.err)
         )
     }
 

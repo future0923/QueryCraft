@@ -144,6 +144,8 @@ public struct WorkspaceView: View {
                 WorkspaceInspectorView(
                     context: selectedInspectorContext
                 )
+                .workspaceFocusedValue(\.workspacePendingChangesActions,
+                    pendingChangesRegistry.actions(for: tabsModel.selectedContentID))
             }
             .frame(
                 width: geometry.size.width,
@@ -202,18 +204,12 @@ public struct WorkspaceView: View {
             )
         )
         .focusedSceneValue(
-            \.workspacePendingChangesActions,
-            toolbarModel.focusedPendingChangesActions
-        )
-        .focusedSceneValue(
             \.workspaceContentTabActions,
             workspaceContentTabActions
         )
         .background {
             Group {
-                WorkspacePendingChangesKeyCommandHandler(
-                    actions: toolbarModel.focusedPendingChangesActions
-                )
+                WorkspacePendingChangesShortcutHost()
                 WorkspaceContentTabKeyCommandHandler(
                     actions: workspaceContentTabActions
                 )
@@ -521,4 +517,10 @@ public struct WorkspaceView: View {
     private var combinedSidebarMinimumWidth: CGFloat {
         Self.sidebarMinimumWidth + databaseRailWidth
     }
+}
+
+/// Keep focus invalidation out of the window's sidebar and content tree.
+private struct WorkspacePendingChangesShortcutHost: View {
+    @FocusedValue(\.workspacePendingChangesActions) private var actions
+    var body: some View { WorkspacePendingChangesKeyCommandHandler(actions: actions) }
 }

@@ -72,6 +72,7 @@ final class WorkspaceDirectDrawTableView: NSTableView {
     var singleClickCellHandler: ((Int, Int) -> Bool)?
     var auxiliaryCellSingleClickHandler: ((Int, Int) -> Bool)?
     var cellTypingHandler: ((Int, Int, String) -> Bool)?
+    var selectedCellPasteHandler: ((Int, Int, WorkspaceDatabaseInspectorMutation) -> Bool)?
     var cellContextMenuProvider: ((Int, Int) -> NSMenu?)?
     var cellValueMutationMenuItemsProvider: ((Int, Int) -> [NSMenuItem])?
     var additionalCellContextMenuItemsProvider: ((Int, Int) -> [NSMenuItem])?
@@ -447,6 +448,12 @@ final class WorkspaceDirectDrawTableView: NSTableView {
     }
 
     @objc func paste(_ sender: Any?) {
+        let content = WorkspaceGridPasteboardContent.read(from: copyPasteboard)
+        if let coordinate = textEntryCoordinate,
+           let mutation = WorkspaceGridSelectedCellEditing.pastedValue(content),
+           selectedCellPasteHandler?(coordinate.row, coordinate.column, mutation) == true {
+            return
+        }
         guard
             let pasteDataRowsHandler,
             let firstDataColumn = dataTableColumnIndexes.first
@@ -457,10 +464,16 @@ final class WorkspaceDirectDrawTableView: NSTableView {
         let active = gridSelection.active
         let startingColumn = active.map(\.column) ?? firstDataColumn
         pasteDataRowsHandler(
-            WorkspaceGridPasteboardContent.read(from: copyPasteboard),
+            content,
             startingColumn,
             active?.row
         )
+    }
+
+    private var textEntryCoordinate: WorkspaceGridCoordinate? {
+        gridSelection.active ?? selectedRowIndexes.first.flatMap { row in
+            dataTableColumnIndexes.first.map { .init(row: row, column: $0) }
+        }
     }
 
     func copyRow(at row: Int) {
@@ -689,7 +702,9 @@ final class WorkspaceDirectDrawTableView: NSTableView {
         case #selector(findInData(_:)):
             canFindInData
         case #selector(paste(_:)):
-            pasteDataRowsHandler != nil
+            (pasteDataRowsHandler != nil || (selectedCellPasteHandler != nil
+                && textEntryCoordinate.map { canEditCellHandler?($0.row, $0.column) != false } == true
+                && WorkspaceGridSelectedCellEditing.pastedValue(.read(from: copyPasteboard)) != nil))
                 && copyPasteboard.availableType(from: [
                     WorkspaceGridClipboardPayload.pasteboardType,
                     WorkspaceGridClipboardEncoder.tabSeparatedTextType,
@@ -1550,6 +1565,35 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
     /// (not a resize, reorder, or drag). Receives the table column
     /// index and whether shift was held.
     var columnSelectionHandler: ((Int, Bool) -> Void)?
+    var sortColumnHandler: ((NSTableColumn) -> Void)? {
+        didSet { if (oldValue == nil) != (sortColumnHandler == nil) { needsLayout = true } }
+    }
+    var sortMenuProvider: ((NSTableColumn) -> NSMenu)? {
+        didSet { if (oldValue == nil) != (sortMenuProvider == nil) { needsLayout = true } }
+    }
+    var hasSortControls: Bool { sortColumnHandler != nil || sortMenuProvider != nil }
+    var sortDirections: [NSUserInterfaceItemIdentifier: WorkspaceDatabaseDataSort] = [:] {
+        didSet { if oldValue != sortDirections { needsLayout = true } }
+    }
+    var sortingEnabled = true { didSet { if oldValue != sortingEnabled { needsLayout = true } } }
+    private var sortButtons: [NSUserInterfaceItemIdentifier: NSButton] = [:]
+    private lazy var unsortedImage = makeSortImage(up: true, down: true)
+    private lazy var ascendingImage = makeSortImage(up: true, down: false)
+    private lazy var descendingImage = makeSortImage(up: false, down: true)
+
+    private func makeSortImage(up: Bool, down: Bool) -> NSImage {
+        // Keep both arrows in fixed slots. Sorting removes one arrow rather
+        // than centering a replacement glyph or changing the button width.
+        let image = NSImage(size: NSSize(width: 18, height: 14), flipped: false) { _ in
+            for (visible, symbol, x) in [(up, "arrow.up", CGFloat(2)), (down, "arrow.down", CGFloat(10))] where visible {
+                NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.draw(
+                    in: NSRect(x: x, y: 1, width: 6, height: 12))
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
 
     private lazy var resetColumnWidthsButton: NSButton = {
         let description = AppCopy.current.text(
@@ -1588,6 +1632,7 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
 
     override func layout() {
         super.layout()
+        layoutSortButtons()
         guard
             let tableView = tableView as? WorkspaceDirectDrawTableView,
             let rowNumberIdentifier = tableView.rowNumberIdentifier,
@@ -1608,6 +1653,71 @@ final class WorkspaceGridHeaderView: NSTableHeaderView {
             width: side,
             height: side
         )
+    }
+
+    private func layoutSortButtons() {
+        guard let tableView else { return }
+        let columns = !hasSortControls ? [] : tableView.tableColumns.filter {
+            $0.identifier != (tableView as? WorkspaceDirectDrawTableView)?.rowNumberIdentifier
+        }
+        let identifiers = Set(columns.map(\.identifier))
+        for identifier in Array(sortButtons.keys) where !identifiers.contains(identifier) {
+            sortButtons.removeValue(forKey: identifier)?.removeFromSuperview()
+        }
+        for column in columns {
+            let button: NSButton
+            if let existing = sortButtons[column.identifier] { button = existing }
+            else {
+                button = NSButton(image: unsortedImage,
+                    target: self, action: #selector(sortColumnPressed(_:)))
+                button.isBordered = false
+                button.imagePosition = .imageOnly
+                button.imageScaling = .scaleProportionallyDown
+                button.controlSize = .small
+                button.focusRingType = .none
+                button.setAccessibilityIdentifier("sortGridColumn.\(column.identifier.rawValue)")
+                sortButtons[column.identifier] = button
+                addSubview(button)
+            }
+            let rect = headerRect(ofColumn: tableView.column(withIdentifier: column.identifier))
+            let lineCount = 1 + (sqlHeaderConfiguration?.showsCommentLine == true ? 1 : 0)
+                + (sqlHeaderConfiguration?.showsTypes == true ? 1 : 0)
+            let padding = max(0, (rect.height - CGFloat(lineCount) * 18) / 2)
+            let firstLineCenter = isFlipped ? rect.minY + padding + 9 : rect.maxY - padding - 9
+            let frame = NSRect(x: rect.maxX - 23, y: firstLineCenter - 9, width: 18, height: 18)
+            if button.frame != frame { button.frame = frame }
+            if button.isEnabled != sortingEnabled { button.isEnabled = sortingEnabled }
+            let direction = sortDirections[column.identifier] ?? .none
+            let image: NSImage
+            let state: String
+            switch direction {
+            case .none:
+                image = unsortedImage
+                state = AppCopy.current.text("未排序", "Unsorted")
+            case .ascending:
+                image = ascendingImage
+                state = AppCopy.current.text("升序", "Ascending")
+            case .descending:
+                image = descendingImage
+                state = AppCopy.current.text("降序", "Descending")
+            }
+            if button.image !== image { button.image = image }
+            let tint: NSColor = direction == .none ? .secondaryLabelColor : .controlAccentColor
+            if button.contentTintColor != tint { button.contentTintColor = tint }
+            let label = AppCopy.current.text("排序：", "Sort: ") + column.title + " · " + state
+            if button.toolTip != label {
+                button.toolTip = label
+                button.setAccessibilityLabel(label)
+            }
+        }
+    }
+
+    @objc private func sortColumnPressed(_ sender: NSButton) {
+        guard sortingEnabled, let identifier = sortButtons.first(where: { $0.value === sender })?.key,
+              let column = tableView?.tableColumns.first(where: { $0.identifier == identifier }) else { return }
+        if let menu = sortMenuProvider?(column) {
+            menu.popUp(positioning: nil, at: NSPoint(x: sender.frame.minX, y: sender.frame.maxY + 2), in: self)
+        } else { sortColumnHandler?(column) }
     }
 
     @objc private func resetColumnWidthsButtonPressed(_ sender: NSButton) {

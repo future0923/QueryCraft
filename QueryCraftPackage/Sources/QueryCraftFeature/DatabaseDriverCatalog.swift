@@ -126,6 +126,12 @@ enum DatabaseDriverCatalog {
             isDownloadable: true,
             manifestURL: manifestURL(for: .kafka)
         ),
+        DatabaseDriverCatalogEntry(
+            databaseType: .milvus,
+            category: .document,
+            isDownloadable: true,
+            manifestURL: manifestURL(for: .milvus)
+        ),
     ]
 
     static func entry(for databaseType: DatabaseType)

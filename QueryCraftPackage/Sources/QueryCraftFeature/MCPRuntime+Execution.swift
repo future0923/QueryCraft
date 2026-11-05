@@ -17,7 +17,8 @@ extension MCPRuntime {
                 }
             }
             defer { group.cancelAll() }
-            return try await group.next()!
+            do { return try await group.next()! }
+            catch { throw MCPFailure.databaseOperation(error, phase: .execution, type: profile.databaseType) }
         }
     }
 
@@ -102,7 +103,10 @@ extension MCPRuntime {
                 throw MCPFailure("This pinned transaction is read-only. Open a session in the writable target database.", code: .accessDenied)
             }
             let ownsTransaction = atomic || readOnlyTransaction
-            if let schema = args.string("schema") { try await connection.applyQueryContext(.init(databaseName: database ?? "", schemaName: schema)) }
+            if let schema = args.string("schema") {
+                do { try await connection.applyQueryContext(.init(databaseName: database ?? "", schemaName: schema)) }
+                catch { throw MCPFailure.databaseOperation(error, phase: .queryContext, type: profile.databaseType) }
+            }
             if ownsTransaction { _ = try await connection.executeStatement(readOnlyTransaction ? "START TRANSACTION READ ONLY" : "BEGIN", kind: .transaction(.begin), database: database, onBatch: { _ in }) }
             var results: [MCPJSONValue] = []
             var committing = false
@@ -128,11 +132,11 @@ extension MCPRuntime {
                                                 "affected_or_returned_rows": .int(result.rowCount),
                                                 "transaction": .string(inTransaction || atomic ? "active" : "autocommit")]))
                     } catch {
+                        let failure = MCPFailure.databaseOperation(error, phase: .statement, type: profile.databaseType)
                         if tool == "execute_batch" {
-                            let failure = MCPFailure.normalized(error)
                             results.append(.object(["statement_index": .int(index), "sql": .string(statement.sql), "error": failure.value.objectValue?["error"] ?? .null]))
                         }
-                        guard args.flag("continue_on_error"), !ownsTransaction, !inTransaction, !Task.isCancelled else { throw error }
+                        guard args.flag("continue_on_error"), !ownsTransaction, !inTransaction, !Task.isCancelled else { throw failure }
                         if tool != "execute_batch" { results.append(.object(["sql": .string(statement.sql), "error": .string("Statement failed. No automatic retry was performed.")])) }
                     }
                 }
@@ -158,7 +162,9 @@ extension MCPRuntime {
                     let failure = MCPFailure.normalized(error)
                     let summary = batchResponse(results: results, total: statements.count, profile: profile, database: database, policy: policy,
                         transaction: transactionStatus, completed: false, detailed: false)
-                    throw MCPFailure(failure.message, code: failure.code, details: summary, recovery: failure.recovery)
+                    var details = summary.objectValue ?? [:]
+                    details.merge(failure.details?.objectValue ?? [:]) { _, diagnostic in diagnostic }
+                    throw MCPFailure(failure.message, code: failure.code, details: .object(details), recovery: failure.recovery)
                 }
                 throw error
             }
@@ -204,6 +210,34 @@ extension MCPRuntime {
             guard let db = RedisLogicalDatabase.index(from: database) else { throw MCPFailure("Invalid Redis logical database.") }
             let result = try await redis.executeRedisCommand(.init(source: arguments.joined(separator: " "), arguments: arguments), databaseIndex: db)
             return .object(["reply": redisValue(result.reply), "truncated": .bool(redisTruncated(result.reply))])
+        case "execute_milvus_request":
+            guard profile.databaseType == .milvus,
+                  let rest = connection as? any WorkspaceRequestExecutingSession else {
+                throw MCPFailure("Update the Milvus driver for REST query/get/search.", code: .unsupported)
+            }
+            let collection = try args.requiredString("collection")
+            let operation = try args.requiredString("operation")
+            let request: WorkspaceRequest
+            do {
+                request = try MilvusReadRequest.make(operation: operation, database: database ?? "default",
+                    collection: collection, body: Data(try args.requiredString("body").utf8), maximumRows: limit)
+            } catch { throw MCPFailure(error.localizedDescription, code: .invalidArgument) }
+            // Metadata and data reads use the same database/object authorization.
+            guard let object = try await connection.fetchObjects(in: database ?? "default").first(where: {
+                $0.name == collection && policy.permitsObject($0, profile: profile, schema: nil)
+            }), object.kind == .milvusCollection else {
+                throw MCPFailure("Collection is missing or outside the authorized scope.", code: .objectNotFound)
+            }
+            let result = try await rest.executeRequest(request, policy: .readOnly)
+            guard result.body.count <= policy.maximumResultBytes else {
+                throw MCPFailure("Milvus response exceeds the result limit. Reduce max_rows or outputFields.", code: .resultTooLarge)
+            }
+            guard let envelope = try JSONSerialization.jsonObject(with: result.body) as? [String: Any],
+                  let rows = envelope["data"] as? [Any], rows.count <= limit else {
+                throw MCPFailure("Milvus returned an invalid or oversized entity list.", code: .resultTooLarge)
+            }
+            return .object(["status": .int(result.statusCode), "body": .string(String(decoding: result.body, as: UTF8.self)),
+                            "returned_entities": .int(rows.count), "max_rows": .int(limit)])
         case "execute_request":
             invalidateMetadata(for: profile.id)
             defer { invalidateMetadata(for: profile.id) }

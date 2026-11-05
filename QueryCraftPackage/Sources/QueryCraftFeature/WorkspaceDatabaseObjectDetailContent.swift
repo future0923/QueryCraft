@@ -9,6 +9,8 @@ struct WorkspaceDatabaseObjectDetailContent: View {
     let selectedTab: WorkspaceDatabaseObjectDetailTab
     let retry: () -> Void
     let sortData: (WorkspaceDatabaseDataSort) -> Void
+    var sortCurrentPage: ((WorkspaceDatabaseDataSort) -> Void)? = nil
+    var supportsDatabaseSorting = true
     let appliedDataFilter: WorkspaceDatabaseDataFilter
     let dataFilterEditor: WorkspaceDatabaseDataFilterEditor
     let isDataFilterPresented: Bool
@@ -81,6 +83,8 @@ struct WorkspaceDatabaseObjectDetailContent: View {
             dataState: dataState,
             retry: retry,
             sortData: sortData,
+            sortCurrentPage: sortCurrentPage,
+            supportsDatabaseSorting: supportsDatabaseSorting,
             appliedDataFilter: appliedDataFilter,
             dataFilterEditor: dataFilterEditor,
             isDataFilterPresented: isDataFilterPresented,

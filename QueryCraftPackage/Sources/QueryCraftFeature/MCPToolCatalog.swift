@@ -5,7 +5,7 @@ struct MCPToolDefinition: Sendable {
     let description: String
     let properties: [String: MCPJSONValue]
     let required: [String]
-    private static let titles = ["runtime_info": "检查运行时版本", "list_connections": "列出连接", "list_databases": "列出数据库", "list_tables": "列出表与对象", "describe_table": "查看结构", "get_schema_context": "获取结构上下文", "list_routines": "列出存储过程", "get_routine_source": "读取过程定义", "execute_query": "执行查询", "execute_batch": "批量执行", "get_batch_results": "读取批量执行明细", "open_session": "打开会话", "close_session": "关闭会话", "begin_transaction": "开始事务", "commit_transaction": "提交事务", "rollback_transaction": "回滚事务", "execute_redis_command": "执行 Redis 命令", "execute_request": "执行 ES 请求", "peek_messages": "读取 Kafka 消息", "send_message": "发送 Kafka 消息", "consumer_groups": "查看消费组", "add_connection": "添加连接", "duplicate_connection": "复制连接", "remove_connection": "删除连接", "open_table": "在桌面打开对象", "execute_and_show": "执行并展示结果", "plugin_tools": "发现驱动工具", "plugin_call": "调用驱动工具", "plugin_list": "列出驱动"]
+    private static let titles = ["runtime_info": "检查运行时版本", "list_connections": "列出连接", "list_databases": "列出数据库", "list_tables": "列出表与对象", "describe_table": "查看结构", "get_schema_context": "获取结构上下文", "list_routines": "列出存储过程", "get_routine_source": "读取过程定义", "execute_query": "执行查询", "execute_batch": "批量执行", "get_batch_results": "读取批量执行明细", "open_session": "打开会话", "close_session": "关闭会话", "begin_transaction": "开始事务", "commit_transaction": "提交事务", "rollback_transaction": "回滚事务", "execute_redis_command": "执行 Redis 命令", "execute_request": "执行 ES 请求", "execute_milvus_request": "查询 Milvus 实体与向量", "peek_messages": "读取 Kafka 消息", "send_message": "发送 Kafka 消息", "consumer_groups": "查看消费组", "add_connection": "添加连接", "duplicate_connection": "复制连接", "remove_connection": "删除连接", "open_table": "在桌面打开对象", "execute_and_show": "执行并展示结果", "plugin_tools": "发现驱动工具", "plugin_call": "调用驱动工具", "plugin_list": "列出驱动"]
     var localizedTitle: String {
         let sshTitles = ["ssh_list_connections": "列出 SSH 连接", "ssh_add_connection": "添加 SSH 连接", "ssh_remove_connection": "删除 SSH 连接",
                          "ssh_test_connection": "测试 SSH 连接", "ssh_execute": "执行 SSH 命令"]
@@ -28,7 +28,7 @@ enum MCPToolCatalog {
         .union(sshFileReads).union(sshTransfers).union(sshFileWrites).union(sshRecoveryReads).union(sshRecoveryWrites).union(sshTaskReads).union(sshTaskWrites)
     static let metadataTools: Set<String> = ["list_databases", "list_tables", "describe_table", "get_schema_context", "list_routines", "get_routine_source"]
     static let metaTools: Set<String> = ["plugin_list", "plugin_tools", "plugin_call"]
-    static let readTools = metadataTools.union(["get_batch_results", "runtime_info", "list_connections", "plugin_list", "plugin_tools", "peek_messages", "consumer_groups", "ssh_list_connections", "ssh_test_connection"])
+    static let readTools = metadataTools.union(["get_batch_results", "runtime_info", "list_connections", "plugin_list", "plugin_tools", "peek_messages", "consumer_groups", "execute_milvus_request", "ssh_list_connections", "ssh_test_connection"])
         .union(sshFileReads).union(sshRecoveryReads).union(sshTaskReads).union(shellReads)
     static let guidedInstructions = """
     Use QueryCraft to inspect authorized saved connections and query through installed drivers.
@@ -48,6 +48,8 @@ enum MCPToolCatalog {
     cell windows, narrow to one row/column before using cell_char_offset and next_offset.
     For Kafka use peek_messages timestamp_ms/offset/latest_count and exact key/event_id filters;
     inspect scan.complete before treating an empty filtered result as absence.
+    For Milvus use execute_milvus_request with operation query/get/search and the exact collection.
+    Search accepts one query per call. Use max_rows and explicit outputFields to bound results.
     Metadata may be cached for up to the configured TTL; use refresh=true for a current view.
     Use explicit sessions only when several calls need the same connection or transaction and
     close them when done. Never automatically retry an unconfirmed write or commit. An error's
@@ -139,6 +141,7 @@ enum MCPToolCatalog {
         case .redis: names.insert("execute_redis_command")
         case .elasticsearch: names.insert("execute_request")
         case .kafka: names.formUnion(["peek_messages", "send_message", "consumer_groups"])
+        case .milvus: names.insert("execute_milvus_request")
         }
         if [.mysql, .postgresql].contains(type) { names.formUnion(["open_session", "close_session", "begin_transaction", "commit_transaction", "rollback_transaction"]) }
         return names
@@ -160,6 +163,12 @@ enum MCPToolCatalog {
         definition("commit_transaction", "Commit a pinned transaction; never automatically retries an unconfirmed commit.", ["session_id": string("Session identifier.")], required: ["session_id"]),
         definition("rollback_transaction", "Roll back a pinned transaction; cleanup remains available after permission revocation.", ["session_id": string("Session identifier.")], required: ["session_id"]),
         definition("execute_redis_command", "Execute one Redis command. Use SCAN instead of KEYS; database chooses the logical DB.", ["arguments": .object(["type": "array", "items": .object(["type": "string"])]), "confirm_high_risk": .object(["type": "boolean"])], required: ["connection_id", "arguments"]),
+        definition("execute_milvus_request", "Read Milvus entities using REST v2 query/get/search. Database comes from the authorized selector, collection is required. body is a JSON object string of API options: query supports filter, outputFields, partitionNames, limit and offset; get requires id; search requires a single vector/text/sparse query in data or a single primary key in ids, with annsField and searchParams as needed. Large IDs should be strings. max_rows bounds query/search limit and get ID count. Returns the Milvus JSON envelope, preserving scores and vector values. No SQL or mutations.", [
+            "collection": string("Exact Collection name from list_tables."),
+            "operation": .object(["type": "string", "enum": .array(["query", "get", "search"].map(MCPJSONValue.string))]),
+            "body": string("JSON options object. dbName and collectionName cannot override the selected database/collection."),
+            "max_rows": integer("Maximum entities, default 100 and bounded by MCP policy.")
+        ], required: ["connection_id", "collection", "operation", "body"]),
         definition("execute_request", "Execute an Elasticsearch relative REST request under MCP permissions.", ["method": string("GET, HEAD, POST, PUT or DELETE"), "path": string("Relative API path."), "body": string("Optional JSON body."), "confirm_high_risk": .object(["type": "boolean"])], required: ["connection_id", "method", "path"]),
         definition("peek_messages", "Read bounded Kafka messages without committing offsets. Defaults to earliest/read_uncommitted. Exact key/event_id filters scan full messages and report scan completeness; old drivers reject unsupported options.", [
             "topic": string("Topic name."), "partition": integer("Optional partition."),

@@ -50,19 +50,18 @@ struct WorkspaceDetailView: View {
         } else {
             switch model.connectionState {
             case .connecting:
-                ContentUnavailableView {
-                    Label(
-                        AppCopy.current.text("正在连接", "Connecting"),
-                        systemImage: "network"
-                    )
-                } description: {
-                    Text(
-                        AppCopy.current.text(
-                            "正在打开数据库会话。",
-                            "Opening the database session."
+                Color(nsColor: .queryCraftWindowCanvas)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .bottom) {
+                        WorkspaceDatabaseDataProgressBar(
+                            isActive: true,
+                            accessibilityLabel: AppCopy.current.text(
+                                "正在连接",
+                                "Connecting"
+                            )
                         )
-                    )
-                }
+                        .allowsHitTesting(false)
+                    }
 
             case .connected:
                 EmptyView()

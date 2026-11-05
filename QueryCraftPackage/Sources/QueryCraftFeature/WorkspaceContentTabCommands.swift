@@ -12,7 +12,7 @@ public struct WorkspaceContentTabCommands: Commands {
             ) {
                 actions?.createQuery()
             }
-            .keyboardShortcut("t", modifiers: .command)
+            .keyboardShortcut(actions?.canCreateQuery == true ? KeyboardShortcut("t") : nil)
             .disabled(actions?.canCreateQuery != true)
 
             Divider()
@@ -20,7 +20,7 @@ public struct WorkspaceContentTabCommands: Commands {
             Button(AppCopy.current.text("关闭标签页", "Close Tab")) {
                 actions?.closeSelected()
             }
-            .keyboardShortcut("w", modifiers: .command)
+            .keyboardShortcut(actions != nil ? KeyboardShortcut("w") : nil)
             .disabled(actions == nil)
 
             ForEach(1...9, id: \.self) { number in
@@ -33,8 +33,8 @@ public struct WorkspaceContentTabCommands: Commands {
                     actions?.selectAtIndex(number - 1)
                 }
                 .keyboardShortcut(
-                    KeyEquivalent(Character(String(number))),
-                    modifiers: .control
+                    actions?.hasContentTabs == true
+                        ? KeyboardShortcut(KeyEquivalent(Character(String(number))), modifiers: .control) : nil
                 )
                 .disabled(actions?.hasContentTabs != true)
             }
@@ -42,13 +42,15 @@ public struct WorkspaceContentTabCommands: Commands {
             Button(AppCopy.current.text("下一个标签页", "Next Tab")) {
                 actions?.selectRelative(1)
             }
-            .keyboardShortcut("]", modifiers: [.command, .shift])
+            .keyboardShortcut(actions?.hasContentTabs == true
+                ? KeyboardShortcut("]", modifiers: [.command, .shift]) : nil)
             .disabled(actions?.hasContentTabs != true)
 
             Button(AppCopy.current.text("上一个标签页", "Previous Tab")) {
                 actions?.selectRelative(-1)
             }
-            .keyboardShortcut("[", modifiers: [.command, .shift])
+            .keyboardShortcut(actions?.hasContentTabs == true
+                ? KeyboardShortcut("[", modifiers: [.command, .shift]) : nil)
             .disabled(actions?.hasContentTabs != true)
         }
     }

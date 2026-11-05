@@ -62,8 +62,11 @@ def verify(app, drivers=None, previous_drivers=None):
             assert 'is implemented in both' not in checked.stderr, checked.stderr
             loaded = json.loads(checked.stdout)
             expected = ['doris', 'elasticsearch', 'kafka', 'mysql', 'postgresql', 'redis']
-            assert sorted(loaded) == expected, f'Driver loading mismatch: {loaded}'
-            print('PASS six API 5 drivers loaded from relocated standalone runtime: '+', '.join(loaded))
+            if any(plistlib.loads((bundle/'Contents/Info.plist').read_bytes()).get('QCDriverDatabaseType') == 'milvus'
+                   for bundle in drivers.glob('*.querycraftdriver')):
+                expected.append('milvus')
+            assert sorted(loaded) == sorted(expected), f'Driver loading mismatch: {loaded}'
+            print(f'PASS {len(expected)} API 5 drivers loaded from relocated standalone runtime: '+', '.join(loaded))
             for kind in ['MySQL', 'Doris']:
                 solo = root / ('Solo-' + kind)
                 source = next(drivers.glob(kind + '-*.querycraftdriver'))

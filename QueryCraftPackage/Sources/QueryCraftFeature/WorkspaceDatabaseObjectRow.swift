@@ -64,7 +64,10 @@ struct WorkspaceDatabaseObjectRow: View {
             .accessibilityIdentifier(
                 "databaseObject.\(selection.databaseName).\(selection.objectName)"
             )
-            .contextMenu {
+            .contextMenu { WorkspaceDatabaseObjectContextMenu(row: self) }
+    }
+
+    @ViewBuilder fileprivate var menuItems: some View {
                 ForEach(
                     contextTabs
                 ) { tab in
@@ -103,7 +106,6 @@ struct WorkspaceDatabaseObjectRow: View {
                               ? AppCopy.current.text("Kafka 内部 Topic 不支持删除", "Kafka internal topics cannot be deleted")
                               : AppCopy.current.text("删除此 Topic 及其全部消息", "Delete this topic and all its messages"))
                 }
-            }
     }
 
     private var contextTabs: [WorkspaceDatabaseObjectDetailTab] {
@@ -112,4 +114,9 @@ struct WorkspaceDatabaseObjectRow: View {
         }
         return WorkspaceDatabaseObjectDetailTab.available(for: selection.kind)
     }
+}
+
+private struct WorkspaceDatabaseObjectContextMenu: View {
+    let row: WorkspaceDatabaseObjectRow
+    var body: some View { row.menuItems }
 }

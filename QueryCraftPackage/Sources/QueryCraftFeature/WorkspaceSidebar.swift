@@ -52,7 +52,7 @@ struct WorkspaceSidebar: View {
                 VStack(spacing: 0) {
                     WorkspaceSidebarTabBar(
                         selection: $model.sidebarMode,
-                        showsQueries: model.databaseType != .kafka
+                        showsQueries: model.databaseType != .kafka && model.databaseType != .milvus
                     )
 
                     HStack(spacing: 4) {
@@ -296,7 +296,7 @@ struct WorkspaceSidebar: View {
                     }
                     .padding(.horizontal, 10)
                     .frame(height: 28)
-                } else if model.databaseType != .elasticsearch,
+                } else if model.databaseType != .elasticsearch && model.databaseType != .milvus,
                           let tableCount
                 {
                     WorkspaceDatabaseObjectFooter(

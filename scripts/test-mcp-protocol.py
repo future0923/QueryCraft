@@ -53,6 +53,10 @@ def stdio(executable, root, settings):
         assert json.loads(result['content'][0]['text']) == []
         schema = next(t for t in tools if t['name'] == 'querycraft_get_schema_context')
         assert schema['annotations']['readOnlyHint'] is True
+        milvus = next(t for t in tools if t['name'] == 'querycraft_execute_milvus_request')
+        assert milvus['annotations']['readOnlyHint'] is True
+        assert milvus['inputSchema']['properties']['operation']['enum'] == ['query', 'get', 'search']
+        assert milvus['inputSchema']['required'] == ['connection_id', 'collection', 'operation', 'body']
         assert schema['inputSchema']['properties']['max_tables']['type'] == 'integer'
         assert schema['inputSchema']['properties']['table_offset']['type'] == 'integer'
         batch = next(t for t in tools if t['name'] == 'querycraft_execute_batch')

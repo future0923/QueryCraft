@@ -109,7 +109,8 @@ struct WorkspaceRedisNewKeyDetailView: View {
             validationBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .focusedSceneValue(\.workspaceGridSearchActions, searchCommandActions)
+        .workspaceFocusedValue(\.workspaceGridSearchActions, searchCommandActions)
+        .workspaceFocusedValue(\.workspacePendingChangesActions, pendingChangesRegistry.actions(for: contentID))
         .alert(
             AppCopy.current.text("停用安全锁？", "Disable Safety Lock?"),
             isPresented: $showsDisableSafetyLockConfirmation

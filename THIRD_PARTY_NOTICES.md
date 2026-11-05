@@ -2,7 +2,7 @@
 
 ## DBX database brand assets
 
-The MySQL, PostgreSQL, Apache Doris, and SelectDB brand artwork in
+The MySQL, PostgreSQL, Apache Doris, SelectDB, and Milvus brand artwork in
 `QueryCraftPackage/Sources/QueryCraftFeature/Resources/DatabaseBrands.xcassets`
 is sourced from the [DBX project](https://github.com/t8y2/dbx), licensed under
 the Apache License 2.0. The original product names and trademarks remain the

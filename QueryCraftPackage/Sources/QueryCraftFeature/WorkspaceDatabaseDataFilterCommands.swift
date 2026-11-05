@@ -20,7 +20,8 @@ public struct WorkspaceDatabaseDataFilterCommands: Commands {
                 systemImage: "line.3.horizontal.decrease",
                 action: togglePresentation
             )
-            .keyboardShortcut("f", modifiers: [.command, .shift])
+            .keyboardShortcut(presentationActions != nil
+                ? KeyboardShortcut("f", modifiers: [.command, .shift]) : nil)
             .disabled(presentationActions == nil)
 
             Divider()
@@ -37,13 +38,8 @@ public struct WorkspaceDatabaseDataFilterCommands: Commands {
                             : AppCopy.current.text("新增行", "Add Row")),
                 action: addConditionOrRow
             )
-            .keyboardShortcut("i", modifiers: .command)
-            .disabled(
-                actions == nil
-                    ? schemaRowActions?.canAdd != true
-                        && rowActions?.canAddRow != true
-                    : actions?.canAddCondition != true
-            )
+            .keyboardShortcut(canAdd ? KeyboardShortcut("i", modifiers: .command) : nil)
+            .disabled(!canAdd)
 
             Button(
                 schemaRowActions?.kind.duplicateTitle
@@ -55,12 +51,8 @@ public struct WorkspaceDatabaseDataFilterCommands: Commands {
                         : AppCopy.current.text("复制行", "Duplicate Row")),
                 action: duplicateRow
             )
-            .keyboardShortcut("d", modifiers: .command)
-            .disabled(
-                actions != nil
-                    || (schemaRowActions?.canDuplicate != true
-                        && rowActions?.canDuplicateRow != true)
-            )
+            .keyboardShortcut(canDuplicate ? KeyboardShortcut("d", modifiers: .command) : nil)
+            .disabled(!canDuplicate)
 
             Button(
                 schemaRowActions?.kind.deleteTitle
@@ -79,25 +71,23 @@ public struct WorkspaceDatabaseDataFilterCommands: Commands {
                         : AppCopy.current.text("删除行", "Delete Row")),
                 action: deleteRow
             )
-            .keyboardShortcut(.delete, modifiers: [])
-            .disabled(
-                actions != nil
-                    || (schemaRowActions?.canDelete != true
-                        && rowActions?.canDeleteRow != true)
-            )
+            .keyboardShortcut(canDelete ? KeyboardShortcut(.delete, modifiers: []) : nil)
+            .disabled(!canDelete)
 
             Button(
                 AppCopy.current.text("移除筛选条件", "Remove Filter Condition"),
                 action: removeCondition
             )
-            .keyboardShortcut("i", modifiers: [.command, .shift])
+            .keyboardShortcut(actions?.canRemoveCondition == true
+                ? KeyboardShortcut("i", modifiers: [.command, .shift]) : nil)
             .disabled(actions?.canRemoveCondition != true)
 
             Button(
                 AppCopy.current.text("全部应用筛选", "Apply All Filters"),
                 action: applyAll
             )
-            .keyboardShortcut(.return, modifiers: .command)
+            .keyboardShortcut(actions?.canApplyAll == true
+                ? KeyboardShortcut(.return, modifiers: .command) : nil)
             .disabled(actions?.canApplyAll != true)
 
             Divider()
@@ -106,28 +96,32 @@ public struct WorkspaceDatabaseDataFilterCommands: Commands {
                 AppCopy.current.text("上一个筛选条件", "Previous Filter Condition"),
                 action: moveUp
             )
-            .keyboardShortcut(.upArrow, modifiers: .command)
+            .keyboardShortcut(actions?.canNavigateConditions == true
+                ? KeyboardShortcut(.upArrow, modifiers: .command) : nil)
             .disabled(actions?.canNavigateConditions != true)
 
             Button(
                 AppCopy.current.text("下一个筛选条件", "Next Filter Condition"),
                 action: moveDown
             )
-            .keyboardShortcut(.downArrow, modifiers: .command)
+            .keyboardShortcut(actions?.canNavigateConditions == true
+                ? KeyboardShortcut(.downArrow, modifiers: .command) : nil)
             .disabled(actions?.canNavigateConditions != true)
 
             Button(
                 AppCopy.current.text("打开筛选列", "Open Filter Column"),
                 action: openColumnPicker
             )
-            .keyboardShortcut(.leftArrow, modifiers: .command)
+            .keyboardShortcut(actions?.canEditActiveCondition == true
+                ? KeyboardShortcut(.leftArrow, modifiers: .command) : nil)
             .disabled(actions?.canEditActiveCondition != true)
 
             Button(
                 AppCopy.current.text("打开筛选运算符", "Open Filter Operator"),
                 action: openOperatorPicker
             )
-            .keyboardShortcut(.rightArrow, modifiers: .command)
+            .keyboardShortcut(actions?.canEditActiveCondition == true
+                ? KeyboardShortcut(.rightArrow, modifiers: .command) : nil)
             .disabled(actions?.canEditActiveCondition != true)
 
             Button(
@@ -137,19 +131,34 @@ public struct WorkspaceDatabaseDataFilterCommands: Commands {
                 ),
                 action: toggleCondition
             )
-            .keyboardShortcut("b", modifiers: .command)
+            .keyboardShortcut(actions?.canToggleCondition == true
+                ? KeyboardShortcut("b", modifiers: .command) : nil)
             .disabled(actions?.canToggleCondition != true)
 
             Button(
                 AppCopy.current.text("关闭筛选", "Close Filter"),
                 action: close
             )
-            .keyboardShortcut(.cancelAction)
+            .keyboardShortcut(actions?.canCloseFilter == true
+                ? .cancelAction : nil)
             .disabled(actions?.canCloseFilter != true)
         }
     }
 
     public init() {}
+
+    private var canAdd: Bool {
+        if let actions { return actions.canAddCondition }
+        return schemaRowActions?.canAdd == true || rowActions?.canAddRow == true
+    }
+
+    private var canDuplicate: Bool {
+        actions == nil && (schemaRowActions?.canDuplicate == true || rowActions?.canDuplicateRow == true)
+    }
+
+    private var canDelete: Bool {
+        actions == nil && (schemaRowActions?.canDelete == true || rowActions?.canDeleteRow == true)
+    }
 
     private func togglePresentation() {
         presentationActions?.toggle()

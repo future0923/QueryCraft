@@ -43,7 +43,7 @@ import QueryCraftMobileCore
     var canGoBack: Bool { hasPreviousDetailPage && !isLoadingDetails }
     var isLoading: Bool { elasticsearch?.isLoading == true || isLoadingCatalog || isLoadingDetails }
     var visibleResources: [MobileResource] {
-        guard profile.driver == .elasticsearch, !search.isEmpty else { return catalog ?? [] }
+        guard profile.driver == .elasticsearch || profile.driver == .milvus, !search.isEmpty else { return catalog ?? [] }
         return CompletionLabelMatcher.matching(catalog ?? [], query: search, label: \.name)
     }
     init(profile: MobileConnectionProfile, password: String?, service: (any MobileResourceServicing)? = nil) {

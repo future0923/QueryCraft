@@ -63,7 +63,7 @@ struct MobileConnectionForm: View {
                     case .mysql: _ = try await MobileMariaDBExecutor().execute(configuration: profile.configuration(password: password), sql: "SELECT 1")
                     case .postgresql: _ = try await MobilePostgreSQLExecutor().execute(configuration: profile.configuration(password: password), sql: "SELECT 1")
                     case .doris: _ = try await MobileDorisExecutor().execute(configuration: profile.configuration(password: password), sql: "SELECT 1")
-                    case .redis, .elasticsearch: try await MobileResourceService(profile: profile, password: password).test()
+                    case .redis, .elasticsearch, .milvus: try await MobileResourceService(profile: profile, password: password).test()
                     }
                     try Task.checkCancellation()
                     draft.message = "连接成功"

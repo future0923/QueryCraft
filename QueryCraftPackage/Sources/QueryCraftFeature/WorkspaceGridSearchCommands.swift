@@ -12,27 +12,16 @@ public struct WorkspaceGridSearchCommands: Commands {
                 systemImage: "magnifyingglass",
                 action: search
             )
-            .keyboardShortcut("f", modifiers: .command)
+            .keyboardShortcut(actions != nil ? KeyboardShortcut("f") : nil)
+            .disabled(actions == nil)
         }
     }
 
     public init() {}
 
     private func search() {
-        if let tableView = WorkspaceDirectDrawTableView.visibleSearchTarget(
-            in: NSApp.keyWindow
-        ) {
-            tableView.findInData(nil)
-            return
-        }
         if let actions {
             actions.search()
-            return
         }
-        NSApp.sendAction(
-            #selector(WorkspaceDirectDrawTableView.findInData(_:)),
-            to: nil,
-            from: nil
-        )
     }
 }

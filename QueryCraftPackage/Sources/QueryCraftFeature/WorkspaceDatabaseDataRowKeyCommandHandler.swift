@@ -9,6 +9,7 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
     let isSuspended: Bool
     let schemaActions: WorkspaceDatabaseSchemaRowCommandActions?
     let handlesSchemaActionsInDataGrid: Bool
+    let isFocused: Bool
 
     init(
         actions: WorkspaceDatabaseDataRowCommandActions?,
@@ -17,7 +18,8 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
         objectDetailTabActions: WorkspaceDatabaseObjectDetailTabActions?,
         isSuspended: Bool,
         schemaActions: WorkspaceDatabaseSchemaRowCommandActions? = nil,
-        handlesSchemaActionsInDataGrid: Bool = false
+        handlesSchemaActionsInDataGrid: Bool = false,
+        isFocused: Bool = true
     ) {
         self.actions = actions
         self.filterPresentationActions = filterPresentationActions
@@ -25,6 +27,7 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
         self.isSuspended = isSuspended
         self.schemaActions = schemaActions
         self.handlesSchemaActionsInDataGrid = handlesSchemaActionsInDataGrid
+        self.isFocused = isFocused
     }
 
     func makeCoordinator() -> Coordinator {
@@ -34,7 +37,8 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
             objectDetailTabActions: objectDetailTabActions,
             isSuspended: isSuspended,
             schemaActions: schemaActions,
-            handlesSchemaActionsInDataGrid: handlesSchemaActionsInDataGrid
+            handlesSchemaActionsInDataGrid: handlesSchemaActionsInDataGrid,
+            isFocused: isFocused
         )
     }
 
@@ -54,6 +58,7 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
         context.coordinator.isSuspended = isSuspended
         context.coordinator.schemaActions = schemaActions
         context.coordinator.handlesSchemaActionsInDataGrid = handlesSchemaActionsInDataGrid
+        context.coordinator.isFocused = isFocused
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
@@ -70,6 +75,7 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
         var isSuspended: Bool
         var schemaActions: WorkspaceDatabaseSchemaRowCommandActions?
         var handlesSchemaActionsInDataGrid: Bool
+        var isFocused: Bool
         private var eventMonitor: Any?
 
         init(
@@ -79,7 +85,8 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
             objectDetailTabActions: WorkspaceDatabaseObjectDetailTabActions?,
             isSuspended: Bool,
             schemaActions: WorkspaceDatabaseSchemaRowCommandActions? = nil,
-            handlesSchemaActionsInDataGrid: Bool = false
+            handlesSchemaActionsInDataGrid: Bool = false,
+            isFocused: Bool = true
         ) {
             self.actions = actions
             self.filterPresentationActions = filterPresentationActions
@@ -87,6 +94,7 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
             self.isSuspended = isSuspended
             self.schemaActions = schemaActions
             self.handlesSchemaActionsInDataGrid = handlesSchemaActionsInDataGrid
+            self.isFocused = isFocused
         }
 
         func startMonitoring() {
@@ -105,6 +113,7 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
         }
 
         func handle(_ event: NSEvent) -> Bool {
+            guard isFocused else { return false }
             let modifiers = event.modifierFlags
                 .intersection(.deviceIndependentFlagsMask)
                 .intersection([.command, .control, .option, .shift])
@@ -139,7 +148,7 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
                 return true
             }
 
-            guard !isSuspended else { return false }
+            guard !isSuspended, !Self.isTextEditingResponder(event.window?.firstResponder) else { return false }
             // SQL Structure owns a dedicated grid monitor. Mapping uses the data
             // grid, so its published schema actions must handle key equivalents
             // here before an unrelated editor/menu can consume them.
@@ -211,7 +220,7 @@ struct WorkspaceDatabaseDataRowKeyCommandHandler: NSViewRepresentable {
         }
 
         static func isTextEditingResponder(_ responder: NSResponder?) -> Bool {
-            responder is NSTextView
+            responder is NSTextInputClient
         }
 
         private func performAfterCurrentKeyEvent(

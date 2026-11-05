@@ -16,6 +16,8 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
     let exportAllRowsProvider: WorkspaceDataExportAllRowsProvider?
     let exportFileName: String
     let sortData: (WorkspaceDatabaseDataSort) -> Void
+    var sortCurrentPage: ((WorkspaceDatabaseDataSort) -> Void)? = nil
+    var supportsDatabaseSorting = true
     let prepareCellEdit: ((WorkspaceDatabaseDataCellEditTarget) ->
         WorkspaceDatabaseDataCellInlineEditContext?)?
     let prepareCellEditAsync: ((WorkspaceDatabaseDataCellEditTarget) async ->
@@ -61,6 +63,8 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
             exportAllRowsProvider: exportAllRowsProvider,
             exportFileName: exportFileName,
             sortData: sortData,
+            sortCurrentPage: sortCurrentPage,
+            supportsDatabaseSorting: supportsDatabaseSorting,
             prepareCellEdit: prepareCellEdit,
             prepareCellEditAsync: prepareCellEditAsync,
             updateCellEdit: updateCellEdit,
@@ -108,6 +112,8 @@ struct WorkspaceDatabaseDataTable: NSViewRepresentable {
             exportAllRowsProvider: exportAllRowsProvider,
             exportFileName: exportFileName,
             sortData: sortData,
+            sortCurrentPage: sortCurrentPage,
+            supportsDatabaseSorting: supportsDatabaseSorting,
             prepareCellEdit: prepareCellEdit,
             prepareCellEditAsync: prepareCellEditAsync,
             updateCellEdit: updateCellEdit,

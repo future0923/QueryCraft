@@ -11,7 +11,7 @@ public struct WorkspaceDataExportCommands: Commands {
                 systemImage: "square.and.arrow.up",
                 action: export
             )
-            .keyboardShortcut("e", modifiers: [.command, .shift])
+            .keyboardShortcut(actions != nil ? KeyboardShortcut("e", modifiers: [.command, .shift]) : nil)
             .disabled(actions == nil)
 
             Button(

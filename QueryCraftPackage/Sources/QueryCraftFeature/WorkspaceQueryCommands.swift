@@ -7,7 +7,7 @@ public struct WorkspaceQueryCommands: Commands {
     public var body: some Commands {
         CommandMenu(AppCopy.current.text("查询", "Query")) {
             Button(AppCopy.current.text("保存查询", "Save Query"), action: save)
-                .keyboardShortcut("s", modifiers: .command)
+                .keyboardShortcut(actions?.canSave == true ? KeyboardShortcut("s") : nil)
                 .disabled(actions?.canSave != true)
 
             Divider()
@@ -19,20 +19,18 @@ public struct WorkspaceQueryCommands: Commands {
                 ),
                 action: runSelectionOrCurrentStatement
             )
-            .keyboardShortcut(.return, modifiers: .command)
+            .keyboardShortcut(actions != nil ? KeyboardShortcut(.return) : nil)
             .disabled(actions == nil)
 
             Button(AppCopy.current.text("全部运行", "Run All"), action: runAll)
-                .keyboardShortcut(
-                    .return,
-                    modifiers: [.command, .shift]
-                )
+                .keyboardShortcut(actions != nil
+                    ? KeyboardShortcut(.return, modifiers: [.command, .shift]) : nil)
                 .disabled(actions == nil)
 
             Divider()
 
             Button(AppCopy.current.text("停止查询", "Stop Query"), action: stop)
-                .keyboardShortcut(.cancelAction)
+                .keyboardShortcut(actions?.isRunning == true ? .cancelAction : nil)
                 .disabled(actions?.isRunning != true)
 
             Divider()
@@ -41,29 +39,15 @@ public struct WorkspaceQueryCommands: Commands {
                 AppCopy.current.text("提交事务", "Commit Transaction"),
                 action: commitTransaction
             )
-                .keyboardShortcut(
-                    "c",
-                    modifiers: .control
-                )
-                .disabled(
-                    actions?.isRunning != false
-                        || actions?.requiresSessionDisconnect == true
-                        || actions?.transactionState != .inTransaction
-                )
+                .keyboardShortcut(canEndTransaction ? KeyboardShortcut("c", modifiers: .control) : nil)
+                .disabled(!canEndTransaction)
 
             Button(
                 AppCopy.current.text("回滚事务", "Roll Back Transaction"),
                 action: rollbackTransaction
             )
-                .keyboardShortcut(
-                    "r",
-                    modifiers: .control
-                )
-                .disabled(
-                    actions?.isRunning != false
-                        || actions?.requiresSessionDisconnect == true
-                        || actions?.transactionState != .inTransaction
-                )
+                .keyboardShortcut(canEndTransaction ? KeyboardShortcut("r", modifiers: .control) : nil)
+                .disabled(!canEndTransaction)
 
             Divider()
 
@@ -74,7 +58,7 @@ public struct WorkspaceQueryCommands: Commands {
                 ),
                 action: formatSelectionOrCurrentStatement
             )
-            .keyboardShortcut("i", modifiers: .command)
+            .keyboardShortcut(actions != nil ? KeyboardShortcut("i") : nil)
             .disabled(actions == nil)
 
             Button(
@@ -86,6 +70,12 @@ public struct WorkspaceQueryCommands: Commands {
     }
 
     public init() {}
+
+    private var canEndTransaction: Bool {
+        actions?.isRunning == false
+            && actions?.requiresSessionDisconnect != true
+            && actions?.transactionState == .inTransaction
+    }
 
     private func save() {
         actions?.save()

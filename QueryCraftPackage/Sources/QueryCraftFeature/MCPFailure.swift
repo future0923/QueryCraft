@@ -15,6 +15,13 @@ enum MCPFailureCode: String, Codable, Sendable {
     case timeout = "OPERATION_TIMEOUT"
     case cancelled = "REQUEST_CANCELLED"
     case driverFailure = "DRIVER_FAILURE"
+    case databaseNotFound = "DATABASE_NOT_FOUND"
+    case databaseAccessDenied = "DATABASE_ACCESS_DENIED"
+    case authenticationFailed = "AUTHENTICATION_FAILED"
+    case connectionFailed = "CONNECTION_FAILED"
+    case tlsFailed = "TLS_FAILED"
+    case driverUnavailable = "DRIVER_UNAVAILABLE"
+    case databaseError = "DATABASE_ERROR"
     case credentialUnavailable = "CREDENTIAL_UNAVAILABLE"
     case credentialDenied = "CREDENTIAL_ACCESS_DENIED"
     case credentialCancelled = "CREDENTIAL_AUTHORIZATION_CANCELLED"
@@ -34,6 +41,13 @@ enum MCPFailureCode: String, Codable, Sendable {
         case .confirmationRequired: "Confirm the exact destructive operation before setting confirm_high_risk."
         case .timeout, .cancelled, .outcomeUnknown: "Check the database for the actual outcome before repeating a write or commit. No automatic retry is safe."
         case .driverFailure: "Check the connection, driver and database. Do not automatically retry writes."
+        case .databaseNotFound: "Call list_databases without database to check the exact authorized database names, then explicitly select the intended database. Do not substitute a similar name automatically."
+        case .databaseAccessDenied: "Check the database account's server-side privileges. This is separate from MCP authorization. Do not automatically retry writes."
+        case .authenticationFailed: "Check the saved database credentials and the server's authentication configuration. Do not automatically retry writes."
+        case .connectionFailed: "Check the server address, port, network and server availability. Check the actual outcome before repeating a write."
+        case .tlsFailed: "Check the TLS configuration, certificate trust and server identity. Do not disable certificate verification automatically."
+        case .driverUnavailable: "Install or repair the selected database driver and verify its compatibility with this host."
+        case .databaseError: "Inspect the safe native error code or SQLSTATE and check the request and server. Do not automatically retry writes."
         case .credentialUnavailable, .credentialDenied, .credentialCancelled:
             "Open QueryCraft Settings → MCP → Authorize saved credentials. Unlock Keychain if needed; restore missing credentials in the connection editor. Retry only after authorization succeeds."
         case .resultTooLarge: "Narrow the table set, columns or result size. A write may already have completed; do not repeat it to retrieve output."
@@ -71,6 +85,7 @@ struct MCPFailure: LocalizedError, Sendable {
                 return .init("Saved credentials are unavailable. Check Keychain and the saved connection.", code: .credentialUnavailable)
             }
         }
+        if let failure = databaseFailure(error) { return failure }
         // Never return raw driver/Keychain errors, which can contain secrets or SQL values.
         return .init("Database operation failed. Check driver and server availability.", code: .driverFailure)
     }

@@ -157,7 +157,8 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
             createStatement = "SHOW CREATE VIEW \(qualifiedName)"
         case .elasticsearchIndex,
              .elasticsearchAlias,
-             .elasticsearchDataStream:
+             .elasticsearchDataStream,
+             .milvusCollection:
             throw WorkspaceSessionError.metadataUnavailable(
                 object: object.name
             )

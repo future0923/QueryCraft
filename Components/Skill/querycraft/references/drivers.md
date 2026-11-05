@@ -1,6 +1,14 @@
 # Non-SQL drivers
 
-The installed driver's advertised tools and server policy determine actual support. Database scope means logical DB number for Redis, index name for Elasticsearch, and Topic name for Kafka.
+The installed driver's advertised tools and server policy determine actual support. Database scope means logical DB number for Redis, index name for Elasticsearch, Topic name for Kafka, and database name for Milvus.
+
+## Milvus
+
+Discover Collections with `list_tables` and their fields with `describe_table` in the authorized `database` (usually `default`). Use `execute_milvus_request` with exact `collection`, `operation` (`query`, `get`, `search`) and a JSON options string in `body`. Discover the tool through `plugin_tools` when absent from the flat list. An older runtime or driver can require an update and client reconnection.
+
+Query accepts Milvus `filter`, `outputFields`, `partitionNames`, `limit` and `offset`. Get requires `id`, either a scalar or array. Search accepts one query in `data` or one primary key in `ids`, plus `annsField`, `searchParams` and optional filter/fields. Use schema metadata to choose the vector field and dimension. Search-by-ID availability depends on the Milvus server. Multiple query vectors require separate calls. Grouped search supports `groupSize=1`.
+
+`max_rows` bounds the returned entities and Get ID count. Query/Search require `offset + limit < 16384`. Narrow fields and row limits if the response exceeds the MCP byte budget. The returned `body` retains the native JSON envelope, including Search distances and vector values. Encode large primary keys as decimal strings and preserve their returned textual precision. A distance is interpreted using the collection's configured metric. This route provides read operations only.
 
 ## Redis
 

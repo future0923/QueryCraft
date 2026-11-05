@@ -58,6 +58,7 @@ struct WorkspaceRedisKeyDetailView: View {
             maxHeight: .infinity,
             alignment: .top
         )
+        .workspaceFocusedValue(\.workspacePendingChangesActions, pendingChangesRegistry.actions(for: contentID))
         .task(id: refreshRevision) {
             guard !cancelsRefresh else { return }
             await load()

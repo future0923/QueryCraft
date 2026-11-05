@@ -55,6 +55,7 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisOptimisticMutation.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/RedisWorkspaceError.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceRequest.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/MilvusReadRequest.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceRequestExecutionPolicy.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceReadOnlyRequestValidator.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceDocumentMappingField.swift
@@ -258,6 +259,11 @@ targets:
       - ../QueryCraftDrivers/Sources/QueryCraftRedisDriver/RedisScanCodec.swift
       - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchHTTPClient.swift
       - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchConnectionConfiguration.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMilvusDriver/MilvusConnectionConfiguration.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMilvusDriver/MilvusError.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMilvusDriver/MilvusHTTPClient.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMilvusDriver/MilvusURLSessionDelegate.swift
+      - ../QueryCraftDrivers/Sources/QueryCraftMilvusDriver/MilvusWorkspaceSession.swift
       - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchURLSessionDelegate.swift
       - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchError.swift
       - ../QueryCraftDrivers/Sources/QueryCraftElasticsearchDriver/ElasticsearchReadOnlyRequestPolicy.swift

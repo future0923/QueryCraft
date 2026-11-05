@@ -31,7 +31,7 @@ struct SQLCompletionDialect: Sendable {
             .mysql
         case .postgresql:
             .postgresql
-        case .redis, .elasticsearch, .kafka:
+        case .redis, .elasticsearch, .kafka, .milvus:
             preconditionFailure(
                 "Non-SQL documents do not use SQL completion."
             )

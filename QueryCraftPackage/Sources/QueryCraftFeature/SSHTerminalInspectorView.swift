@@ -26,7 +26,7 @@ struct SSHTerminalInspectorView: View {
             case .connection: SSHTerminalConnectionInfoView(model: model)
             }
         }
-        .background(colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
+        .background(colorScheme == .dark ? Color(nsColor: .queryCraftDarkCanvas) : Color(nsColor: .windowBackgroundColor))
     }
 }
 

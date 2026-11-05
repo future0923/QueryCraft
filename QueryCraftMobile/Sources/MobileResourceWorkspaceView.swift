@@ -52,7 +52,7 @@ struct MobileResourceWorkspaceView: View {
                     ForEach(model.scopes ?? [], id: \.self) { Text(model.profile.driver == .redis ? "DB " + $0 : $0).tag($0) }
                 }.disabled(model.scopes == nil || model.hasPendingChanges || model.isBackgrounded)
             }
-            .searchable(text: $model.search, placement: .navigationBarDrawer(displayMode: .always), prompt: model.profile.driver == .redis ? "搜索键名，如 user:*" : "搜索索引、别名和数据流")
+            .searchable(text: $model.search, placement: .navigationBarDrawer(displayMode: .always), prompt: model.profile.driver == .redis ? "搜索键名，如 user:*" : model.profile.driver == .milvus ? "搜索 Collection" : "搜索索引、别名和数据流")
             .onSubmit(of: .search) { if model.profile.driver == .redis { model.loadCatalog() } }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("连接", systemImage: "chevron.left", action: app.showLibrary) }
@@ -83,7 +83,7 @@ struct MobileResourceWorkspaceView: View {
             .mobileCanvas()
             .navigationTitle(model.selected?.name ?? model.profile.driver.title).navigationBarTitleDisplayMode(.inline)
             .toolbarTitleMenu {
-                Picker("查看", selection: $model.structure) { Text("数据").tag(false); Text(model.profile.driver == .redis ? "属性" : "Mapping").tag(true) }
+                Picker("查看", selection: $model.structure) { Text("数据").tag(false); Text(model.profile.driver == .redis ? "属性" : model.profile.driver == .milvus ? "Schema" : "Mapping").tag(true) }
             }
             .toolbar {
                 if sizeClass == .regular || preferredColumn == .detail {

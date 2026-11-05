@@ -54,6 +54,8 @@ private struct WorkspaceElasticsearchCompletionEntry: CodeSuggestionEntry {
                 AppCopy.current.text("数据流", "Data Stream")
             case .table, .view:
                 nil
+            case .milvusCollection:
+                AppCopy.current.text("集合", "Collection")
             }
         case .endpoint: AppCopy.current.text("端点", "Endpoint")
         case .key: AppCopy.current.text("DSL 键", "DSL Key")
@@ -87,6 +89,7 @@ private struct WorkspaceElasticsearchCompletionEntry: CodeSuggestionEntry {
             case .elasticsearchAlias: .orange
             case .elasticsearchDataStream: .green
             case .table, .view: .secondary
+            case .milvusCollection: .purple
             }
         case .endpoint: .blue
         case .key: .purple

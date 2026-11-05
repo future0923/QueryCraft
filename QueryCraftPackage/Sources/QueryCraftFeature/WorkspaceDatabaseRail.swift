@@ -143,7 +143,7 @@ private extension View {
         colorScheme: ColorScheme
     ) -> some View {
         if colorScheme == .dark {
-            background(Color.black)
+            background(Color(nsColor: .queryCraftDarkCanvas))
         } else if #available(macOS 26.0, *) {
             background {
                 Color(nsColor: .controlBackgroundColor)
