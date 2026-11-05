@@ -5,10 +5,10 @@ set -euo pipefail
 project_root="${0:A:h:h}"
 # Shared metadata/mobile symbols require the 0.1.13 host (API 5 ABI is retained).
 source "$project_root/scripts/driver-package-common.sh"
-querycraft_driver_minimum_app_version="${DRIVER_MINIMUM_APP_VERSION:-0.1.13}"
+querycraft_driver_minimum_app_version="${DRIVER_MINIMUM_APP_VERSION:-0.1.15}"
 configuration="${CONFIGURATION:-Debug}"
-driver_version="${DRIVER_VERSION:-1.0.10}"
-driver_build="${DRIVER_BUILD:-11}"
+driver_version="${DRIVER_VERSION:-1.0.11}"
+driver_build="${DRIVER_BUILD:-12}"
 driver_arch="${DRIVER_ARCH:-$(uname -m)}"
 if [[ "$driver_arch" != "x86_64" && "$driver_arch" != "arm64" ]]; then
     print -u2 "Unsupported driver architecture: $driver_arch"

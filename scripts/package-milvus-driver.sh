@@ -4,10 +4,10 @@ set -euo pipefail
 
 project_root="${0:A:h:h}"
 source "$project_root/scripts/driver-package-common.sh"
-querycraft_driver_minimum_app_version="${DRIVER_MINIMUM_APP_VERSION:-0.1.13}"
+querycraft_driver_minimum_app_version="${DRIVER_MINIMUM_APP_VERSION:-0.1.15}"
 configuration="${CONFIGURATION:-Debug}"
 driver_version="${DRIVER_VERSION:-0.1.0}"
-driver_build="${DRIVER_BUILD:-1}"
+driver_build="${DRIVER_BUILD:-2}"
 driver_arch="${DRIVER_ARCH:-$(uname -m)}"
 if [[ "$driver_arch" != "x86_64" && "$driver_arch" != "arm64" ]]; then
     print -u2 "Unsupported driver architecture: $driver_arch"
@@ -50,6 +50,12 @@ querycraft_validate_driver_package_inputs \
     "$source_framework" \
     "QueryCraftMilvusDriver" \
     "$shared_api_framework"
+
+source_symbols="$(nm -u "$source_binary" | swift demangle)"
+if [[ "$source_symbols" != *"protocol descriptor for QueryCraftFeature.WorkspaceRequestExecutingSession"* ]]; then
+    print -u2 "Milvus framework is missing REST execution. Build the QueryCraftMilvusDriver scheme before packaging."
+    exit 1
+fi
 
 mkdir -p "$output_root"
 if [[ -e "$bundle" ]]; then

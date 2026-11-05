@@ -1,3 +1,10 @@
+## QueryCraft 0.1.15 release — 2026-11-05
+1. Complete. Audited v0.1.14 and independent baselines, native driver changes and the seven-driver publication chain.
+2. Complete. Seven-driver CI/deploy/runtime chain, version identities and bilingual notes prepared. Existing resource service already accepts Milvus.
+3. Complete locally. Fresh 140 core/MCP, 60 workspace and seven independent protocol methods plus 66 script checks passed. Native driver/package evidence reviewed; final release runtime checks run on both CI architectures.
+4. In progress. Commit and push/tag, monitor native Actions through publication and verify public downloads, manifests and Sparkle feed.
+User explicitly requested review and a new release. Preserve historical records and existing application data. Scope is the macOS download release and affected independent components.
+
 # Syntax highlighting audit
 
 ## macOS softer backgrounds and empty header comments — 2026-11-04

@@ -1,3 +1,15 @@
+- Independent QueryCraftMCPTests scheme passed all seven protocol tests with no failures/skips after the TestAction correction. Fresh release checks total 140 core/MCP, 60 workspace, seven independent protocol methods plus 66 script checks. Milvus packaging preflight and signed Intel package succeeded with the REST interface check.
+- Release identities prepared as desktop 0.1.15+25, MCP 0.1.5+6, Skill 1.0.3+4, MySQL/Doris 1.0.11+12, PostgreSQL 1.0.9+11, Redis/Elasticsearch/Kafka 1.0.3+4 and Milvus 0.1.0+2. SSH 0.9.0+11 and Driver API 5 retained. Publishing requires both native CI runtime gates before resource upload.
+
+- The standalone executable auto-scheme has no TestAction, so the first independent-protocol test invocation stopped before executing tests. Added an explicit QueryCraftMCPTests workspace scheme targeting the actual independent package test target and reran through XcodeBuildMCP.
+
+- Fresh release regression passed 140 core/MCP and 60 workspace methods with no failures/skips. Includes native desktop compilation, focus/shortcuts, grid/header/page sorting, selected-cell editing, seven-driver catalogs/SSH welcome integration and full scoped authorization suites. Logs are under .build/release-0.1.15.
+- Release scope/artifact recovery/SSH/update scripts passed 66 tests. Existing same-source native diagnostic tests and packaged loopback evidence for six driver families were inspected. Public baseline catalogs all use API5. Local private Release/remote ARM acceptance is supplied by the native Actions gates.
+
+## Release preparation — 2026-11-05
+- Read AGENTS.md, RELEASE_PROCESS.md, macOS release/build and XcodeBuildMCP skills. main starts clean at db161dc, GitHub authentication works and v0.1.14 release workflow completed successfully.
+- Auditing independent component/driver identities, CI and resource-service allowlists before selecting release versions. No publication has started.
+
 ## Milvus MCP read workflow — 2026-11-05
 - Added execute_milvus_request for Query/Get/single-query Search, exact Collection and database binding, bounded pagination/rows/bytes, read-only driver execution, tool discovery and permission-group integration. Metadata uses the existing database/Collection/schema/context routes. Source Skill and usage docs updated.
 - Main MCP/session suites passed 37 test methods, Milvus protocol suite passed five. QueryCraft and standalone MCP Debug builds passed. Explicit QueryCraftMilvusDriver dynamic product build passed. A first live call exposed a stale browse-only framework from the test-only build, corrected by separately building/repackaging the product. Bundle loading now asserts WorkspaceRequestExecutingSession.

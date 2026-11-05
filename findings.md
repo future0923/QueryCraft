@@ -1,3 +1,11 @@
+- Resource-service inspection confirmed driver type identifiers and catalog generation are generic. Existing deploy routes can accept Milvus, so no sibling-server mutation or deployment is required. All 12 existing architecture catalogs advertise Driver API 5; neither Milvus predecessor catalog exists.
+- Additional integration audit found hard-coded six-driver assumptions in Welcome SSH connection counts/row routing and the driver-catalog regression. Tests now use the actual database fixture count and explicitly include Milvus in the downloadable catalog.
+
+## Release audit — 2026-11-05
+- Latest public desktop is v0.1.14 build 24. Published component baselines are MCP 0.1.4+5 and Skill 1.0.2+3. SSH remains 0.9.0+11.
+- main db161dc contains accumulated workspace fixes, native error diagnostics in all six existing drivers and the new Milvus driver/MCP/Skill support. Driver API remains 5.
+- Milvus is absent from several CI/release selection, runtime verification, metadata synchronization and deploy allowlists. Release must include the complete seven-driver chain before tagging.
+
 # Syntax highlighting findings
 
 ## Milvus v1 implementation notes — 2026-11-04

@@ -2,7 +2,7 @@
 name: querycraft
 description: Use QueryCraft MCP to inspect saved database connections, verify schemas, query data, work with Redis/Elasticsearch/Kafka/Milvus, and use explicitly authorized saved SSH servers or Shell scripts. Requires a configured QueryCraft MCP server.
 metadata:
-  version: "1.0.2"
+  version: "1.0.3"
 ---
 
 # QueryCraft
