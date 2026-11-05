@@ -412,7 +412,7 @@ struct DatabaseDriverRegistryTests {
     @Test func catalogListsEveryDownloadableDriverFamily() {
         #expect(
             DatabaseDriverCatalog.entries.map(\.databaseType)
-                == [.mysql, .postgresql, .doris, .redis, .elasticsearch, .kafka]
+                == [.mysql, .postgresql, .doris, .redis, .elasticsearch, .kafka, .milvus]
         )
         #expect(
             DatabaseDriverCatalog.entries.allSatisfy { entry in

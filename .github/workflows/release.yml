@@ -34,6 +34,7 @@ on:
           - redis
           - elasticsearch
           - kafka
+          - milvus
   push:
     tags:
       - "v*"
@@ -106,10 +107,10 @@ jobs:
           build="$(awk -F ' = ' '/^CURRENT_PROJECT_VERSION = / { print $2; exit }' Config/Shared.xcconfig)"
           source_run_id="${REQUESTED_SOURCE_RUN_ID:-}"
           rebuild_driver="${REQUESTED_REBUILD_DRIVER:-none}"
-          driver_matrix='["mysql","postgresql","doris","redis","elasticsearch","kafka"]'
+          driver_matrix='["mysql","postgresql","doris","redis","elasticsearch","kafka","milvus"]'
           case "$rebuild_driver" in
             none) ;;
-            mysql|postgresql|doris|redis|elasticsearch|kafka)
+            mysql|postgresql|doris|redis|elasticsearch|kafka|milvus)
               if [[ -z "$source_run_id" || "$REQUESTED_PUBLISH_DRIVERS" != "true" ]]; then
                 echo "Rebuilding one driver requires a source run and driver publishing." >&2
                 exit 1
@@ -400,7 +401,7 @@ jobs:
           pattern: querycraft-release-*
           path: runtime-artifacts
           merge-multiple: true
-      - name: Verify standalone MCP and all six driver families
+      - name: Verify standalone MCP and all seven driver families
         if: needs.metadata.outputs.mcp_changed == 'true'
         run: python3 scripts/ci/verify-release-runtime.py runtime-artifacts
       - name: Verify native SSH package, ABI and optional capabilities

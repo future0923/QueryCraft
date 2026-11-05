@@ -7,8 +7,8 @@ component tags provide independent baselines; --base provides an explicit baseli
 import argparse, fnmatch, json, re, subprocess
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
-DRIVERS=['mysql','postgresql','doris','redis','elasticsearch','kafka']
-DRIVER_NAMES={'mysql':'MySQL','postgresql':'PostgreSQL','doris':'Doris','redis':'Redis','elasticsearch':'Elasticsearch','kafka':'Kafka'}
+DRIVERS=['mysql','postgresql','doris','redis','elasticsearch','kafka','milvus']
+DRIVER_NAMES={'mysql':'MySQL','postgresql':'PostgreSQL','doris':'Doris','redis':'Redis','elasticsearch':'Elasticsearch','kafka':'Kafka','milvus':'Milvus'}
 def git(*args):return subprocess.check_output(['git',*args],cwd=ROOT,text=True,stderr=subprocess.DEVNULL).strip()
 def read(ref,path):
     try:return git('show',ref+':'+path)
@@ -31,7 +31,7 @@ def component_paths(kind):
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPSQL*','QueryCraftPackage/Sources/QueryCraftFeature/MCPRequest*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPSchema*','QueryCraftPackage/Sources/QueryCraftFeature/MCPResult*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPToolCatalog*','QueryCraftPackage/Sources/QueryCraftFeature/MCPHistory*',
-      'QueryCraftPackage/Sources/QueryCraftFeature/MCPFailure*','QueryCraftPackage/Sources/QueryCraftFeature/MCPDesktopBridge*',
+      'QueryCraftPackage/Sources/QueryCraftFeature/MCPDatabaseFailure*','QueryCraftPackage/Sources/QueryCraftFeature/MilvusReadRequest*','QueryCraftPackage/Sources/QueryCraftFeature/MCPFailure*','QueryCraftPackage/Sources/QueryCraftFeature/MCPDesktopBridge*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPCredential*','QueryCraftPackage/Sources/QueryCraftFeature/MCPInstallation*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPComponent*','QueryCraftPackage/Sources/QueryCraftFeature/MCPSkillInstallation*',
       'QueryCraftPackage/Sources/QueryCraftFeature/QueryCraftMCPApplication*','QueryCraftPackage/Sources/QueryCraftMCPExecutable/**',
@@ -70,7 +70,7 @@ def plan(base,head,versions):
         native={'mysql':['QueryCraftDrivers/Libs/libmariadb*','QueryCraftDrivers/Libs/libssl*','QueryCraftDrivers/Libs/libcrypto*'],
           'doris':['QueryCraftDrivers/Libs/libmariadb*','QueryCraftDrivers/Libs/libssl*','QueryCraftDrivers/Libs/libcrypto*'],
           'postgresql':['QueryCraftDrivers/Sources/CLibPQ/**','QueryCraftDrivers/Libs/libpq*','QueryCraftDrivers/Libs/libpg*','QueryCraftDrivers/Libs/libssl*','QueryCraftDrivers/Libs/libcrypto*','scripts/build-postgresql*'],
-          'redis':['QueryCraftDrivers/Sources/CHiredis/**','QueryCraftDrivers/Libs/libhiredis*'],'kafka':['QueryCraftDrivers/Sources/CRdkafka/**','QueryCraftDrivers/Libs/librdkafka*','scripts/build-librdkafka*'],'elasticsearch':[]}
+          'redis':['QueryCraftDrivers/Sources/CHiredis/**','QueryCraftDrivers/Libs/libhiredis*'],'kafka':['QueryCraftDrivers/Sources/CRdkafka/**','QueryCraftDrivers/Libs/librdkafka*','scripts/build-librdkafka*'],'elasticsearch':[],'milvus':[]}
         relevant += [p for p in paths if any(fnmatch.fnmatch(p,pattern) for pattern in native[driver])]
         if 'QueryCraftDrivers/Package.swift' in paths:
             def target(ref):

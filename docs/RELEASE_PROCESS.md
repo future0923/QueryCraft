@@ -1,6 +1,6 @@
 # QueryCraft 发版流程
 
-每次发版前必须先阅读本文件和仓库根目录的 `AGENTS.md`。发版要同时检查主程序和 MySQL、PostgreSQL、Doris、Redis、Elasticsearch、Kafka 六类驱动；是否发布驱动由相对上一个正式版本的实际代码和协议变化决定。
+每次发版前必须先阅读本文件和仓库根目录的 `AGENTS.md`。发版要同时检查主程序和 MySQL、PostgreSQL、Doris、Redis、Elasticsearch、Kafka、Milvus 七类驱动；是否发布驱动由相对上一个正式版本的实际代码和协议变化决定。
 
 ## 1. 发布前建立基线
 
@@ -31,6 +31,7 @@ Doris：不发布，未改动且线上 API 兼容
 Redis：不发布，未改动且线上 API 兼容
 Elasticsearch：不发布，未改动且线上 API 兼容
 Kafka：不发布，未改动且线上 API 兼容
+Milvus：不发布，未改动且线上 API 兼容
 Driver API：未变化
 ```
 
@@ -45,20 +46,21 @@ MySQL 和 Doris 共用 `QueryCraftDrivers/MariaDBTransport` 动态库。该目�
 
 ## 2. 本地验证
 
-先运行核心测试并通过仓库的 `xcodebuildmcp` 流程编译主程序。共享页面变化要按 `AGENTS.md` 覆盖六类驱动的适用范围、公共模型、表数据页和 SQL 结果页；驱动变化要分别编译、打包并确认 Dev 实际加载了新包。加载中、空结果、失败重试、快速切换和重复刷新也要按规范验证。
+先运行核心测试并通过仓库的 `xcodebuildmcp` 流程编译主程序。共享页面变化要按 `AGENTS.md` 覆盖七类驱动的适用范围、公共模型、表数据页和 SQL 结果页；驱动变化要分别编译、打包并确认 Dev 实际加载了新包。加载中、空结果、失败重试、快速切换和重复刷新也要按规范验证。
 
 ### 独立 MCP 与 Skill 发布检查
 
-主程序不得内置 MCP 安装包或 Skill 资源。主程序、MCP、Skill、SSH 插件及六类数据库驱动各自维护版本与发布决定。
+主程序不得内置 MCP 安装包或 Skill 资源。主程序、MCP、Skill、SSH 插件及七类数据库驱动各自维护版本与发布决定。
 
 - `Components/versions.json` 是 MCP/Skill/SSH 独立版本及兼容范围的来源。对应说明为 `docs/releases/mcp/<version>.md`、`docs/releases/skill/<version>.md`、`docs/releases/ssh/<version>.md`，必须包含中文与 English。
 - `scripts/component-release-plan.py --require-notes` 相对各组件已发布 tag（首次发布回退至上一个主程序 tag）判断实际改动。MCP 设置界面变化不单独触发 MCP 包发布；Skill 内容变化只触发 Skill。版本号或 build 单独变化不得被当作实现改动。已发布组件发生实现改动时必须提供新的 version/build 身份。
 - Actions 自动构建、签名并发布相关组件；未改动组件保持已有发布。手动 `publish_components` 可独立发布变更的 MCP/Skill，支持 `source_run_id` 复用原构建产物。SSH 随两个原生客户端任务生成独立附件，未改动时不重建或上传；复用缓存时仍须在两个架构运行签名、原生加载及扩展能力验证。生产环境审批和发布令牌要求与现有资源发布一致。
-- 选择 `publish_drivers` 时只允许发布实际变动的驱动；无相关改动或仅变动版本号/build 必须失败。共享 MariaDBTransport 涉及 MySQL/Doris，Driver API 不兼容变化涉及全部六类。
+- 选择 `publish_drivers` 时只允许发布实际变动的驱动；无相关改动或仅变动版本号/build 必须失败。共享 MariaDBTransport 涉及 MySQL/Doris，Driver API 不兼容变化涉及全部七类。
 - 构建矩阵、服务端部署、发布后清单同步和 GitHub 驱动附件使用同一份实际变更名单。复用旧 run 时，产物目录中残留的其他驱动包不得随之上传；只修改驱动测试也不触发驱动发版。Swift 与打包脚本的 Driver API 常量不一致时必须失败。
 - 主程序 `QueryCraftPackage` 不得依赖 MCP SDK、Logging 或 NIO；协议入口、stdio/HTTP 传输只在独立的 `QueryCraftMCPPackage`。需要 MCP 产物时，先构建 `QueryCraft`，再以相同架构、配置和 DerivedData 构建 `querycraft-mcp`，最后运行 `scripts/package-mcp.py`。MCP 必须动态链接同一份 `QueryCraftFeature.framework`，禁止把 Feature 静态复制进可执行文件。
 - MCP 分别提供原生 Intel 与 Apple Silicon ZIP；Skill 提供一个资源 ZIP。包内兼容元数据必须与 CI 签名的 `.release.json` 一致。GitHub 组件 tag 为 `mcp-v<version>+<build>` / `skill-v<version>+<build>`，已发布资源不可覆盖，完全相同的重试可幂等通过。
-- 运行 `scripts/test-mcp-package.py <MCP.app> --drivers-dir <六类驱动目录>`，逐架构检查签名、完整运行依赖、SQL 资源、stdio/HTTP、凭据助手与六驱动加载。MCP 只引用自己的运行目录，不依赖主程序路径。
+- Milvus 首次发布前，必须将其纳入原生构建、驱动选择、部署和清单同步。原生 MCP 门禁仅在本次架构的 Milvus 包存在时允许其线上前代清单返回 404，随后仍验证本次包的摘要与加载。其他驱动缺失清单及其他 HTTP 失败均中止验证。Milvus 驱动最低主程序须覆盖其新增共享模型与 REST 接口符号。
+- 运行 `scripts/test-mcp-package.py <MCP.app> --drivers-dir <七类驱动目录>`，逐架构检查签名、完整运行依赖、SQL 资源、stdio/HTTP、凭据助手与七驱动加载。MCP 只引用自己的运行目录，不依赖主程序路径。
 - 运行 `scripts/test-mcp-desktop.py <MCP.app> --component-checks --output <隔离结果目录>`，验证真实签名目录下载、兼容回退、固定启动入口、独立 CLI 更新、旧会话继续调用、失败保留旧版、显式回退、旧客户端路径保留及 Skill 本地修改保护。
 - `QueryCraftMCPTests`（握手、初始化兼容、JSON/工具 schema 边界）以及共享模块内的 `MCPComponentTests`、`MCPTests`、`MCPSessionTests`、`MCPOptimizationTests` 应通过。设置仍使用原有左右对齐原生布局，加载与状态反馈保持稳定。
 - LicenseServer 提供 MCP 管理、Skill 管理、上传草稿/发布/下架/删除草稿、管理员/CSRF、部署令牌和审计。服务端只持有发行公钥；CI 对单个不可变发行记录签名，服务端聚合已发布记录供客户端下载。
@@ -68,7 +70,7 @@ MySQL 和 Doris 共用 `QueryCraftDrivers/MariaDBTransport` 动态库。该目�
 
 ### SSH 插件分发与更新
 
-- SSH 是独立组件 `ssh`，不是第七类数据库驱动。更改 `QueryCraftSSHPlugin`、C ABI 头或 SSH 打包逻辑触发 SSH 发布；宿主 SSH Swift 逻辑触发 MCP 发布；修改公共 C ABI 头同时检查两者。未改动的六类数据库驱动保持版本/build。
+- SSH 是独立组件 `ssh`，按插件流程维护。更改 `QueryCraftSSHPlugin`、C ABI 头或 SSH 打包逻辑触发 SSH 发布；宿主 SSH Swift 逻辑触发 MCP 发布；修改公共 C ABI 头同时检查两者。未改动的七类数据库驱动保持版本/build。
 - `scripts/build-ssh-plugin.py` 从 `Components/versions.json.ssh` 读取版本/兼容范围，在固定证书签名前写入 `Contents/Resources/component.json`。禁止把本地 OpenSSL override 包用于分发。固定依赖源码及摘要，无远端新增运行时。
 - `scripts/package-ssh-catalog.py` 校验双架构身份、实际 Mach-O CPU、ABI、许可与包内元数据，生成 `querycraft-ssh-<version>-<build>-<arch>.zip`、`.package.json`、Ed25519 签名 `.release.json` 和本地验收目录。CI 单架构任务用 `--arch`；正式发布前必须凑齐两架构，禁止改写相同身份的不同内容。
 - `publish_components` 同时涵盖实际变更的 SSH。`scripts/deploy-components.py` 只选 `SSH_CHANGED=true` 的 SSH 包，检查包与当前源码版本/兼容信息相同、两架构齐全、摘要一致，再通过已有大包入口 `/admin/resources/deploy/drivers?component=ssh` 发布；GitHub tag 为 `ssh-v<version>+<build>`。现有数据库驱动发布参数语义不变。
@@ -137,7 +139,7 @@ gh workflow run release.yml --ref main \
   -f source_run_id=<部分成功的发布run-id> -f rebuild_driver=none
 ```
 
-独立 MCP 有变化时，即使复用全部构建产物，也必须重新完成两个架构的实际运行目录与六驱动检查。发布前合并来源 run 与恢复 run 的产物，客户端与驱动一并补齐；成功缓存不等于跳过运行验证。
+独立 MCP 有变化时，即使复用全部构建产物，也必须重新完成两个架构的实际运行目录与七驱动检查。发布前合并来源 run 与恢复 run 的产物，客户端与驱动一并补齐；成功缓存不等于跳过运行验证。
 
 ## 5. 发布后验收
 

@@ -11,7 +11,7 @@ Optional environment:
   QUERYCRAFT_BUILD_SKILL            Package changed Skill on arm64 (default: false)
   QUERYCRAFT_BUILD_DRIVERS          Build external driver artifacts (default: true)
   QUERYCRAFT_DRIVER_TARGET          all, mysql, postgresql, doris, redis,
-                                    elasticsearch, or kafka (default: all)
+                                    elasticsearch, kafka, or milvus (default: all)
   QUERYCRAFT_UPDATE_BASE_URL        Default: https://querycraft.debug-tools.cc
   QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL
                                     Default: <update-base-url>/drivers
@@ -81,7 +81,8 @@ if [[ "$driver_target" != "all" && \
       "$driver_target" != "doris" && \
       "$driver_target" != "redis" && \
       "$driver_target" != "elasticsearch" && \
-      "$driver_target" != "kafka" ]]; then
+      "$driver_target" != "kafka" && \
+      "$driver_target" != "milvus" ]]; then
     echo "Unsupported QUERYCRAFT_DRIVER_TARGET: $driver_target" >&2
     exit 65
 fi
@@ -252,7 +253,7 @@ create_dmg() {
 selected_driver_targets=()
 if [[ "$build_drivers" == "true" ]]; then
     if [[ "$driver_target" == "all" ]]; then
-        selected_driver_targets=(mysql postgresql doris redis elasticsearch kafka)
+        selected_driver_targets=(mysql postgresql doris redis elasticsearch kafka milvus)
     else
         selected_driver_targets=("$driver_target")
     fi
@@ -272,6 +273,7 @@ if [[ "$build_drivers" == "true" ]]; then
             redis) driver_scheme=QueryCraftRedisDriver ;;
             elasticsearch) driver_scheme=QueryCraftElasticsearchDriver ;;
             kafka) driver_scheme=QueryCraftKafkaDriver ;;
+            milvus) driver_scheme=QueryCraftMilvusDriver ;;
         esac
         echo "Building $selected_driver driver for $architecture."
         build_scheme "$driver_scheme" "$architecture_derived_data" "$architecture"
@@ -305,6 +307,7 @@ if [[ "$build_drivers" == "true" ]]; then
             redis) package_script=package-redis-driver.sh ;;
             elasticsearch) package_script=package-elasticsearch-driver.sh ;;
             kafka) package_script=package-kafka-driver.sh ;;
+            milvus) package_script=package-milvus-driver.sh ;;
         esac
         CONFIGURATION=Release \
         DRIVER_ARCH="$architecture" \

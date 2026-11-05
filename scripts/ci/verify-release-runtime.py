@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the native MCP release against all six current and previous drivers."""
+"""Check the native MCP release against all seven current and previous drivers."""
 import argparse
 import hashlib
 import json
@@ -9,10 +9,25 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-KINDS = ['mysql', 'postgresql', 'doris', 'redis', 'elasticsearch', 'kafka']
+KINDS = ['mysql', 'postgresql', 'doris', 'redis', 'elasticsearch', 'kafka', 'milvus']
+
+
+def published_catalog(kind, arch, artifacts):
+    url = f'https://querycraft.debug-tools.cc/drivers/{kind}-{arch}.json'
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        # The first Milvus release has no published predecessor. Its local
+        # package is still required and validated below before publication.
+        if error.code == 404 and kind == 'milvus' and list(artifacts.rglob(f'{kind}-{arch}.json')):
+            error.close()
+            return None
+        raise
 
 
 def identity(record):
@@ -42,9 +57,9 @@ def main():
         current = work / 'current'
         previous.mkdir()
         for kind in KINDS:
-            url = f'https://querycraft.debug-tools.cc/drivers/{kind}-{arch}.json'
-            with urllib.request.urlopen(url, timeout=60) as response:
-                catalog = json.load(response)
+            catalog = published_catalog(kind, arch, artifacts)
+            if catalog is None:
+                continue
             records = catalog.get('releases', [catalog])
             record = max((r for r in records if r['driverAPIVersion'] == 5
                           and arch in r['supportedArchitectures']), key=identity)
@@ -76,7 +91,7 @@ def main():
         assert len(apps) == 1, apps
         subprocess.run([sys.executable, str(ROOT / 'scripts/test-mcp-package.py'), str(apps[0]),
                         '--drivers-dir', str(current), '--previous-drivers-dir', str(previous)], check=True)
-        print(f'PASS {arch}: packaged MCP and six drivers, including independent MySQL/Doris upgrades')
+        print(f'PASS {arch}: packaged MCP and seven drivers, including independent MySQL/Doris upgrades')
 
 
 if __name__ == '__main__':

@@ -36,7 +36,7 @@ def main():
             module.validate_feed(directory, remote, base, canonical=True)
         updates[path] = data
     if os.environ.get("QUERYCRAFT_DEPLOY_DRIVERS", "true") == "true":
-        all_databases = ("mysql", "postgresql", "doris", "redis", "elasticsearch", "kafka")
+        all_databases = ("mysql", "postgresql", "doris", "redis", "elasticsearch", "kafka", "milvus")
         requested = os.environ.get("QUERYCRAFT_DEPLOY_DRIVER_TYPES", "").strip()
         databases = all_databases if not requested or requested == "none" else tuple(
             item.strip() for item in requested.split(",") if item.strip()

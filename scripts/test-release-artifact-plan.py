@@ -6,18 +6,27 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import urllib.error
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = importlib.util.spec_from_file_location('artifacts', ROOT / 'scripts/ci/release-artifact-plan.py')
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+RUNTIME_SPEC = importlib.util.spec_from_file_location('runtime', ROOT / 'scripts/ci/verify-release-runtime.py')
+RUNTIME = importlib.util.module_from_spec(RUNTIME_SPEC)
+RUNTIME_SPEC.loader.exec_module(RUNTIME)
 DRIVERS = ['mysql', 'postgresql', 'doris']
 COMPLETE = {'querycraft-release-client-' + arch + '-v2' for arch in ['x86_64', 'arm64', 'update']}
 COMPLETE |= {f'querycraft-release-driver-{kind}-{arch}' for kind in DRIVERS for arch in ['x86_64', 'arm64']}
 
 
 class ArtifactPlanTests(unittest.TestCase):
+    def test_milvus_builds_both_native_architectures(self):
+        self.assertIn('milvus', MODULE.DRIVERS)
+        result = MODULE.plan(set(), ['milvus'], True)
+        self.assertEqual({row['architecture'] for row in result['driver_build_matrix']}, {'x86_64', 'arm64'})
+
     def test_fresh_release_builds_two_clients_update_and_only_selected_drivers(self):
         result = MODULE.plan(set(), DRIVERS, True)
         self.assertEqual(len(result['client_build_matrix']), 2)
@@ -82,6 +91,20 @@ class ArtifactPlanTests(unittest.TestCase):
         self.assertIn("needs.verify_runtime.result == 'success'", publish)
         new_downloads = publish.split('name: Download newly completed artifacts', 1)[1].split('name: Publish selected resources', 1)[0]
         self.assertIn('pattern: querycraft-release-*', new_downloads)
+
+
+class FirstMilvusRuntimeTests(unittest.TestCase):
+    def test_only_first_milvus_with_local_package_can_lack_a_catalog(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            artifacts = Path(temporary)
+            (artifacts / 'milvus-arm64.json').write_text('{}')
+            with patch.object(RUNTIME.urllib.request, 'urlopen', side_effect=urllib.error.HTTPError('fixture', 404, 'missing', {}, io.BytesIO())):
+                self.assertIsNone(RUNTIME.published_catalog('milvus', 'arm64', artifacts))
+            for kind, arch, status in [('mysql', 'arm64', 404), ('milvus', 'x86_64', 404), ('milvus', 'arm64', 503)]:
+                with self.subTest(kind=kind, arch=arch, status=status):
+                    with patch.object(RUNTIME.urllib.request, 'urlopen', side_effect=urllib.error.HTTPError('fixture', status, 'missing', {}, io.BytesIO())):
+                        with self.assertRaises(urllib.error.HTTPError):
+                            RUNTIME.published_catalog(kind, arch, artifacts)
 
 
 class SSHRepairRecoveryTests(unittest.TestCase):

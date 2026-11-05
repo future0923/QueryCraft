@@ -88,10 +88,17 @@ class ReleasePlanTests(unittest.TestCase):
         result=self.result();self.assertEqual([k for k,v in result['drivers'].items() if v['changed']],['mysql','doris'])
         self.assertEqual(result['drivers']['mysql']['requiredTogether'],['mysql','doris'])
         self.assertEqual(result['drivers']['doris']['requiredTogether'],['mysql','doris'])
-    def test_driver_api_change_selects_all_six(self):
+    def test_driver_api_change_selects_all_seven(self):
         self.write('scripts/driver-package-common.sh','querycraft_driver_api_version=6\n')
         result=self.result();self.assertEqual([k for k,v in result['drivers'].items() if v['changed']],PLAN.DRIVERS)
         self.assertTrue(all(item['requiredTogether']==PLAN.DRIVERS for item in result['drivers'].values()))
+    def test_new_milvus_driver_does_not_select_existing_drivers(self):
+        self.write('QueryCraftDrivers/Sources/QueryCraftMilvusDriver/Session.swift','actor Session {}')
+        result=self.result();self.assertEqual([k for k,v in result['drivers'].items() if v['changed']],['milvus'])
+    def test_milvus_request_validation_selects_mcp(self):
+        self.write('QueryCraftPackage/Sources/QueryCraftFeature/MilvusReadRequest.swift','enum Request {}')
+        result=self.result();self.assertTrue(result['components']['mcp']['changed'])
+        self.assertFalse(any(item['changed'] for item in result['drivers'].values()))
     def test_version_only_component_change_is_rejected(self):
         self.versions['skill']['version']='1.0.1';self.write('Components/versions.json',json.dumps(self.versions))
         with self.assertRaisesRegex(ValueError,'without implementation changes'):self.result()
@@ -124,6 +131,10 @@ class WorkflowSelectionTests(unittest.TestCase):
     def test_unchanged_drivers_cannot_be_published(self):
         result=self.metadata(CHANGED_DRIVERS='[]');self.assertNotEqual(result.returncode,0)
         self.assertIn('refusing to publish unchanged drivers',result.stderr)
+    def test_milvus_can_be_selected_for_native_builds(self):
+        result=self.metadata(CHANGED_DRIVERS='["milvus"]',REQUESTED_REBUILD_DRIVER='milvus')
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('driver_matrix=["milvus"]',(self.root/'output').read_text())
     def test_reused_artifacts_upload_only_selected_driver(self):
         stub=self.bin/'gh';stub.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$QC_GH_LOG"\n');stub.chmod(0o755)
         dist=self.root/'dist';dist.mkdir()

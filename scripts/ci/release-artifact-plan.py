@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 
 ARCHITECTURES = [('x86_64', 'macos-15-intel'), ('arm64', 'macos-15')]
-DRIVERS = {'mysql', 'postgresql', 'doris', 'redis', 'elasticsearch', 'kafka'}
+DRIVERS = {'mysql', 'postgresql', 'doris', 'redis', 'elasticsearch', 'kafka', 'milvus'}
 # A failed, unpublished SSH packaging repair may retain driver artifacts only
 # when every other tracked input (including the workflow) is byte-identical.
 SSH_REPAIR_PATHS = {
