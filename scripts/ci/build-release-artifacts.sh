@@ -159,7 +159,11 @@ build_scheme() {
     local derived_data="$2"
     local target_architecture="$3"
     shift 3
-    local settings=("${common_build_settings[@]}" "$@")
+    # Hosted images can contain stale/broken global SwiftPM artifact entries.
+    # Keep package downloads private to this invocation, shared by its schemes.
+    # Never reset the developer's or runner image's global package cache.
+    local settings=("${common_build_settings[@]}" "$@"
+        "-packageCachePath" "$temporary_root/package-cache")
     local arguments=(
         macos build
         --workspace-path "$workspace"
