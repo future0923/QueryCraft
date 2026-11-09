@@ -12,8 +12,11 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
+import sys
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -31,11 +34,25 @@ def local_profile():
 
 
 def run(*args):
-    result = subprocess.run(list(map(str, args)), capture_output=True, text=True)
-    if result.returncode:
-        # notarytool diagnostics do not include key contents; never echo argv.
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f'{args[0]} failed')
-    return result.stdout
+    # These operations are idempotent. Never blindly resubmit an upload after
+    # an ambiguous network failure, or retry authentication/ticket rejection.
+    retryable = args[:3] in {
+        ('xcrun', 'notarytool', 'history'), ('xcrun', 'notarytool', 'log'),
+        ('xcrun', 'stapler', 'staple'), ('xcrun', 'stapler', 'validate'),
+    }
+    delays = (5, 15, 30)
+    for attempt in range(len(delays) + 1):
+        result = subprocess.run(list(map(str, args)), capture_output=True, text=True)
+        if not result.returncode:
+            return result.stdout
+        diagnostic = result.stderr.strip() or result.stdout.strip() or f'{args[0]} failed'
+        network_error = re.search(r'NSURLErrorDomain\s+(?:Code=|error\s+)-100[13459]\b', diagnostic)
+        if not retryable or not network_error or attempt == len(delays):
+            # Never echo argv: authentication arguments can contain passwords.
+            raise RuntimeError(diagnostic)
+        print(f'Transient Apple network error; retrying {args[1]} {args[2]} '
+              f'({attempt + 2}/{len(delays) + 1}) in {delays[attempt]}s.', file=sys.stderr, flush=True)
+        time.sleep(delays[attempt])
 
 
 @contextmanager
@@ -105,11 +122,17 @@ def notarize(path, *, log=None):
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('artifact', help='check or path to final .app/.dmg/.zip')
+    parser.add_argument('artifact', help='check, validate, or path to final .app/.dmg/.zip')
+    parser.add_argument('target', nargs='?', help='stapled .app/.dmg for validate')
     parser.add_argument('--log', type=Path)
     args = parser.parse_args()
     if args.artifact == 'check':
         check()
+    elif args.artifact == 'validate':
+        # Gate for downloaded release artifacts; shares the bounded network retry.
+        if not args.target or not Path(args.target).exists():
+            raise RuntimeError('Expected an existing stapled .app or .dmg to validate.')
+        print(run('xcrun', 'stapler', 'validate', args.target).strip())
     else:
         notarize(args.artifact, log=args.log)
 

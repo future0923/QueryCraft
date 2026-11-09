@@ -63,7 +63,7 @@ def main():
         client_apps = list(client.rglob('QueryCraft.app'))
         assert len(client_apps) == 1, client_apps
         subprocess.run([sys.executable, str(ROOT / 'scripts/code-signing.py'), 'verify', str(client_apps[0])], check=True)
-        subprocess.run(['xcrun', 'stapler', 'validate', str(client_apps[0])], check=True)
+        subprocess.run([sys.executable, str(ROOT / 'scripts/notarize.py'), 'validate', str(client_apps[0])], check=True)
         subprocess.run(['spctl', '--assess', '--type', 'execute', str(client_apps[0])], check=True)
         previous = work / 'previous'
         current = work / 'current'
@@ -102,7 +102,7 @@ def main():
         apps = list((work / 'mcp').rglob('QueryCraft MCP.app'))
         assert len(apps) == 1, apps
         subprocess.run([sys.executable, str(ROOT / 'scripts/code-signing.py'), 'verify', str(apps[0])], check=True)
-        subprocess.run(['xcrun', 'stapler', 'validate', str(apps[0])], check=True)
+        subprocess.run([sys.executable, str(ROOT / 'scripts/notarize.py'), 'validate', str(apps[0])], check=True)
         subprocess.run([sys.executable, str(ROOT / 'scripts/test-mcp-package.py'), str(apps[0]),
                         '--drivers-dir', str(current), '--previous-drivers-dir', str(previous)], check=True)
         print(f'PASS {arch}: packaged MCP and seven drivers, including independent MySQL/Doris upgrades')

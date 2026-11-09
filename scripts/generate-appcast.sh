@@ -109,7 +109,7 @@ else
         echo "The update must be signed with a Developer ID Application certificate." >&2
         exit 65
     fi
-    xcrun stapler validate "$app_path"
+    python3 "$repository_root/scripts/notarize.py" validate "$app_path"
 fi
 
 download_prefix="${update_base_url}/releases/"

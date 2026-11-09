@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Failure-path regression gates; no Apple uploads or access to saved passwords."""
 import base64
+from contextlib import redirect_stderr
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -84,6 +86,56 @@ class SigningTests(unittest.TestCase):
 
 
 class NotarizationTests(unittest.TestCase):
+    def test_transient_ticket_network_error_is_retried_without_logging_arguments(self):
+        failure = subprocess.CompletedProcess([], 68, '', 'Error Domain=NSURLErrorDomain Code=-1005 "The network connection was lost."')
+        success = subprocess.CompletedProcess([], 0, 'Ticket validated', '')
+        output = io.StringIO()
+        with patch.object(notary.subprocess, 'run', side_effect=[failure, success]) as command, \
+             patch.object(notary.time, 'sleep') as delay, redirect_stderr(output):
+            self.assertEqual(notary.run('xcrun', 'stapler', 'validate', 'private-fixture.app'), 'Ticket validated')
+        self.assertEqual(command.call_count, 2)
+        delay.assert_called_once_with(5)
+        self.assertNotIn('private-fixture.app', output.getvalue())
+
+    def test_persistent_network_failure_still_fails_after_bounded_retries(self):
+        failure = subprocess.CompletedProcess([], 68, '', 'Error Domain=NSURLErrorDomain Code=-1005')
+        with patch.object(notary.subprocess, 'run', return_value=failure) as command, \
+             patch.object(notary.time, 'sleep') as delay, redirect_stderr(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, 'NSURLErrorDomain'):
+                notary.run('xcrun', 'stapler', 'validate', 'fixture.app')
+        self.assertEqual(command.call_count, 4)
+        self.assertEqual([call.args[0] for call in delay.call_args_list], [5, 15, 30])
+
+    def test_authentication_and_invalid_ticket_fail_without_retry(self):
+        for args, message in [
+            (('xcrun', 'notarytool', 'history'), 'HTTP status code: 401 Unauthorized'),
+            (('xcrun', 'stapler', 'validate', 'fixture.app'), 'The validate action failed! Error 65. Invalid ticket')]:
+            with self.subTest(message=message), patch.object(notary.subprocess, 'run',
+                 return_value=subprocess.CompletedProcess([], 1, '', message)) as command, \
+                 patch.object(notary.time, 'sleep') as delay:
+                with self.assertRaises(RuntimeError):
+                    notary.run(*args)
+                self.assertEqual(command.call_count, 1)
+                delay.assert_not_called()
+
+    def test_upload_is_not_duplicated_after_ambiguous_network_failure(self):
+        failure = subprocess.CompletedProcess([], 1, '', 'Error Domain=NSURLErrorDomain Code=-1005')
+        with patch.object(notary.subprocess, 'run', return_value=failure) as command, \
+             patch.object(notary.time, 'sleep') as delay:
+            with self.assertRaises(RuntimeError):
+                notary.run('xcrun', 'notarytool', 'submit', 'fixture.zip')
+            self.assertEqual(command.call_count, 1)
+            delay.assert_not_called()
+
+    def test_idempotent_notary_reads_and_stapling_can_recover(self):
+        for operation in [('notarytool', 'history'), ('notarytool', 'log'), ('stapler', 'staple')]:
+            with self.subTest(operation=operation), patch.object(notary.subprocess, 'run', side_effect=[
+                 subprocess.CompletedProcess([], 1, '', 'Error Domain=NSURLErrorDomain Code=-1001'),
+                 subprocess.CompletedProcess([], 0, 'fixture', '')]) as command, \
+                 patch.object(notary.time, 'sleep'), redirect_stderr(io.StringIO()):
+                self.assertEqual(notary.run('xcrun', *operation), 'fixture')
+                self.assertEqual(command.call_count, 2)
+
     def test_existing_apple_id_notarization_credentials_work_in_ci(self):
         team = signer.configuration()['teamID']
         environment = {'CI': 'true', 'QUERYCRAFT_NOTARY_APPLE_ID': 'fixture@example.invalid',
