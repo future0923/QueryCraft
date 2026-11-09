@@ -4,13 +4,13 @@
 
 #include "Shared.xcconfig"
 
-// Free direct distribution uses a persistent self-signed application identity
-// and Sparkle's Ed25519 archive signature for the
-// update trust chain. The sandbox-only launcher requires a provisioned Apple
-// signature, which is unavailable to an unnotarized Personal Team release.
+// Direct Developer ID distribution. Final signing, trusted timestamps and
+// notarization run after stripping/packaging. Sparkle keeps its Ed25519 key.
+// The non-sandboxed host continues to use Sparkle's existing installer path.
 CODE_SIGN_ENTITLEMENTS = Config/Release.entitlements
 CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 ENABLE_APP_SANDBOX = NO
+ENABLE_HARDENED_RUNTIME = YES
 QUERYCRAFT_SPARKLE_INSTALLER_LAUNCHER_ENABLED = NO
 QUERYCRAFT_DRIVER_CATALOG_BASE_URL = https:/$()/querycraft.debug-tools.cc/drivers/
 

@@ -11,6 +11,14 @@ HELPER_NAME = 'QueryCraft Credentials.app'
 IDENTIFIER = 'io.github.future0923.QueryCraft.CredentialHelper'
 
 
+def sign_helper(signer, identity, helper):
+    if hasattr(signer, 'sign_code'):
+        signer.sign_code(helper, runtime=True)
+    else:
+        signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN,
+                   '--timestamp=none', '--options', 'runtime', helper)
+
+
 def embed(app, signer, identity):
     app = Path(app)
     info_path = app / 'Contents/Info.plist'
@@ -20,11 +28,12 @@ def embed(app, signer, identity):
     helper = app / 'Contents/Helpers' / HELPER_NAME
     if helper.exists():
         # Never silently replace an already packaged helper while re-signing a host.
-        requirement = f'identifier "{IDENTIFIER}" and certificate leaf = H"{identity}"'
-        signer.run('codesign', '--verify', '--strict', '-R', requirement, helper)
+        requirement = f'identifier "{IDENTIFIER}" and ' + (signer.team_requirement() if hasattr(signer, 'team_requirement') else f'certificate leaf = H"{identity}"')
+        signer.run('codesign', '--verify', '--strict', '-R=' + requirement, helper)
     else:
         (helper / 'Contents/MacOS').mkdir(parents=True)
-        source = (ROOT / 'CredentialHelper/main.swift').read_text().replace('__PINNED_CERTIFICATE_SHA1__', identity)
+        source = (signer.helper_source() if hasattr(signer, 'helper_source') else
+                  (ROOT / 'CredentialHelper/main.swift').read_text().replace('__PINNED_CERTIFICATE_SHA1__', identity))
         with tempfile.TemporaryDirectory(prefix='querycraft-helper-') as directory:
             directory = Path(directory)
             main = directory / 'main.swift'
@@ -46,8 +55,7 @@ def embed(app, signer, identity):
             'LSUIElement': True,
             'QCCredentialProtocolVersion': 1,
         }))
-        signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN,
-                   '--timestamp=none', '--options', 'runtime', helper)
+        sign_helper(signer, identity, helper)
     embed_shared(app, signer, identity)
     info['QCSharedCredentialHelperRequired'] = True
     info['QCCredentialHelperRequired'] = True
@@ -60,13 +68,14 @@ def embed_shared(app, signer, identity, archs=('arm64', 'x86_64')):
     identifier = 'io.github.future0923.QueryCraft.SharedCredentialHelper'
     helper = app / 'Contents/Helpers/QueryCraft Shared Credentials.app'
     if helper.exists():
-        requirement = f'identifier "{identifier}" and certificate leaf = H"{identity}"'
-        signer.run('codesign', '--verify', '--strict', '-R', requirement, helper)
+        requirement = f'identifier "{identifier}" and ' + (signer.team_requirement() if hasattr(signer, 'team_requirement') else f'certificate leaf = H"{identity}"')
+        signer.run('codesign', '--verify', '--strict', '-R=' + requirement, helper)
         if plistlib.loads((helper / 'Contents/Info.plist').read_bytes()).get('QCCredentialProtocolVersion') != 2:
             raise RuntimeError('Unexpected shared helper protocol.')
         return
     (helper / 'Contents/MacOS').mkdir(parents=True)
-    source = (ROOT / 'CredentialHelper/main.swift').read_text().replace('__PINNED_CERTIFICATE_SHA1__', identity)
+    source = (signer.helper_source() if hasattr(signer, 'helper_source') else
+                  (ROOT / 'CredentialHelper/main.swift').read_text().replace('__PINNED_CERTIFICATE_SHA1__', identity))
     with tempfile.TemporaryDirectory(prefix='querycraft-shared-helper-') as directory:
         directory = Path(directory)
         main = directory / 'main.swift'
@@ -83,8 +92,7 @@ def embed_shared(app, signer, identity, archs=('arm64', 'x86_64')):
         'CFBundleVersion': '2', 'LSMinimumSystemVersion': '15.0',
         'LSUIElement': True, 'QCCredentialProtocolVersion': 2,
     }))
-    signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN,
-               '--timestamp=none', '--options', 'runtime', helper)
+    sign_helper(signer, identity, helper)
 
 
 if __name__ == '__main__':

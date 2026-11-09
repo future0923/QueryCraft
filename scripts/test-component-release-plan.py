@@ -20,6 +20,16 @@ class ReleasePlanTests(unittest.TestCase):
         path=self.root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(text)
     def commit(self):self.git('add','.');self.git('commit','-qm','fixture')
     def result(self):self.commit();return PLAN.plan(self.base,'HEAD',self.versions)
+    def test_developer_id_inputs_select_all_native_distributions_but_not_skill(self):
+        self.write('Config/DeveloperID.json','{"teamID":"FIXTURE123"}')
+        result=self.result()
+        self.assertEqual([k for k,v in result['components'].items() if v['changed']],['mcp','ssh'])
+        self.assertTrue(all(v['changed'] for v in result['drivers'].values()))
+    def test_helper_packager_selects_mcp_only(self):
+        self.write('scripts/credential-helper.py','changed helper packaging')
+        result=self.result()
+        self.assertEqual([k for k,v in result['components'].items() if v['changed']],['mcp'])
+        self.assertFalse(any(v['changed'] for v in result['drivers'].values()))
     def test_settings_only_does_not_release_mcp_skill_or_drivers(self):
         self.write('QueryCraftPackage/Sources/QueryCraftFeature/MCPSettingsPane.swift','struct Settings {}')
         result=self.result();self.assertFalse(any(item['changed'] for item in result['components'].values()));self.assertFalse(any(item['changed'] for item in result['drivers'].values()))
@@ -131,6 +141,21 @@ class WorkflowSelectionTests(unittest.TestCase):
     def test_unchanged_drivers_cannot_be_published(self):
         result=self.metadata(CHANGED_DRIVERS='[]');self.assertNotEqual(result.returncode,0)
         self.assertIn('refusing to publish unchanged drivers',result.stderr)
+    def test_validation_builds_changed_drivers_without_publication(self):
+        result=self.metadata(REQUESTED_VALIDATE_ONLY='true',REQUESTED_PUBLISH_DRIVERS='false',REQUESTED_SOURCE_RUN_ID='')
+        self.assertEqual(result.returncode,0,result.stderr)
+        output=(self.root/'output').read_text()
+        self.assertIn('driver_matrix=["mysql","doris"]',output)
+        for kind in ['publish','publish_drivers','publish_components']:
+            self.assertIn(kind+'=false',output)
+    def test_validation_rejects_each_publication_flag(self):
+        for flag in ['REQUESTED_PUBLISH','REQUESTED_PUBLISH_DRIVERS','REQUESTED_PUBLISH_COMPONENTS']:
+            with self.subTest(flag=flag):
+                environment=dict(REQUESTED_VALIDATE_ONLY='true',REQUESTED_PUBLISH_DRIVERS='false')
+                environment[flag]='true'
+                result=self.metadata(**environment)
+                self.assertNotEqual(result.returncode,0)
+                self.assertIn('cannot request publication',result.stderr)
     def test_milvus_can_be_selected_for_native_builds(self):
         result=self.metadata(CHANGED_DRIVERS='["milvus"]',REQUESTED_REBUILD_DRIVER='milvus')
         self.assertEqual(result.returncode,0,result.stderr)

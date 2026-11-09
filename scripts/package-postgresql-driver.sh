@@ -143,6 +143,7 @@ codesign --verify --deep --strict --verbose=2 "$bundle"
 
 archive_temp="$(mktemp "$output_root/.postgresql-driver-$driver_version-$driver_arch.XXXXXX")"
 ditto -c -k --keepParent "$bundle" "$archive_temp"
+querycraft_notarize_driver_archive "$archive_temp"
 sha256="$(shasum -a 256 "$archive_temp" | cut -d ' ' -f 1)"
 size="$(stat -f %z "$archive_temp")"
 archive_name="postgresql-driver-$driver_version-$driver_arch-${sha256[1,16]}.zip"

@@ -83,9 +83,18 @@ def verify(app, drivers=None, previous_drivers=None):
                         source = next(catalog.glob(kind + '-*.querycraftdriver'))
                         shutil.copytree(source, mixed / f'DriverAPI-{api}' / 'Drivers' / source.name, symlinks=True)
                     checked = run([binary, '--check-drivers', '--data-dir', mixed], cwd=root, env=env)
-                    assert json.loads(checked.stdout) == ['doris', 'mysql'], checked.stderr
+                    # During the Developer ID transition the shipped predecessor
+                    # is ad-hoc. Require its rejection, never weaken host trust.
+                    host_signature = run(['codesign', '-d', '--verbose=4', app]).stderr
+                    old_bundle = next(previous_drivers.glob(previous + '-*.querycraftdriver'))
+                    old_signature = run(['codesign', '-d', '--verbose=4', old_bundle]).stderr
+                    def team(signature):
+                        return next((line for line in signature.splitlines() if line.startswith('TeamIdentifier=')), None)
+                    same_team = team(host_signature) == team(old_signature)
+                    expected_mixed = ['doris', 'mysql'] if same_team else [updated.lower()]
+                    assert json.loads(checked.stdout) == expected_mixed, checked.stderr
                     assert 'is implemented in both' not in checked.stderr, checked.stderr
-                print('PASS independent MySQL/Doris upgrades coexist with previous static transport drivers')
+                print('PASS independent MySQL/Doris upgrades: trusted predecessors coexist; legacy signatures are rejected')
 
 
 if __name__ == '__main__':

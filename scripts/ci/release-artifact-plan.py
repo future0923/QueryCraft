@@ -22,13 +22,13 @@ SSH_REPAIR_PATHS = {
 }
 
 
-def plan(available, drivers, publish_drivers, rebuild_driver='none'):
+def plan(available, drivers, publish_drivers, rebuild_driver='none', validate_drivers=False):
     clients = [dict(architecture=arch, runner=runner) for arch, runner in ARCHITECTURES
                if f'querycraft-release-client-{arch}-v2' not in available]
     update = bool(clients) or 'querycraft-release-client-update-v2' not in available
     driver_builds = [dict(database=driver, architecture=arch, runner=runner)
                      for driver in drivers for arch, runner in ARCHITECTURES
-                     if publish_drivers and (driver == rebuild_driver
+                     if (publish_drivers or validate_drivers) and (driver == rebuild_driver
                          or f'querycraft-release-driver-{driver}-{arch}' not in available)]
     return dict(client_build_matrix=clients, driver_build_matrix=driver_builds,
                 build_update=update, has_new_artifacts=bool(clients or update or driver_builds))
@@ -79,6 +79,7 @@ def main():
     parser.add_argument('--build', required=True)
     parser.add_argument('--drivers', required=True)
     parser.add_argument('--publish-drivers', choices=['true', 'false'], required=True)
+    parser.add_argument('--validate-drivers', choices=['true', 'false'], default='false')
     parser.add_argument('--source-run', default='')
     parser.add_argument('--rebuild-driver', default='none')
     parser.add_argument('--github-output', type=Path, required=True)
@@ -120,7 +121,8 @@ def main():
             require_unpublished(get, tag)
             validate_driver_recovery(run, build_ref, available)
             print('Verified SSH-only repair: all driver build inputs and identities are unchanged; rebuilding all clients.')
-    result = plan(available, drivers, args.publish_drivers == 'true', args.rebuild_driver)
+    result = plan(available, drivers, args.publish_drivers == 'true', args.rebuild_driver,
+                  args.validate_drivers == 'true')
     result['build_ref'] = build_ref
     with args.github_output.open('a') as output:
         for key, value in result.items():

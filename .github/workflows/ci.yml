@@ -25,6 +25,12 @@ jobs:
       - name: Install XcodeBuildMCP
         run: npm install --global xcodebuildmcp@2.6.2
 
+      - name: Test signing, notarization and release compatibility gates
+        run: |
+          python3 scripts/test-developer-id-distribution.py
+          python3 scripts/test-component-release-plan.py
+          python3 scripts/test-release-artifact-plan.py
+
       - name: Build the application
         run: |
           xcodebuildmcp macos build \

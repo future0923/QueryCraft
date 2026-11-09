@@ -47,11 +47,13 @@ spec.loader.exec_module(signer)
 identity = signer.activate()
 subprocess.run(['python3', str(root / 'scripts/credential-helper.py'), str(staged)], check=True)
 # Debug/test builds can embed package frameworks and Swift compatibility libraries.
-# Sign those before the host, preserving Sparkle's upstream nested signatures.
+# Sign those before the host; Developer ID also signs nested Sparkle code.
+if hasattr(signer, 'sign_sparkle'):
+    signer.sign_sparkle(staged / 'Contents/Frameworks/Sparkle.framework')
 for component in sorted((staged / 'Contents/Frameworks').iterdir()):
     if component.name != 'Sparkle.framework' and component.suffix in ('.framework', '.dylib'):
-        signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', component)
-signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', '--entitlements', root / 'Config/Release.entitlements', staged)
+        signer.sign_code(component)
+signer.sign_code(staged, entitlements=root / 'Config/Release.entitlements')
 signer.verify(staged)
 
 def running():

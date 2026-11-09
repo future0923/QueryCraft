@@ -53,6 +53,18 @@ def main():
     assert arch in ['arm64', 'x86_64'], arch
     with tempfile.TemporaryDirectory(prefix='qc-release-runtime-') as temporary:
         work = Path(temporary)
+        # Cached runs from before the Developer ID migration must not bypass
+        # signing/notarization gates simply because an artifact name matches.
+        clients = list(artifacts.rglob(f'QueryCraft-*-{arch}.tar.xz'))
+        assert len(clients) == 1, clients
+        client = work / 'client'
+        client.mkdir()
+        subprocess.run(['tar', '-xJf', str(clients[0]), '-C', str(client)], check=True)
+        client_apps = list(client.rglob('QueryCraft.app'))
+        assert len(client_apps) == 1, client_apps
+        subprocess.run([sys.executable, str(ROOT / 'scripts/code-signing.py'), 'verify', str(client_apps[0])], check=True)
+        subprocess.run(['xcrun', 'stapler', 'validate', str(client_apps[0])], check=True)
+        subprocess.run(['spctl', '--assess', '--type', 'execute', str(client_apps[0])], check=True)
         previous = work / 'previous'
         current = work / 'current'
         previous.mkdir()
@@ -89,6 +101,8 @@ def main():
         subprocess.run(['ditto', '-x', '-k', str(archives[0]), str(work / 'mcp')], check=True)
         apps = list((work / 'mcp').rglob('QueryCraft MCP.app'))
         assert len(apps) == 1, apps
+        subprocess.run([sys.executable, str(ROOT / 'scripts/code-signing.py'), 'verify', str(apps[0])], check=True)
+        subprocess.run(['xcrun', 'stapler', 'validate', str(apps[0])], check=True)
         subprocess.run([sys.executable, str(ROOT / 'scripts/test-mcp-package.py'), str(apps[0]),
                         '--drivers-dir', str(current), '--previous-drivers-dir', str(previous)], check=True)
         print(f'PASS {arch}: packaged MCP and seven drivers, including independent MySQL/Doris upgrades')

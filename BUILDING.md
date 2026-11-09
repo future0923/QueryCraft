@@ -2,8 +2,9 @@
 
 QueryCraft requires macOS 15 or later and Xcode 26. Open
 `QueryCraft.xcworkspace` and build the `QueryCraft` scheme. The checked-in
-configuration uses Xcode's ad-hoc "Sign to Run Locally" identity, so a paid
-Apple Developer account and a personal development team are not required.
+Debug configuration uses Xcode's ad-hoc "Sign to Run Locally" identity, so a
+paid Apple Developer account is not required for ordinary local builds.
+Formal Release packaging requires Developer ID signing and Apple notarization.
 
 The command-line build uses XcodeBuildMCP:
 
@@ -15,99 +16,45 @@ The command-line build uses XcodeBuildMCP:
   --derived-data-path .build/DerivedData
 ```
 
-## Persistent signing for saved passwords
+## Developer ID distribution and saved passwords
 
-Distributed applications use a fixed self-signed code-signing certificate. The
-public certificate fingerprint is pinned in `Config/CodeSigningIdentity.txt`;
-no private key is checked in. This stabilizes the designated requirement, but
-macOS still uses changing CDHash partitions for self-signed Keychain callers.
-A fixed certificate alone does not prevent authorization prompts after updates.
-
-Packaged apps therefore access saved connection passwords through the signed
-`QueryCraft Credentials.app` helper. It is installed once under
-`~/Library/Application Support/QueryCraftCredentials/v1/` and retained when the
-main application updates. The helper only accepts a live parent process with
-the pinned certificate and a QueryCraft/QueryCraft.Dev identifier. Requests and
-responses use private pipes, never password-bearing arguments, files, or logs.
-The host verifies the helper signature before each request and fails closed if
-the installed helper has been modified. Passwords remain in the login Keychain.
-
-Existing saved connections may each need an initial **Always Allow** authorization
-for the helper. Main-app updates then reuse the same helper code hash. Changes to
-the helper's protocol or security code require an explicit new installation
-version, which may require fresh authorization. Do not overwrite the installed
-v1 helper during routine development or packaging. Raw, unpackaged Xcode builds
-retain direct Keychain access; use the Dev installer below for stable access.
-
-After building Debug, install the isolated Dev app with:
+Release packaging uses the Developer ID identity pinned by public certificate
+metadata in `Config/DeveloperID.json`. Debug Xcode builds may still use ad-hoc
+signing. Local signing uses the already installed private key; it never exports
+it or generates a replacement. See [distribution setup](docs/APPLE_DISTRIBUTION.md)
+for CI secrets, notarization, credential migration and mobile TestFlight export.
 
 ```sh
-python3 scripts/install-dev-app.py
-xcodebuildmcp macos launch --app-path /Applications/QueryCraftDev.app
+python3 scripts/code-signing.py check
+python3 scripts/code-signing.py sign /path/to/fresh/QueryCraft.app
+python3 scripts/code-signing.py verify /path/to/fresh/QueryCraft.app
+python3 scripts/notarize.py /path/to/fresh/QueryCraft.app
 ```
 
-The installer strips build-directory runpaths before signing, embeds the helper,
-verifies the signatures, and backs up the previous Dev app before replacing it.
-The Release signing script also embeds the helper before signing the host.
-
-To inspect obsolete authorizations without reading any passwords:
+Packaged applications use private pipes to signed credential helpers. Existing
+v1/shared-v2 helpers are retained; Developer ID helpers live in an additional
+`developer-id-5975A7N3W3` directory under each existing installation root. Their
+caller and host checks require an Apple-trusted Developer ID from the same Team
+and an allowed QueryCraft identifier. Certificate renewal within that Team does
+not change the installed-helper namespace. Passwords, service names, vault IDs
+and connection data remain unchanged. First use of an existing vault may need
+macOS authorization for the new helper; an authorization failure never deletes
+or replaces the old item. Both generations share the same vault file lock.
 
 ```sh
-python3 scripts/clean-keychain-authorizations.py
+python3 scripts/test-credential-helper.py
+python3 scripts/test-shared-credentials.py
 ```
 
-For cleanup, run `scripts/Clean-QueryCraft-Keychain.command` in a local terminal.
-It backs up scoped authorization metadata and invokes macOS `security` with an
-exact service and account for each item. The Keychain password is requested
-locally by `security` without the insecure `-k` command-line option. Current app
-and helper hashes and non-hash permissions are retained; older-only credentials
-are skipped rather than locked out. This cleanup is optional and is not the fix
-for repeated prompts. It does not delete passwords or connection definitions.
+These native tests use disposable credentials, disable Keychain interaction,
+verify upgrades, sharing, tamper/caller rejection and remove their fixture items.
+They do not claim that an old user's Keychain ACL can be migrated without consent.
 
-Run `python3 scripts/test-credential-helper.py` to verify two differently signed
-host versions can read/update one temporary test credential through an unchanged
-helper, with all Keychain UI disabled. It also verifies caller rejection and
-helper tamper detection, then deletes the test credential.
-
-The maintainer's signing material is stored in
-`~/Library/Application Support/QueryCraftSigning` (directory mode 700, secret
-files mode 600). Back up this whole directory securely, especially `identity.p12`
-and `p12-password`. Losing it and generating a replacement changes the identity
-and requires users to authorize access again. The certificate is valid for ten
-years. `python3 scripts/code-signing.py init` reuses the existing identity and
-refuses to replace a pinned certificate with a new one.
-
-For a local non-sandboxed app, finish all binary and bundle edits first, then run:
-
-```sh
-python3 scripts/code-signing.py sign /path/to/QueryCraftDev.app
-python3 scripts/code-signing.py verify /path/to/QueryCraftDev.app
-```
-
-The free Release channel uses `Config/Release.entitlements` without App Sandbox,
-matching its Sparkle installer configuration. Ordinary Debug builds retain their
-existing sandbox settings; the signing helper rejects sandboxed bundles rather
-than silently changing their storage and permission behavior. Release packaging
-builds intermediate ad-hoc binaries, strips them, then applies the pinned
-certificate to the host and QueryCraftFeature framework. Sparkle's embedded
-upstream signatures and existing Ed25519 update key remain unchanged. External
-drivers still use the existing ad-hoc channel (the self-signed host has no Apple
-Team ID).
-
-Before running the updated GitHub release workflow, configure these repository
-Actions secrets using the **existing** local identity:
-
-- `QUERYCRAFT_SIGNING_P12_BASE64`: base64 of `identity.p12`.
-- `QUERYCRAFT_SIGNING_P12_PASSWORD`: contents of `p12-password`.
-- Keep the existing `SPARKLE_PRIVATE_KEY` unchanged.
-
-CI imports the identity into a temporary keychain, checks its fingerprint, and
-removes it after packaging, including partial imports when a job fails. Client
-builds check the identity before compiling. They fail if it is missing or incorrect;
-it never generates a new one or silently falls back to ad-hoc application signing.
-Self-signing does not provide Apple notarization or eliminate Gatekeeper's
-first-install warnings. Existing Keychain entries may need **Always Allow** when
-first accessed by the new helper identity.
+The previous self-signed identity remains available only for explicit recovery:
+`QUERYCRAFT_SIGNING_MODE=legacy python3 scripts/code-signing.py check`.
+Its private backup stays under `~/Library/Application Support/QueryCraftSigning`;
+do not delete or replace it. Legacy artifacts must not enter the Developer ID
+release pipeline. Sparkle EdDSA keys and component catalog keys are unchanged.
 
 ## Database drivers
 

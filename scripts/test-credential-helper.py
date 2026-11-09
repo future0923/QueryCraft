@@ -80,14 +80,18 @@ def main():
                 value = plistlib.loads(helper_info.read_bytes())
                 value['CFBundleVersion'] = '1.1'
                 helper_info.write_bytes(plistlib.dumps(value))
-                signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN,
-                           '--timestamp=none', '--options', 'runtime', helper)
-            signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', app)
+                packager.sign_helper(signer, identity, helper)
+            signer.sign_code(app)
+            signer.verify(app)
             hosts.append(app)
         assert cdhash(hosts[0]) != cdhash(hosts[1])
         assert cdhash(hosts[0] / 'Contents/Helpers' / packager.HELPER_NAME) != cdhash(hosts[1] / 'Contents/Helpers' / packager.HELPER_NAME)
         cache = folder / 'installed-helper'
-        installed = cache / packager.HELPER_NAME
+        legacy_marker = cache / 'legacy-identity-marker'
+        cache.mkdir(parents=True)
+        legacy_marker.write_text('keep installed legacy helper')
+        paid_root = cache / ('developer-id-' + signer.configuration()['teamID']) if hasattr(signer, 'configuration') else cache
+        installed = paid_root / packager.HELPER_NAME
         def run(host, operation):
             subprocess.run([str(host / 'Contents/MacOS/Host'), operation, str(cache), account], check=True, timeout=30)
         try:
@@ -103,7 +107,8 @@ def main():
             result = subprocess.run([str(installed / 'Contents/MacOS/QueryCraftCredentials')],
                                     input=b'', capture_output=True, timeout=10)
             assert result.returncode == 77 and not result.stdout
-            print('PASS unauthorized caller rejected')
+            assert legacy_marker.read_text() == 'keep installed legacy helper'
+            print('PASS unauthorized caller rejected; legacy installation root retained')
             # Reject a replaced helper rather than falling back to direct Keychain access.
             info = installed / 'Contents/Info.plist'
             original = info.read_bytes()

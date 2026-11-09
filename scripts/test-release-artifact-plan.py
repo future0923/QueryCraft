@@ -22,6 +22,12 @@ COMPLETE |= {f'querycraft-release-driver-{kind}-{arch}' for kind in DRIVERS for 
 
 
 class ArtifactPlanTests(unittest.TestCase):
+    def test_validation_builds_selected_native_drivers_with_publication_disabled(self):
+        result = MODULE.plan(set(), DRIVERS, False, validate_drivers=True)
+        self.assertEqual(len(result['driver_build_matrix']), 6)
+        self.assertEqual({row['database'] for row in result['driver_build_matrix']}, set(DRIVERS))
+        self.assertEqual({row['architecture'] for row in result['driver_build_matrix']}, {'x86_64', 'arm64'})
+
     def test_milvus_builds_both_native_architectures(self):
         self.assertIn('milvus', MODULE.DRIVERS)
         result = MODULE.plan(set(), ['milvus'], True)

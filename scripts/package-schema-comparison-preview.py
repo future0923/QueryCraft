@@ -38,8 +38,10 @@ signer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(signer)
 identity = signer.activate()
 subprocess.run([sys.executable, str(root / 'scripts/credential-helper.py'), str(destination)], check=True)
-signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', destination / 'Contents/Frameworks/QueryCraftFeature.framework')
-signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', '--entitlements', root / 'Config/Release.entitlements', destination)
+if hasattr(signer, 'sign_sparkle'):
+    signer.sign_sparkle(destination / 'Contents/Frameworks/Sparkle.framework')
+signer.sign_code(destination / 'Contents/Frameworks/QueryCraftFeature.framework')
+signer.sign_code(destination, entitlements=root / 'Config/Release.entitlements')
 signer.verify(destination)
 (destination.parent / '开始测试.txt').write_text('''结构对比测试版
 

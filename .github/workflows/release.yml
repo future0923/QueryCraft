@@ -3,6 +3,11 @@ name: Package and publish QueryCraft
 on:
   workflow_dispatch:
     inputs:
+      validate_only:
+        description: Build, notarize and verify changed native packages without publishing
+        required: true
+        default: false
+        type: boolean
       publish:
         description: Upload client artifacts and create the GitHub Release
         required: true
@@ -93,6 +98,7 @@ jobs:
       - id: release
         env:
           REQUESTED_PUBLISH_COMPONENTS: ${{ github.event_name == 'push' || inputs.publish_components || false }}
+          REQUESTED_VALIDATE_ONLY: ${{ inputs.validate_only || false }}
           CHANGED_DRIVERS: ${{ steps.components.outputs.changed_drivers }}
           DRIVER_REQUIREMENTS: ${{ steps.components.outputs.driver_requirements }}
           REQUESTED_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
@@ -108,6 +114,12 @@ jobs:
           source_run_id="${REQUESTED_SOURCE_RUN_ID:-}"
           rebuild_driver="${REQUESTED_REBUILD_DRIVER:-none}"
           driver_matrix='["mysql","postgresql","doris","redis","elasticsearch","kafka","milvus"]'
+          if [[ "${REQUESTED_VALIDATE_ONLY:-false}" == "true" ]]; then
+            if [[ "$REQUESTED_PUBLISH" == "true" || "$REQUESTED_PUBLISH_COMPONENTS" == "true" || "$REQUESTED_PUBLISH_DRIVERS" == "true" ]]; then
+              echo "Validation-only runs cannot request publication." >&2; exit 1
+            fi
+            driver_matrix="$CHANGED_DRIVERS"
+          fi
           case "$rebuild_driver" in
             none) ;;
             mysql|postgresql|doris|redis|elasticsearch|kafka|milvus)
@@ -170,11 +182,13 @@ jobs:
           BUILD: ${{ steps.release.outputs.build }}
           SELECTED_DRIVERS: ${{ steps.release.outputs.driver_matrix }}
           PUBLISH_DRIVERS: ${{ steps.release.outputs.publish_drivers }}
+          VALIDATE_DRIVERS: ${{ inputs.validate_only || false }}
           SOURCE_RUN_ID: ${{ steps.release.outputs.source_run_id }}
           REBUILD_DRIVER: ${{ steps.release.outputs.rebuild_driver }}
         run: |
           python3 scripts/ci/release-artifact-plan.py --version "$VERSION" --build "$BUILD" \
             --drivers "$SELECTED_DRIVERS" --publish-drivers "$PUBLISH_DRIVERS" \
+            --validate-drivers "$VALIDATE_DRIVERS" \
             --source-run "$SOURCE_RUN_ID" --rebuild-driver "$REBUILD_DRIVER" \
             --github-output "$GITHUB_OUTPUT"
 
@@ -205,10 +219,10 @@ jobs:
       - name: Select Xcode 26.2
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
-      - name: Import persistent application signing identity
+      - name: Import Developer ID application signing identity
         env:
-          QUERYCRAFT_SIGNING_P12_BASE64: ${{ secrets.QUERYCRAFT_SIGNING_P12_BASE64 }}
-          QUERYCRAFT_SIGNING_P12_PASSWORD: ${{ secrets.QUERYCRAFT_SIGNING_P12_PASSWORD }}
+          QUERYCRAFT_DEVELOPER_ID_P12_BASE64: ${{ secrets.QUERYCRAFT_DEVELOPER_ID_P12_BASE64 }}
+          QUERYCRAFT_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.QUERYCRAFT_DEVELOPER_ID_P12_PASSWORD }}
         run: |
           export QUERYCRAFT_SIGNING_DIRECTORY="$RUNNER_TEMP/querycraft-signing"
           echo "QUERYCRAFT_SIGNING_DIRECTORY=$QUERYCRAFT_SIGNING_DIRECTORY" >> "$GITHUB_ENV"
@@ -219,6 +233,12 @@ jobs:
 
       - name: Build and package client artifacts
         env:
+          QUERYCRAFT_NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+          QUERYCRAFT_NOTARY_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          QUERYCRAFT_NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          QUERYCRAFT_NOTARY_KEY_ID: ${{ secrets.QUERYCRAFT_NOTARY_KEY_ID }}
+          QUERYCRAFT_NOTARY_ISSUER_ID: ${{ secrets.QUERYCRAFT_NOTARY_ISSUER_ID }}
+          QUERYCRAFT_NOTARY_PRIVATE_KEY_BASE64: ${{ secrets.QUERYCRAFT_NOTARY_PRIVATE_KEY_BASE64 }}
           QUERYCRAFT_RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
           QUERYCRAFT_RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
           DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
@@ -326,6 +346,15 @@ jobs:
       - name: Select Xcode 26.2
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
+      - name: Import Developer ID application signing identity
+        env:
+          QUERYCRAFT_DEVELOPER_ID_P12_BASE64: ${{ secrets.QUERYCRAFT_DEVELOPER_ID_P12_BASE64 }}
+          QUERYCRAFT_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.QUERYCRAFT_DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          export QUERYCRAFT_SIGNING_DIRECTORY="$RUNNER_TEMP/querycraft-signing"
+          echo "QUERYCRAFT_SIGNING_DIRECTORY=$QUERYCRAFT_SIGNING_DIRECTORY" >> "$GITHUB_ENV"
+          python3 scripts/code-signing.py import-ci
+
       - name: Install XcodeBuildMCP
         run: npm install --global xcodebuildmcp@2.6.2
 
@@ -339,10 +368,20 @@ jobs:
 
       - name: Build and package ${{ matrix.database }} driver
         env:
+          QUERYCRAFT_NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+          QUERYCRAFT_NOTARY_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          QUERYCRAFT_NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          QUERYCRAFT_NOTARY_KEY_ID: ${{ secrets.QUERYCRAFT_NOTARY_KEY_ID }}
+          QUERYCRAFT_NOTARY_ISSUER_ID: ${{ secrets.QUERYCRAFT_NOTARY_ISSUER_ID }}
+          QUERYCRAFT_NOTARY_PRIVATE_KEY_BASE64: ${{ secrets.QUERYCRAFT_NOTARY_PRIVATE_KEY_BASE64 }}
           QUERYCRAFT_RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
           QUERYCRAFT_RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
           DERIVED_DATA_ROOT: ${{ runner.temp }}/querycraft-derived-data
         run: scripts/ci/build-release-artifacts.sh "${{ matrix.architecture }}" "artifacts/${{ matrix.database }}-${{ matrix.architecture }}"
+
+      - name: Remove temporary signing keychain
+        if: always()
+        run: python3 scripts/code-signing.py cleanup-ci
 
       - id: upload
         continue-on-error: true

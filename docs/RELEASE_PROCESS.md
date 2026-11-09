@@ -2,6 +2,10 @@
 
 每次发版前必须先阅读本文件和仓库根目录的 `AGENTS.md`。发版要同时检查主程序和 MySQL、PostgreSQL、Doris、Redis、Elasticsearch、Kafka、Milvus 七类驱动；是否发布驱动由相对上一个正式版本的实际代码和协议变化决定。
 
+## Developer ID 渠道迁移门禁
+
+签名流程已支持付费 Apple Developer 渠道；配置和分阶段迁移要求见 [APPLE_DISTRIBUTION.md](APPLE_DISTRIBUTION.md)。首次切换时必须为七类驱动、MCP 和 SSH 准备新的不可变身份、公证产物与 minimumAppVersion，保留旧目录历史后再发布新宿主。不得直接拿旧临时签名包给 Apple Team 宿主加载，也不能覆盖同一 version/build 的历史附件。正式客户端和驱动 CI 均要求 Developer ID 与公证通过；Sparkle/目录 Ed25519 密钥不更换。
+
 ## 1. 发布前建立基线
 
 ```bash
@@ -156,7 +160,7 @@ curl -fsSL https://querycraft.debug-tools.cc/drivers/mysql-arm64.json
 
 ## 主程序更新包体积与架构检查
 
-- 每个原生客户端任务使用同一份签名 Release 应用生成 DMG 与 `QueryCraft-<version>-<architecture>.tar.xz`，并输出 `update-<architecture>.json`（schemaVersion 2、版本/build、最低系统、架构、大小、SHA-256、EdDSA 签名）。主程序和 Feature 二进制必须只有指定架构；上游 Sparkle 保留原签名。
+- 每个原生客户端任务使用同一份签名 Release 应用生成 DMG 与 `QueryCraft-<version>-<architecture>.tar.xz`，并输出 `update-<architecture>.json`（schemaVersion 2、版本/build、最低系统、架构、大小、SHA-256、EdDSA 签名）。主程序和 Feature 二进制必须只有指定架构；Developer ID 渠道对 Sparkle 及其嵌套辅助程序由内向外签名并保留功能 entitlement；旧自签名恢复渠道保留历史处理。
 - `scripts/update-archives.py assemble` 只在两架构完整、版本/build/最低系统一致且大小/摘要正确后合并公共 `appcast.xml`。同 build 的 ARM 条目必须在前并声明 `sparkle:hardwareRequirements=arm64`，Intel 条目为后备。不改变现有 SUFeedURL；现有客户端已使用 Sparkle 2.9+，包括 Rosetta 场景。
 - 两架构任务均运行 `scripts/test-sparkle-updates.py`，使用实际 Sparkle 解析与选包，测试本机与进程内硬件条件模拟；模拟不替代 ARM 实机运行验收。
 - 必须先部署 sibling QueryCraft/LicenseServer 对 `update_format=2` 的支持（可加列迁移保留旧 ZIP 记录），再发布新格式客户端。部署请求必须同时提交两个 XZ、两个签名和两个 DMG；服务端验签、限制展开大小、检查归档路径与原生 CPU，保存同一版本的完整双包后才切换公共更新源。保留旧 ZIP 下载及历史条目。

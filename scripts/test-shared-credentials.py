@@ -118,9 +118,8 @@ import Security
                 info_path = helper / 'Contents/Info.plist'
                 info = plistlib.loads(info_path.read_bytes()); info['CFBundleVersion'] = '2.1'
                 info_path.write_bytes(plistlib.dumps(info))
-                signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN,
-                           '--timestamp=none', '--options', 'runtime', helper)
-            signer.run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', app)
+                packager.sign_helper(signer, identity, helper)
+            signer.sign_code(app)
             apps.append(app)
         cache = folder / 'installed'
         accounts = [str(uuid.uuid4()) for _ in range(8)]
@@ -136,7 +135,10 @@ import Security
                 run(0, 'migrate', account)
             run(0, 'vault-count', accounts[0])
             run(0, 'isolated', accounts[0])
-            installed = cache / 'shared/QueryCraft Shared Credentials.app'
+            shared_root = cache / 'shared'
+            if hasattr(signer, 'configuration'):
+                shared_root /= 'developer-id-' + signer.configuration()['teamID']
+            installed = shared_root / 'QueryCraft Shared Credentials.app'
             installed_info = (installed / 'Contents/Info.plist').read_bytes()
             for index in range(4):
                 for account in accounts:

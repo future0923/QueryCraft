@@ -1,5 +1,8 @@
 # QueryCraft iOS / iPadOS 移植验证
 
+付费开发者签名、正式 Bundle ID、Archive/IPA 导出和 TestFlight 准备见 [Apple 分发配置](../docs/APPLE_DISTRIBUTION.md)。Debug 保留现有 MobileProof 安装身份，Release 使用独立正式身份。
+
+
 这是独立 worktree 中的 iOS / iPadOS 工程，最低系统版本 18。MySQL 保留已有完整移动功能；PostgreSQL 支持 SQL 写入/事务、磁盘缓存及查询结果编辑、表结构/新表/表操作和多格式文件导入，Redis 支持键/成员管理、搜索分页、Stream 浏览及命令事务控制台，Doris 支持只读流式 SQL、磁盘缓存和真实结构信息，Elasticsearch 接入完整专用工作区，具体范围见下文。直接共享现有模型与原生驱动源码，尚未达到桌面版全部功能。
 
 

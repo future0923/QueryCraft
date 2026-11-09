@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
 DRIVERS=['mysql','postgresql','doris','redis','elasticsearch','kafka','milvus']
 DRIVER_NAMES={'mysql':'MySQL','postgresql':'PostgreSQL','doris':'Doris','redis':'Redis','elasticsearch':'Elasticsearch','kafka':'Kafka','milvus':'Milvus'}
+SIGNING_INPUTS=['Config/DeveloperID.json','scripts/code-signing.py','scripts/developer-id-signing.py','scripts/notarize.py']
 def git(*args):return subprocess.check_output(['git',*args],cwd=ROOT,text=True,stderr=subprocess.DEVNULL).strip()
 def read(ref,path):
     try:return git('show',ref+':'+path)
@@ -19,11 +20,12 @@ def meaningful(base,head,path):
         return '\n'.join(line for line in text.splitlines() if not re.match(r'\s*(driver_version|driver_build)=',line))
     return normalize(read(base,path))!=normalize(read(head,path))
 def component_paths(kind):
-    if kind=='ssh':return ['QueryCraftSSHPlugin/**','QueryCraftSSHTerminalRenderer/**','ThirdPartyLicenses/SWIFTTERM-LICENSE.txt','ThirdParty/SwiftTerm/**','scripts/patch-swiftterm.py','QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/**','scripts/build-ssh-plugin.py','scripts/package-ssh-catalog.py']
+    signing = SIGNING_INPUTS
+    if kind=='ssh':return signing + ['QueryCraftSSHPlugin/**','QueryCraftSSHTerminalRenderer/**','ThirdPartyLicenses/SWIFTTERM-LICENSE.txt','ThirdParty/SwiftTerm/**','scripts/patch-swiftterm.py','QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/**','scripts/build-ssh-plugin.py','scripts/package-ssh-catalog.py']
     if kind=='skill':return ['Components/Skill/**','scripts/package-components.py']
     ssh_runtime = ['SSHAccountAccess','SSHConnection','SSHConnectionService','SSHDiagnostic','SSHFileRequest',
       'SSHPlugin','SSHPluginInstallation','SSHPluginManager','SSHRouteRequest','SSHTask','SSHTransfer','SSHTransferProgress']
-    return [f'QueryCraftPackage/Sources/QueryCraftFeature/{name}.swift' for name in ssh_runtime] + [
+    return signing + [f'QueryCraftPackage/Sources/QueryCraftFeature/{name}.swift' for name in ssh_runtime] + [
       'QueryCraftPackage/Sources/QueryCraftFeature/ShellScript.swift','QueryCraftPackage/Sources/CQueryCraftSSHPluginAPI/**','QueryCraftMCPPackage/Sources/**','QueryCraftMCPPackage/Package.swift',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPHost*','QueryCraftPackage/Sources/QueryCraftFeature/MCPJSONValue*',
       'QueryCraftPackage/Sources/QueryCraftFeature/MCPRuntime*','QueryCraftPackage/Sources/QueryCraftFeature/MCPHTTP*',
@@ -38,7 +40,7 @@ def component_paths(kind):
       'QueryCraftPackage/Sources/QueryCraftFeature/DatabaseDriver*.swift','QueryCraftPackage/Sources/QueryCraftFeature/SQLiteConnectionProfileRepository*',
       'QueryCraftPackage/Sources/QueryCraftFeature/SQL*.swift','QueryCraftPackage/Sources/QueryCraftFeature/ConnectionProfile.swift','QueryCraftPackage/Sources/QueryCraftFeature/KeychainCredentialStore.swift','QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceCredentialHelperClient.swift','QueryCraftPackage/Sources/QueryCraftFeature/QueryCraftStorageLocation.swift',
       'QueryCraftPackage/Sources/QueryCraftFeature/SharedKeychainCredentialStore.swift',
-      'QueryCraftPackage/Sources/QueryCraftFeature/Resources/**','QueryCraftPackage/Package.swift','MCPLauncher/**','CredentialHelper/**','scripts/package-mcp.py','scripts/package-components.py']
+      'QueryCraftPackage/Sources/QueryCraftFeature/Resources/**','QueryCraftPackage/Package.swift','MCPLauncher/**','CredentialHelper/**','scripts/credential-helper.py','scripts/package-mcp.py','scripts/package-components.py']
 def plan(base,head,versions):
     paths=changes(base,head)
     components={}
@@ -64,7 +66,7 @@ def plan(base,head,versions):
         script=f'scripts/package-{driver}-driver.sh';name=DRIVER_NAMES[driver]
         relevant=[p for p in paths if p.startswith(f'QueryCraftDrivers/Sources/QueryCraft{name}Driver/')
           or (driver in ['mysql','doris'] and (p.startswith('QueryCraftDrivers/MariaDBTransport/') or p.startswith('QueryCraftDrivers/Sources/CMariaDB/') or p.startswith('QueryCraftDrivers/Sources/QueryCraftMariaDBTransport/') or p=='scripts/build-mariadb-driver-library.sh'))
-          or (p in [script,'scripts/driver-package-common.sh'] and meaningful(base,head,p))]
+          or (p in [script,'scripts/driver-package-common.sh',*SIGNING_INPUTS] and meaningful(base,head,p))]
         def identity(ref):
             s=read(ref,script);return [re.search(rf'{key}="\$\{{[^:]+:-([^}}]+)\}}"',s).group(1) if re.search(rf'{key}="\$\{{[^:]+:-([^}}]+)\}}"',s) else None for key in ['driver_version','driver_build']]
         native={'mysql':['QueryCraftDrivers/Libs/libmariadb*','QueryCraftDrivers/Libs/libssl*','QueryCraftDrivers/Libs/libcrypto*'],

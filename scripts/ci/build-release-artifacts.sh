@@ -22,7 +22,8 @@ Optional environment:
 
 SPARKLE_PRIVATE_KEY is required for client update signing in CI.
 Local packaging can use the existing Sparkle Keychain account.
-Client builds require the persistent identity installed by scripts/code-signing.py.
+All release builds require Developer ID and notarization credentials.
+QUERYCRAFT_NOTARIZE=false is available for local signature verification only.
 EOF
 }
 
@@ -108,14 +109,26 @@ if [[ ! "$release_version" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ || ! "$release_build"
     exit 65
 fi
 
-# Fail before compilation if the persistent identity is missing. Driver-only
-# jobs keep their existing ad-hoc channel and do not need this private key.
+# Every release artifact uses the same Developer ID. Fail before compilation
+# when credentials are missing; no legacy/ad-hoc fallback in release CI.
 if [[ "$build_client" == "true" ]]; then
     if [[ "${CI:-false}" == "true" ]]; then
         require_environment SPARKLE_PRIVATE_KEY
     fi
-    python3 "$project_root/scripts/code-signing.py" check
 fi
+export QUERYCRAFT_SIGNING_MODE=developer-id
+if [[ "${CI:-false}" == "true" ]]; then
+    python3 "$project_root/scripts/code-signing.py" check-release
+fi
+python3 "$project_root/scripts/code-signing.py" check
+export QUERYCRAFT_NOTARIZE="${QUERYCRAFT_NOTARIZE:-true}"
+if [[ "${CI:-false}" == "true" && "$QUERYCRAFT_NOTARIZE" != "true" ]]; then
+    echo "CI release artifacts must be notarized." >&2; exit 65
+fi
+if [[ "$QUERYCRAFT_NOTARIZE" == "true" ]]; then
+    python3 "$project_root/scripts/notarize.py" check
+fi
+distribution_identity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$project_root/Config/DeveloperID.json")"
 
 temporary_root="$(mktemp -d "${RUNNER_TEMP:-/tmp}/querycraft-release.XXXXXX")"
 derived_data_root="${DERIVED_DATA_ROOT:-$temporary_root/DerivedData}"
@@ -133,7 +146,7 @@ common_build_settings=(
     "CODE_SIGN_IDENTITY=-"
     "DEVELOPMENT_TEAM="
     "CODE_SIGN_STYLE=Manual"
-    "ENABLE_HARDENED_RUNTIME=NO"
+    "ENABLE_HARDENED_RUNTIME=YES"
     "ENABLE_CODE_COVERAGE=NO"
     "DEAD_CODE_STRIPPING=YES"
     "COPY_PHASE_STRIP=YES"
@@ -167,7 +180,7 @@ verify_release_app() {
     python3 "$project_root/scripts/code-signing.py" verify "$app_path"
     entitlements="$(codesign -d --entitlements :- "$app_path" 2>/dev/null)"
     if grep -q '<key>com.apple.security.app-sandbox</key>' <<<"$entitlements"; then
-        echo "The free distribution application must not enable App Sandbox." >&2
+        echo "The direct distribution application must not enable App Sandbox." >&2
         exit 65
     fi
     if ! grep -q '<key>com.apple.security.network.client</key>' <<<"$entitlements"; then
@@ -217,12 +230,18 @@ prepare_release_app() {
         python3 "$project_root/scripts/test-shell-scripts-mcp.py" \
             "$mcp_staging/QueryCraft MCP.app/Contents/MacOS/querycraft-mcp"
         cp "$mcp_staging/"*.zip "$mcp_staging/"*.package.json "$output_directory/"
+        if [[ "$QUERYCRAFT_NOTARIZE" == "true" ]]; then
+            cp "$mcp_staging/mcp-notary.json" "$output_directory/mcp-$architecture-notary.json"
+        fi
         local component_sign_tool
         component_sign_tool="$(find "$derived_data_root" -name sign_update -type f -perm -111 -print -quit)"
         python3 "$project_root/scripts/package-components.py" --component mcp --sign-existing \
             --output "$output_directory" --sign-tool "$component_sign_tool"
     fi
     python3 "$project_root/scripts/code-signing.py" sign "$app_path"
+    if [[ "$QUERYCRAFT_NOTARIZE" == "true" ]]; then
+        python3 "$project_root/scripts/notarize.py" "$app_path" --log "$output_directory/app-$architecture-notary.json"
+    fi
 }
 
 create_dmg() {
@@ -245,7 +264,10 @@ create_dmg() {
     # ULMO directly, with identical files, permissions and signatures.
     hdiutil convert "$source_dmg" -format ULMO -o "$dmg_path"
     rm -f "$source_dmg"
-    codesign --force --sign - --timestamp=none "$dmg_path"
+    python3 "$project_root/scripts/code-signing.py" sign-path "$dmg_path"
+    if [[ "$QUERYCRAFT_NOTARIZE" == "true" ]]; then
+        python3 "$project_root/scripts/notarize.py" "$dmg_path" --log "$output_directory/dmg-$architecture-notary.json"
+    fi
     codesign --verify --verbose=2 "$dmg_path"
     hdiutil verify "$dmg_path"
 }
@@ -313,7 +335,8 @@ if [[ "$build_drivers" == "true" ]]; then
         DRIVER_ARCH="$architecture" \
         DERIVED_DATA="$architecture_derived_data" \
         OUTPUT_ROOT="$driver_output" \
-        CODE_SIGN_IDENTITY=- \
+        CODE_SIGN_IDENTITY="$distribution_identity" \
+        DRIVER_MINIMUM_APP_VERSION="$release_version" \
         QUERYCRAFT_DRIVER_DOWNLOAD_BASE_URL="$driver_download_base_url" \
             "$project_root/scripts/$package_script"
     done
@@ -323,6 +346,9 @@ if [[ "$build_drivers" == "true" ]]; then
             cp "$driver_file" "$output_directory/"
         fi
     done
+    if [[ "$QUERYCRAFT_NOTARIZE" == "true" ]]; then
+        cp "$driver_output/"*-notary.json "$output_directory/"
+    fi
     expected_driver_count="${#selected_driver_targets[@]}"
     if [[ "$(find "$output_directory" -maxdepth 1 -type f -name "*-driver-*-$architecture-*.zip" | wc -l | tr -d ' ')" != "$expected_driver_count" || \
           "$(find "$output_directory" -maxdepth 1 -type f -name "*-$architecture.json" | wc -l | tr -d ' ')" != "$expected_driver_count" ]]; then
@@ -345,9 +371,12 @@ if [[ "$build_client" == "true" ]]; then
         --sparkle-directory "$(dirname "$(dirname "$sign_tool")")"
     if [[ "${QUERYCRAFT_BUILD_SSH:-false}" == "true" ]]; then
         ssh_packages="$temporary_root/ssh-packages"
-        signing_identity="$(cat "$project_root/Config/CodeSigningIdentity.txt")"
+        signing_identity="$distribution_identity"
         python3 "$project_root/scripts/build-ssh-plugin.py" --arch "$architecture" \
             --identity "$signing_identity" --output "$ssh_packages"
+        if [[ "$QUERYCRAFT_NOTARIZE" == "true" ]]; then
+            cp "$ssh_packages/ssh-$architecture-notary.json" "$output_directory/"
+        fi
         python3 "$project_root/scripts/package-ssh-catalog.py" --arch "$architecture" \
             --packages "$ssh_packages" --output "$output_directory" \
             --base-url "${QUERYCRAFT_COMPONENT_DOWNLOAD_BASE_URL:-https://querycraft.debug-tools.cc/components}" \

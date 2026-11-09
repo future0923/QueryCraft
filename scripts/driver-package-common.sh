@@ -31,7 +31,10 @@ querycraft_codesign() {
     local target="$2"
     local signing_arguments=(--force --sign "$signing_identity")
 
-    if [[ "$signing_identity" == "Developer ID Application:"* ]]; then
+    if [[ "${QUERYCRAFT_SIGNING_MODE:-}" == "developer-id" ]]; then
+        python3 "$project_root/scripts/code-signing.py" sign-path "$target"
+        return
+    elif [[ "$signing_identity" == "Developer ID Application:"* ]]; then
         signing_arguments+=(--timestamp --options runtime)
     else
         signing_arguments+=(--timestamp=none)
@@ -168,3 +171,16 @@ querycraft_validate_driver_package_metadata() {
         return 1
     fi
 }
+
+# Submit before calculating the content-addressed filename/hash. Copy the
+# extensionless staging archive to a .zip name accepted by notarytool.
+querycraft_notarize_driver_archive() (
+    local archive="$1"
+    if [[ "${QUERYCRAFT_NOTARIZE:-false}" == "true" ]]; then
+        local staging
+        staging="$(mktemp -d)"
+        trap 'rm -rf "$staging"' EXIT
+        cp "$archive" "$staging/driver.zip"
+        python3 "$project_root/scripts/notarize.py" "$staging/driver.zip" --log "$output_root/$driver_arch-${bundle:t}-notary.json"
+    fi
+)

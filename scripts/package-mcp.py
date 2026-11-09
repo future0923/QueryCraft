@@ -20,7 +20,10 @@ import uuid
 ROOT = Path(__file__).resolve().parent.parent
 
 def run(*args):
-    return subprocess.check_output(list(map(str, args)), stderr=subprocess.STDOUT)
+    try:
+        return subprocess.check_output(list(map(str, args)), stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError((error.output or b'').decode(errors='replace')[-8000:]) from None
 
 def package(build, output, development=False, archive_enabled=True, architecture=None):
     source_app = build / 'QueryCraft.app'
@@ -134,10 +137,10 @@ def package(build, output, development=False, archive_enabled=True, architecture
     launcher = output/'Contents/Helpers/querycraft-mcp-launcher'
     launcher.parent.mkdir(parents=True, exist_ok=True)
     run('swiftc', '-O', '-target', archs[0]+'-apple-macosx15.0', ROOT/'MCPLauncher/main.swift', '-o', launcher)
-    run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', '--identifier', 'io.github.future0923.QueryCraft.MCP.Launcher', launcher)
+    signer.sign_code(launcher, identifier='io.github.future0923.QueryCraft.MCP.Launcher')
     helper = output/'Contents/Helpers/QueryCraft Credentials.app'
     (helper/'Contents/MacOS').mkdir(parents=True)
-    source = (ROOT/'CredentialHelper/main.swift').read_text().replace('__PINNED_CERTIFICATE_SHA1__', identity)
+    source = signer.helper_source() if hasattr(signer, 'helper_source') else (ROOT/'CredentialHelper/main.swift').read_text().replace('__PINNED_CERTIFICATE_SHA1__', identity)
     source = '\n'.join(line.replace('QueryCraft', 'QueryCraft.MCP') if line.startswith('let callerRequirement =') else line for line in source.splitlines()) + '\n'
     with tempfile.TemporaryDirectory(prefix='querycraft-mcp-helper-') as temporary:
         source_path = Path(temporary)/'main.swift'; source_path.write_text(source)
@@ -152,14 +155,20 @@ def package(build, output, development=False, archive_enabled=True, architecture
     helper_spec = importlib.util.spec_from_file_location('credential_helper', ROOT/'scripts/credential-helper.py')
     helper_packager = importlib.util.module_from_spec(helper_spec); helper_spec.loader.exec_module(helper_packager)
     helper_packager.embed_shared(output, signer, identity, archs)
+    if hasattr(signer, 'sign_sparkle'):
+        signer.sign_sparkle(frameworks / 'Sparkle.framework')
     for stale in list(output.rglob('AgentSkills')):
         if stale.is_dir(): shutil.rmtree(stale)
-    for framework in sorted(owned_frameworks):
-        run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', framework)
-    run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', helper)
-    run('codesign', '--force', '--sign', identity, '--keychain', signer.KEYCHAIN, '--timestamp=none', output)
+    # Compatibility libraries may be supplied by the OS at runtime, but every
+    # copy included in our bundle still needs a Developer ID signature.
+    for framework in sorted(owned_frameworks | set(frameworks.glob('*.dylib'))):
+        signer.sign_code(framework)
+    signer.sign_code(helper)
+    signer.sign_code(output, entitlements=ROOT/'Config/Release.entitlements')
     run('codesign', '--verify', '--deep', '--strict', output)
     print(run(macos/'querycraft-mcp', '--self-test').decode().strip())
+    if __import__('os').environ.get('QUERYCRAFT_NOTARIZE') == 'true':
+        run('python3', ROOT/'scripts/notarize.py', output, '--log', output.parent/'mcp-notary.json')
     if archive_enabled:
         descriptor = dict(metadata, component='mcp', architectures=archs)
         base = __import__('os').environ.get('QUERYCRAFT_COMPONENT_DOWNLOAD_BASE_URL','https://querycraft.debug-tools.cc/components').rstrip('/')

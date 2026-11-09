@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -185,6 +186,14 @@ def main():
     run(signing + [renderer], log)
     run(signing + [bundle], log)
     run(['codesign', '--verify', '--deep', '--strict', bundle], log)
+    if os.environ.get('QUERYCRAFT_NOTARIZE') == 'true':
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('notarize', ROOT / 'scripts/notarize.py')
+        notary = importlib.util.module_from_spec(spec); spec.loader.exec_module(notary)
+        with tempfile.TemporaryDirectory(prefix='qc-ssh-notary-') as temporary:
+            notary_archive = Path(temporary) / 'ssh.zip'
+            run(['ditto', '-c', '-k', '--keepParent', bundle, notary_archive], log)
+            notary.notarize(notary_archive, log=args.output / f'ssh-{args.arch}-notary.json')
     archive = args.output / f'QueryCraftSSH-{args.arch}.zip'
     archive.unlink(missing_ok=True)
     run(['ditto', '-c', '-k', '--norsrc', '--noextattr', '--keepParent', bundle, archive], log)

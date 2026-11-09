@@ -40,6 +40,7 @@ artifacts/
 # Local integration-test credentials
 Config/LocalDatabaseTest.plist
 Config/LocalLicensingPrivateKey.pem
+Config/LocalDistribution.json
 
 # Local browser validation artifacts
 .playwright-cli/

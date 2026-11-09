@@ -9,7 +9,10 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     TARGETED_DEVICE_FAMILY: "1,2"
-    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_ALLOWED: YES
+    DEVELOPMENT_TEAM: 5975A7N3W3
+    CODE_SIGN_STYLE: Automatic
+    "CODE_SIGN_IDENTITY[sdk=iphoneos*]": Apple Development
     "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": YES
     "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
     GENERATE_INFOPLIST_FILE: YES
@@ -372,6 +375,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.MobileProof
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: QueryCraft
         INFOPLIST_KEY_LSRequiresIPhoneOS: YES
@@ -384,6 +389,10 @@ targets:
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB $(BUILT_PRODUCTS_DIR)/include $(SRCROOT)/../QueryCraftDrivers/Sources/CLibPQ
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/../.build/ios-native/$(PLATFORM_NAME)-$(CURRENT_ARCH)/lib
         OTHER_LDFLAGS: $(inherited) -lpq -lpgcommon -lpgport -lmariadbclient -lssl -lcrypto -lz -liconv -lresolv
+      configs:
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.Mobile
+
   QueryCraftMobileProofTests:
     type: bundle.unit-test
     platform: iOS
