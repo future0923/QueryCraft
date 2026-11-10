@@ -27,6 +27,10 @@ actor SQLiteApplicationDatabase {
         return try await databaseQueue.write(updates)
     }
 
+    func cloudSyncMetadataStore() throws -> CloudSyncMetadataStore {
+        CloudSyncMetadataStore(writer: try makeDatabaseQueue())
+    }
+
     private func makeDatabaseQueue() throws -> DatabaseQueue {
         if let cachedDatabaseQueue {
             return cachedDatabaseQueue
@@ -167,6 +171,15 @@ actor SQLiteApplicationDatabase {
             try database.alter(table: ConnectionProfile.databaseTableName) { table in
                 table.add(column: "kafkaSASLMechanism", .text)
             }
+        }
+        migrator.registerMigration("addCloudSync") { database in
+            try CloudSyncMetadataStore.createTables(in: database)
+            try CloudSyncMetadataStore.createOutboxTriggers(
+                in: database, table: ConnectionGroup.databaseTableName, entity: .connectionGroup)
+            try CloudSyncMetadataStore.createOutboxTriggers(
+                in: database, table: ConnectionProfile.databaseTableName, entity: .connection)
+            try CloudSyncMetadataStore.createOutboxTriggers(
+                in: database, table: SavedQuery.databaseTableName, entity: .savedQuery)
         }
         try migrator.migrate(databaseQueue)
 

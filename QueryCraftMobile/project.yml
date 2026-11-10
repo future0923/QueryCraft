@@ -336,6 +336,11 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLStaticCatalog.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSnippet.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSnippetStore.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncModel.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncMetadataStore.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncEngine.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncController.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncCopy.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSnippetSession.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSchemaCatalogSnapshot.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorColorSettings.swift
@@ -385,6 +390,9 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: 连接你指定的数据库服务器。
+        INFOPLIST_FILE: CloudSyncInfo.plist
+        QUERYCRAFT_CLOUD_CONTAINER: iCloud.io.github.future0923.QueryCraft
+        CODE_SIGN_ENTITLEMENTS: QueryCraftMobile.entitlements
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/../QueryCraftDrivers/MariaDBTransport/Sources/CMariaDB $(BUILT_PRODUCTS_DIR)/include $(SRCROOT)/../QueryCraftDrivers/Sources/CLibPQ

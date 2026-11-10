@@ -159,6 +159,7 @@ public struct ContentView: View {
             if loadsApplicationState { await loadWelcomeState() } else { await model.loadProfiles() }
         }
         .onReceive(NotificationCenter.default.publisher(for: SSHConnectionService.settingsChanged)) { _ in Task { await model.ssh?.load() } }
+        .onReceive(NotificationCenter.default.publisher(for: .cloudSyncDidApplyRemoteChanges)) { _ in Task { await model.loadProfiles() } }
         .onAppear {
             focusedAction = .createConnection
         }

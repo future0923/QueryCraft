@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import QueryCraftMobileCore
 
 @MainActor @Observable
 final class MobileApplicationModel {
@@ -37,11 +38,13 @@ final class MobileApplicationModel {
         }
     }
     @ObservationIgnored private var reconcilingTableAction = false
-    @ObservationIgnored private let repository: any MobileLibraryPersisting
-    @ObservationIgnored private let workspaceRepository: any MobileWorkspacePersisting
-    @ObservationIgnored private let passwords: any MobilePasswordStoring
+    @ObservationIgnored let repository: any MobileLibraryPersisting
+    @ObservationIgnored let workspaceRepository: any MobileWorkspacePersisting
+    @ObservationIgnored let passwords: any MobilePasswordStoring
     @ObservationIgnored private let service: any MobileSQLServicing
-    @ObservationIgnored private var sessionPasswords: [UUID: String] = [:]
+    @ObservationIgnored var sessionPasswords: [UUID: String] = [:]
+    /// Reports connections and saved queries edited on this device to iCloud sync.
+    @ObservationIgnored var localChangesDidOccur: ((_ keys: [CloudSyncKey], _ deleted: Bool) -> Void)?
 
     init(repository: any MobileLibraryPersisting = MobileLibraryRepository(),
          passwords: any MobilePasswordStoring = MobileKeychainStore(),
@@ -96,6 +99,7 @@ final class MobileApplicationModel {
         library = state
         transferModel?.updateProfiles(state.profiles, force: true)
         sessionPasswords[profile.id] = draft.password
+        localChangesDidOccur?([.init(entity: .connection, id: profile.id)], false)
         editingConnection = nil
         open(profile)
     }
@@ -163,6 +167,10 @@ final class MobileApplicationModel {
             workspace?.tableDidCreate = { [weak self] object in
                 guard let self, self.isWorkspacePresented, self.workspace?.profile.id == profile.id else { return }
                 self.workspaceTab = .tables; self.destination = .table(object)
+            }
+            workspace?.savedQueriesDidChange = { [weak self] changed, deleted in
+                self?.localChangesDidOccur?(changed.map { .init(entity: .savedQuery, id: $0) }, false)
+                self?.localChangesDidOccur?(deleted.map { .init(entity: .savedQuery, id: $0) }, true)
             }
             workspace?.didExecuteQuery = { [weak self] sql, database, schema in
                 self?.recordQuery(sql: sql, database: database, profileID: profile.id, schemaName: schema)
@@ -255,8 +263,126 @@ final class MobileApplicationModel {
         }
         if resourceWorkspace?.profile.id == profile.id { resourceWorkspace?.cancel(); resourceWorkspace = nil; isWorkspacePresented = false }
         pendingDeletion = nil
+        let savedQueryIDs = (try? workspaceRepository.load(profileID: profile.id))?.savedQueries.map(\.id) ?? []
+        localChangesDidOccur?([.init(entity: .connection, id: profile.id)], true)
+        localChangesDidOccur?(savedQueryIDs.map { .init(entity: .savedQuery, id: $0) }, true)
         do { try workspaceRepository.remove(profileID: profile.id) }
         catch { message = "连接已删除，但工作区文件清理失败：\(error.localizedDescription)" }
+    }
+
+    // MARK: iCloud sync
+
+    /// Applies connections received from iCloud without reporting them back
+    /// as local edits. Passwords follow the connection; a deleted connection
+    /// also drops its workspace unless it is open with unsaved work.
+    func applyCloudConnections(_ upserts: [CloudSyncConnection], deletions: Set<UUID>) throws {
+        guard libraryLoaded else { throw CocoaError(.fileReadCorruptFile) }
+        guard !upserts.isEmpty || !deletions.isEmpty else { return }
+        var state = library
+        var secrets: [(UUID, String?)] = []
+        for connection in upserts {
+            let existing = state.profiles.first { $0.id == connection.id }
+            guard let driver = MobileDriver(rawValue: connection.databaseType),
+                  let tlsMode = ConnectionTLSMode(rawValue: connection.tlsMode),
+                  (1...65_535).contains(connection.port),
+                  !connection.name.isEmpty, !connection.host.isEmpty else { continue }
+            let authentication = MobileAuthentication(rawValue: connection.authenticationMethod) ?? .usernamePassword
+            let remembers = connection.storesCredential && authentication != .none
+            let requiresPassword: Bool
+            switch connection.secret {
+            case let .value(secret) where remembers:
+                secrets.append((connection.id, secret)); requiresPassword = !secret.isEmpty
+            case .unavailable where remembers:
+                requiresPassword = existing?.requiresPassword ?? true
+            default:
+                secrets.append((connection.id, nil)); requiresPassword = !remembers && authentication != .none
+            }
+            let profile = MobileConnectionProfile(
+                id: connection.id, name: connection.name, host: connection.host, port: connection.port,
+                username: connection.username,
+                database: connection.defaultDatabase ?? (driver == .milvus ? "default" : ""),
+                tlsMode: tlsMode, remembersPassword: remembers, requiresPassword: requiresPassword,
+                driver: driver, authentication: authentication, schemaName: connection.mobile?.schemaName)
+            if let index = state.profiles.firstIndex(where: { $0.id == profile.id }) { state.profiles[index] = profile }
+            else { state.profiles.append(profile) }
+        }
+        let removed = state.profiles.filter { deletions.contains($0.id) }.map(\.id)
+        state.profiles.removeAll { deletions.contains($0.id) }
+        state.history.removeAll { deletions.contains($0.profileID) }
+        try repository.write(state)
+        library = state
+        for (id, secret) in secrets {
+            try? passwords.setPassword(secret, for: id)
+            sessionPasswords[id] = nil
+        }
+        transferModel?.updateProfiles(state.profiles, force: true)
+        for id in removed {
+            try? passwords.setPassword(nil, for: id)
+            sessionPasswords[id] = nil
+            if workspace?.profile.id == id {
+                guard workspace?.hasPendingChanges != true else { continue }
+                workspace?.cancelAll(); workspace = nil; destination = nil; isWorkspacePresented = false
+            }
+            if resourceWorkspace?.profile.id == id {
+                guard resourceWorkspace?.hasPendingChanges != true else { continue }
+                resourceWorkspace?.cancel(); resourceWorkspace = nil; isWorkspacePresented = false
+            }
+            try? workspaceRepository.remove(profileID: id)
+        }
+    }
+
+    /// Saved queries for a connection, from the open workspace when there is
+    /// one so unsaved in-memory state is never overwritten.
+    func cloudSavedQueries(profileID: UUID) -> [SavedQuery] {
+        if let workspace, workspace.profile.id == profileID { return workspace.savedQueries }
+        return (try? workspaceRepository.load(profileID: profileID))?.savedQueries ?? []
+    }
+
+    /// Applies saved queries received from iCloud. Returns the queries whose
+    /// connection is not on this device yet.
+    func applyCloudSavedQueries(_ upserts: [SavedQuery], deletions: Set<UUID>) throws -> [SavedQuery] {
+        let known = Set(library.profiles.map(\.id))
+        let waiting = upserts.filter { !known.contains($0.connectionProfileID) }
+        var byProfile: [UUID: (upserts: [SavedQuery], deletions: Set<UUID>)] = [:]
+        for query in upserts where known.contains(query.connectionProfileID) && query.sql.utf8.count <= 262_144 {
+            byProfile[query.connectionProfileID, default: ([], [])].upserts.append(query)
+        }
+        if !deletions.isEmpty {
+            for profileID in known where cloudSavedQueries(profileID: profileID).contains(where: { deletions.contains($0.id) }) {
+                byProfile[profileID, default: ([], [])].deletions.formUnion(deletions)
+            }
+        }
+        for (profileID, change) in byProfile {
+            // A query moved to another connection is removed from the old one.
+            let moved = Set(change.upserts.map(\.id))
+            for other in known where other != profileID
+                && cloudSavedQueries(profileID: other).contains(where: { moved.contains($0.id) }) {
+                byProfile[other, default: ([], [])].deletions.formUnion(moved)
+            }
+        }
+        for (profileID, change) in byProfile {
+            if let workspace, workspace.profile.id == profileID {
+                guard workspace.applyRemoteSavedQueries(upserts: change.upserts, deletions: change.deletions) else {
+                    throw MobileWorkspaceRepository.Failure.invalidArchive
+                }
+                continue
+            }
+            var archive = try workspaceRepository.load(profileID: profileID) ?? MobileWorkspaceArchive(profileID: profileID)
+            let replaced = Set(change.upserts.map(\.id)).union(change.deletions)
+            archive.savedQueries.removeAll { replaced.contains($0.id) }
+            archive.savedQueries.append(contentsOf: change.upserts)
+            for index in archive.documents.indices where archive.documents[index].metadata.savedQueryID.map(change.deletions.contains) == true {
+                let item = archive.documents[index]
+                archive.documents[index] = .init(
+                    metadata: .init(id: item.metadata.id, title: item.metadata.title, savedQueryID: nil,
+                                    defaultDatabase: item.metadata.defaultDatabase,
+                                    resultRowLimit: item.metadata.resultRowLimit),
+                    draft: item.draft, schemaName: item.schemaName, selectionLocation: item.selectionLocation,
+                    selectionLength: item.selectionLength, needsWriteVerification: item.needsWriteVerification)
+            }
+            try workspaceRepository.write(archive)
+        }
+        return waiting
     }
 
     func recordQuery(sql: String, database: String, profileID: UUID, schemaName: String? = nil) {

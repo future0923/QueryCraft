@@ -23,6 +23,8 @@ struct SettingsDetailView: View {
                 EditorSettingsPane(preferences: preferences)
             case .snippets:
                 SnippetsSettingsPane()
+            case .sync:
+                CloudSyncSettingsPane(controller: DesktopCloudSync.controller)
             case .query:
                 QuerySettingsPane(preferences: preferences)
             case .data:

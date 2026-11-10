@@ -4,6 +4,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case appearance
     case editor
     case snippets
+    case sync
     case query
     case data
     case plugins
@@ -28,6 +29,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
             "text.cursor"
         case .snippets:
             "curlybraces"
+        case .sync:
+            "icloud"
         case .query:
             "play.circle"
         case .data:

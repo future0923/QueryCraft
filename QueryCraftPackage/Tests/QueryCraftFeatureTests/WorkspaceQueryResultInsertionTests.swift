@@ -148,9 +148,11 @@ struct WorkspaceQueryResultInsertionTests {
                 if scheme == .dark {
                     window.appearance?.performAsCurrentDrawingAppearance {
                         let color = table.backgroundColor.usingColorSpace(.deviceRGB)
-                        #expect(color?.redComponent == 0)
-                        #expect(color?.greenComponent == 0)
-                        #expect(color?.blueComponent == 0)
+                        // macOS dark base background is the opaque soft gray #181818.
+                        let base = CGFloat(0x18) / 255
+                        #expect(abs((color?.redComponent ?? -1) - base) < 0.002)
+                        #expect(abs((color?.greenComponent ?? -1) - base) < 0.002)
+                        #expect(abs((color?.blueComponent ?? -1) - base) < 0.002)
                         #expect(color?.alphaComponent == 1)
                     }
                 }

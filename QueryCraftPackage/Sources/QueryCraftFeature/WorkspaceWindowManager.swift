@@ -35,6 +35,14 @@ final class WorkspaceWindowManager: NSObject {
         super.init()
         NSWindow.allowsAutomaticWindowTabbing = false
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(receiveMCPRequest(_:)), name: MCPDesktopBridge.notification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(cloudSyncApplied(_:)), name: .cloudSyncDidApplyRemoteChanges, object: nil)
+    }
+
+    @objc private func cloudSyncApplied(_ notification: Notification) {
+        let openGroups = Array(groups.values)
+        Task { @MainActor in
+            for group in openGroups { await group.refreshAllSavedQueries() }
+        }
     }
 
     @objc private func receiveMCPRequest(_ notification: Notification) {

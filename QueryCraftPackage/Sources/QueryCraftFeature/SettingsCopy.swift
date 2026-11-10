@@ -24,6 +24,8 @@ struct SettingsCopy {
             text("编辑器", "Editor")
         case .snippets:
             text("代码片段", "Snippets")
+        case .sync:
+            text("iCloud 同步", "iCloud Sync")
         case .query:
             text("查询", "Query")
         case .data:

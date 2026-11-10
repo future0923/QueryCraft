@@ -53,7 +53,9 @@ struct QueryCraftMobileApp: App {
             return
         }
         #endif
-        _model = State(initialValue: MobileApplicationModel())
+        let model = MobileApplicationModel()
+        MobileCloudSync.start(model: model)
+        _model = State(initialValue: model)
     }
     var body: some Scene {
         WindowGroup {

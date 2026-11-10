@@ -26,6 +26,7 @@ final class QueryCraftApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationCenter.default.addObserver(self, selector: #selector(showConnectionsRequested(_:)), name: WelcomeWindowPresentation.requestNotification, object: nil)
         softwareUpdateManager.start()
+        DesktopCloudSync.start()
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(1))
             self?.showWelcomeWindowIfNeeded()
