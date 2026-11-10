@@ -2,6 +2,22 @@ import Foundation
 import Darwin
 
 enum SSHPluginInstallation {
+    /// Identity of the active plugin when this host may run it. A bundle signed
+    /// for another distribution channel (for example the self-signed builds
+    /// before Developer ID) cannot load here, so it must not block replacement
+    /// by a verified release. Usable plugins keep the downgrade guard.
+    static func usableActiveIdentity(in directory: URL) throws -> DatabaseDriverReleaseIdentity? {
+        let current = SSHPlugin.bundleURL(in: directory).resolvingSymlinksInPath()
+        guard FileManager.default.fileExists(atPath: current.path),
+              (try? SSHPlugin.verifySignature(at: current)) != nil else { return nil }
+        guard let installed = Bundle(url: current),
+              let version = installed.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              let build = installed.object(forInfoDictionaryKey: "CFBundleVersion") as? String else {
+            throw MCPFailure("Cannot verify the installed SSH plugin version. Current was preserved.")
+        }
+        return DatabaseDriverReleaseIdentity(version: version, build: build)
+    }
+
     /// Install a locally supplied bundle in an immutable version directory.
     /// Existing processes retain the old library; new clients see one atomic link.
     static func install(source: URL, directory: URL, preventsDowngrade: Bool = false) throws -> URL {
@@ -33,17 +49,13 @@ enum SSHPluginInstallation {
         // Recheck Current under the cross-process lock: another updater may
         // have activated a newer release while this caller was downloading.
         if preventsDowngrade {
-            let current = SSHPlugin.bundleURL(in: directory).resolvingSymlinksInPath()
-            if FileManager.default.fileExists(atPath: current.path) {
-                guard let installed = Bundle(url: current), let candidate = Bundle(url: staged),
-                      let oldVersion = installed.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-                      let oldBuild = installed.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+            if let installed = try usableActiveIdentity(in: directory) {
+                guard let candidate = Bundle(url: staged),
                       let newVersion = candidate.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
                       let newBuild = candidate.object(forInfoDictionaryKey: "CFBundleVersion") as? String else {
                     throw MCPFailure("Cannot verify the installed SSH plugin version. Current was preserved.")
                 }
-                guard !DatabaseDriverReleaseIdentity(version: oldVersion, build: oldBuild)
-                    .isNewer(than: .init(version: newVersion, build: newBuild)) else {
+                guard !installed.isNewer(than: .init(version: newVersion, build: newBuild)) else {
                     throw MCPFailure("Refusing an automatic SSH plugin downgrade.")
                 }
             }

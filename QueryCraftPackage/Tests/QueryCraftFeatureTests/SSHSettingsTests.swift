@@ -125,6 +125,25 @@ struct SSHSettingsTests {
         await model.load()
         #expect(model.loaded && model.profiles == [profile] && model.error != nil)
     }
+    @Test func pluginRejectedByThisHostDoesNotBlockVerifiedReplacement() throws {
+        let directory = root(); defer { try? FileManager.default.removeItem(at: directory) }
+        let bundle = SSHPlugin.bundleURL(in: directory)
+        try FileManager.default.createDirectory(at: bundle.appending(path: "Contents"), withIntermediateDirectories: true)
+        let info: [String: Any] = ["CFBundleIdentifier": "io.github.future0923.QueryCraft.SSH", "CFBundlePackageType": "BNDL",
+                                   "CFBundleShortVersionString": "9.9.9", "CFBundleVersion": "99"]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: bundle.appending(path: "Contents/Info.plist"))
+        // A higher-versioned bundle from another signing channel cannot run here,
+        // so the downgrade guard must not keep every retry failing.
+        #expect(try SSHPluginInstallation.usableActiveIdentity(in: directory) == nil)
+        let sign = Process()
+        sign.executableURL = URL(filePath: "/usr/bin/codesign")
+        sign.arguments = ["--force", "--sign", "-", bundle.path]
+        try sign.run(); sign.waitUntilExit()
+        #expect(sign.terminationStatus == 0)
+        // Debug hosts accept ad-hoc plugins, so a usable install keeps the guard.
+        #expect(try SSHPluginInstallation.usableActiveIdentity(in: directory) == .init(version: "9.9.9", build: "99"))
+    }
 }
 
 private actor LockedSSHSettingsCredentials: CredentialStore {
