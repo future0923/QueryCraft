@@ -78,6 +78,44 @@ enum EditorColorReadability {
         var id: String { role.rawValue + background.rawValue }
     }
 
+    /// WCAG 2 ratios overstate legibility on dark backgrounds, so dark thresholds are higher for comparable perceived contrast.
+    enum Tier {
+        case content, syntax, subtle, faint, cursor
+
+        func minimum(for mode: EditorColorMode) -> Double {
+            switch (self, mode) {
+            case (.content, .light): 4.5
+            case (.content, .dark): 7
+            case (.syntax, .light): 2
+            case (.syntax, .dark): 4.5
+            case (.subtle, .light): 1.7
+            case (.subtle, .dark): 3.5
+            case (.faint, .light): 1.4
+            case (.faint, .dark): 3
+            case (.cursor, _): 3
+            }
+        }
+
+        /// Selection and search highlights are transient overlays, so text beneath them is held one tier lower.
+        var overlay: Self {
+            switch self {
+            case .content: .syntax
+            case .syntax: .subtle
+            case .subtle, .faint: .faint
+            case .cursor: .cursor
+            }
+        }
+    }
+
+    static func tier(for role: EditorColorRole) -> Tier {
+        switch role {
+        case .text, .currentLineNumber, .searchText: .content
+        case .comment, .punctuation, .lineNumber: .subtle
+        case .cursor: .cursor
+        default: .syntax
+        }
+    }
+
     static func ratio(_ foreground: NSColor, _ background: NSColor) -> Double {
         func luminance(_ color: NSColor) -> Double {
             let rgb = color.usingColorSpace(.sRGB)!
@@ -94,36 +132,39 @@ enum EditorColorReadability {
     static func checks(settings: EditorColorSettings, mode: EditorColorMode) -> [Result] {
         let palette = settings[mode]
         func color(_ role: EditorColorRole) -> NSColor { EditorHexColor.color(palette.hex(for: role, mode: mode)) }
-        func selection(over background: NSColor, inactive: Bool) -> NSColor {
+        func selection(inactive: Bool) -> NSColor {
+            let background = color(.background)
             var fill = color(.selection)
             if inactive, let device = fill.usingColorSpace(.deviceRGB) {
                 // Match TextSelectionManager's unfocused grayscale selection.
                 let gray = 0.299 * device.redComponent + 0.587 * device.greenComponent + 0.114 * device.blueComponent
                 fill = NSColor(white: gray, alpha: 1).usingColorSpace(.sRGB) ?? fill
             }
+            // Mirrors WorkspaceEditorTheme's translucent selection fill.
             let opacity = mode == .dark ? 0.35 : 0.22
             return NSColor(srgbRed: fill.redComponent * opacity + background.redComponent * (1 - opacity),
                            green: fill.greenComponent * opacity + background.greenComponent * (1 - opacity),
                            blue: fill.blueComponent * opacity + background.blueComponent * (1 - opacity), alpha: 1)
         }
         var results: [Result] = []
+        func check(_ role: EditorColorRole, on background: EditorColorRole, _ tier: Tier, ratio value: Double? = nil) {
+            results.append(.init(role: role, background: background, ratio: value ?? ratio(color(role), color(background)),
+                                 minimum: tier.minimum(for: mode)))
+        }
         for role in EditorColorRole.syntax {
-            for background in [EditorColorRole.background, .currentLine] {
-                results.append(.init(role: role, background: background, ratio: ratio(color(role), color(background)), minimum: 4.5))
-                for inactive in [false, true] {
-                    results.append(.init(role: role, background: .selection,
-                                         ratio: ratio(color(role), selection(over: color(background), inactive: inactive)), minimum: 4.5))
-                }
-            }
+            let roleTier = tier(for: role)
+            check(role, on: .background, roleTier)
+            check(role, on: .currentLine, roleTier)
+            // A non-empty selection replaces the current-line highlight, so only the plain background lies beneath it.
+            let selected = [false, true].map { ratio(color(role), selection(inactive: $0)) }.min() ?? 1
+            check(role, on: .selection, roleTier.overlay, ratio: selected)
         }
-        for (role, background, minimum) in [(EditorColorRole.lineNumber, EditorColorRole.background, 4.5),
-                                           (.currentLineNumber, .currentLine, 4.5), (.cursor, .background, 3.0),
-                                           (.cursor, .currentLine, 3.0), (.searchText, .searchCurrent, 4.5),
-                                           (.text, .searchMatch, 4.5)] {
-            results.append(.init(role: role, background: background, ratio: ratio(color(role), color(background)), minimum: minimum))
-        }
-        // Keep the lowest selection contrast across both backgrounds and focus states.
-        return Dictionary(grouping: results, by: \.id).values.compactMap { $0.min { $0.ratio < $1.ratio } }
-            .sorted { $0.ratio < $1.ratio }
+        check(.lineNumber, on: .background, tier(for: .lineNumber))
+        check(.currentLineNumber, on: .currentLine, tier(for: .currentLineNumber))
+        check(.cursor, on: .background, .cursor)
+        check(.cursor, on: .currentLine, .cursor)
+        check(.searchText, on: .searchCurrent, tier(for: .searchText))
+        check(.text, on: .searchMatch, tier(for: .text).overlay)
+        return results.sorted { $0.ratio / $0.minimum < $1.ratio / $1.minimum }
     }
 }

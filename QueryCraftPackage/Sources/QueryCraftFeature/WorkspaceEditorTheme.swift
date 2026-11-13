@@ -13,8 +13,7 @@ enum WorkspaceEditorTheme {
             EditorHexColor.color(palette.hex(for: role, mode: mode))
         }
         func attribute(_ role: EditorColorRole) -> EditorTheme.Attribute {
-            .init(color: color(role), bold: role == .keyword && palette.boldKeywords,
-                  italic: role == .comment && palette.italicComments)
+            .init(color: color(role), bold: palette.isBold(role), italic: palette.isItalic(role))
         }
         var theme = EditorTheme(
             text: attribute(.text), insertionPoint: color(.cursor),

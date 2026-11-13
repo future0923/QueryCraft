@@ -253,12 +253,7 @@ struct EditorColorsSettingsView: View {
 extension EditorColorPreset {
     var title: String { title(language: .activeInterfaceLanguage) }
     func title(language: ApplicationLanguage) -> String {
-        let copy = AppCopy(language: language)
-        return switch self {
-        case .classic: copy.text("经典", "Classic")
-        case .ocean: copy.text("海洋", "Ocean")
-        case .soft: copy.text("柔和", "Soft")
-        }
+        AppCopy(language: language).text(names.chinese, names.english)
     }
 }
 

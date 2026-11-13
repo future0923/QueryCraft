@@ -483,7 +483,7 @@ struct MobileSQLEditor: UIViewRepresentable {
                 case .operator: .operator; case .punctuation: .punctuation
                 }
                 var selectedFont = font
-                let traits: UIFontDescriptor.SymbolicTraits = role == .keyword && palette.boldKeywords ? .traitBold : (role == .comment && palette.italicComments ? .traitItalic : [])
+                let traits: UIFontDescriptor.SymbolicTraits = palette.isBold(role) ? .traitBold : (palette.isItalic(role) ? .traitItalic : [])
                 if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) { selectedFont = .init(descriptor: descriptor, size: font.pointSize) }
                 view.textStorage.addAttributes([.font: selectedFont, .foregroundColor: EditorHexColor.color(palette.hex(for: role, mode: mode))], range: highlight.range.nsRange)
             }

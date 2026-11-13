@@ -47,7 +47,7 @@ struct MobileEditorSettingsView: View {
                 Section("语法与背景配色") {
                     Picker("外观", selection: Binding(get: { mode }, set: { choseMode = true; mode = $0 })) { Text("浅色").tag(EditorColorMode.light); Text("深色").tag(EditorColorMode.dark) }.pickerStyle(.segmented)
                     Picker("主题", selection: Binding(get: { preferences.colors[mode].preset }, set: { preferences.colors[mode].apply($0) })) {
-                        Text("经典").tag(EditorColorPreset.classic); Text("海洋").tag(EditorColorPreset.ocean); Text("柔和").tag(EditorColorPreset.soft)
+                        ForEach(EditorColorPreset.allCases) { Text($0.names.chinese).tag($0) }
                     }
                     Toggle("关键字加粗", isOn: $preferences.colors[mode].boldKeywords)
                     Toggle("注释斜体", isOn: $preferences.colors[mode].italicComments)

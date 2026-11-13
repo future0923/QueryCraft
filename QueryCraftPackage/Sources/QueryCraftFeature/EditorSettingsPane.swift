@@ -16,8 +16,8 @@ struct EditorSettingsPane: View {
                     SettingsControlLabel(
                         title: AppCopy.current.text("浅色与深色独立配色", "Separate Light and Dark Colors"),
                         description: AppCopy.current.text(
-                            "内置经典、海洋、柔和主题，可自定义语法及背景颜色。",
-                            "Classic, Ocean and Soft presets with customizable syntax and background colors."
+                            "内置经典、Navicat、GitHub、Xcode、Catppuccin、海洋、柔和主题，可自定义语法及背景颜色。",
+                            "Classic, Navicat, GitHub, Xcode, Catppuccin, Ocean and Soft presets with customizable syntax and background colors."
                         )
                     )
                     Spacer()
