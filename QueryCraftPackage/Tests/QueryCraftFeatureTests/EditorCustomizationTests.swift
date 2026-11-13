@@ -91,7 +91,14 @@ struct EditorCustomizationTests {
         #expect(EditorHexColor.hex(controller.gutterView.textColor) == settings[mode].hex(for: .lineNumber, mode: mode))
         #expect(EditorHexColor.hex(controller.gutterView.selectedLineTextColor!) == settings[mode].hex(for: .currentLineNumber, mode: mode))
         let keywordFont = try #require(controller.attributesFor(.keyword)[.font] as? NSFont)
-        #expect(NSFontManager.shared.traits(of: keywordFont).contains(.boldFontMask))
+        #expect(NSFontManager.shared.traits(of: keywordFont).contains(.boldFontMask) == preset.boldKeywordsByDefault)
+        for (capture, role) in [(CaptureName.typeBuiltin, EditorColorRole.type), (.boolean, .boolean)] {
+            let font = try #require(controller.attributesFor(capture)[.font] as? NSFont)
+            #expect(NSFontManager.shared.traits(of: font).contains(.boldFontMask)
+                    == (preset.boldKeywordsByDefault && preset.boldRoles.contains(role)))
+        }
+        let commentFont = try #require(controller.attributesFor(.comment)[.font] as? NSFont)
+        #expect(NSFontManager.shared.traits(of: commentFont).contains(.italicFontMask) == preset.italicCommentsByDefault)
         settings[mode].boldKeywords = false
         settings[mode].italicComments = false
         controller.configuration.appearance.theme = WorkspaceEditorTheme.make(for: mode.appearanceName, settings: settings)
@@ -102,6 +109,58 @@ struct EditorCustomizationTests {
         settings[mode].setHex(settings[mode].hex(for: .background, mode: mode), for: .keyword)
         #expect(EditorColorReadability.checks(settings: settings, mode: mode).contains { $0.role == .keyword && $0.ratio < 1.01 })
         #expect(abs(EditorColorReadability.ratio(.black, .white) - 21) < 0.01)
+    }
+
+    @Test
+    func readabilityUsesRoleTiersAndModeSpecificMinimums() {
+        func result(_ settings: EditorColorSettings, _ mode: EditorColorMode, _ role: EditorColorRole,
+                    on background: EditorColorRole) -> EditorColorReadability.Result? {
+            EditorColorReadability.checks(settings: settings, mode: mode).first { $0.role == role && $0.background == background }
+        }
+        var settings = EditorColorSettings()
+        settings[.light].setHex("#FFFFFF", for: .background)
+        settings[.light].setHex("#A3A3A3", for: .keyword)
+        settings[.light].setHex("#C7C7C7", for: .comment)
+        settings[.light].setHex("#949494", for: .text)
+        #expect(result(settings, .light, .keyword, on: .background).map { $0.ratio >= $0.minimum && $0.minimum == 2 } == true)
+        #expect(result(settings, .light, .comment, on: .background).map { $0.ratio < $0.minimum && $0.minimum == 1.7 } == true)
+        #expect(result(settings, .light, .text, on: .background).map { $0.ratio < $0.minimum && $0.minimum == 4.5 } == true)
+
+        settings[.dark].setHex("#1E1E1E", for: .background)
+        settings[.dark].setHex("#808080", for: .keyword)
+        settings[.dark].setHex("#BBBBBB", for: .text)
+        #expect(result(settings, .dark, .keyword, on: .background).map { $0.ratio < $0.minimum && $0.minimum == 4.5 } == true)
+        #expect(result(settings, .dark, .text, on: .background).map { $0.ratio >= $0.minimum && $0.minimum == 7 } == true)
+
+        // Overlays are checked one tier lower, and only once per role over the plain background.
+        let checks = EditorColorReadability.checks(settings: settings, mode: .light)
+        #expect(checks.filter { $0.role == .keyword && $0.background == .selection }.count == 1)
+        #expect(result(settings, .light, .keyword, on: .selection)?.minimum == 1.7)
+        #expect(result(settings, .light, .text, on: .selection)?.minimum == 2)
+        #expect(result(settings, .light, .text, on: .searchMatch)?.minimum == 2)
+        #expect(result(settings, .light, .searchText, on: .searchCurrent)?.minimum == 4.5)
+        #expect(Set(checks.map(\.id)).count == checks.count)
+    }
+
+    @Test(arguments: EditorColorMode.allCases)
+    func navicatPresetUsesItsOwnTextStyleDefaults(_ mode: EditorColorMode) {
+        var palette = EditorColorPalette()
+        #expect(palette.isItalic(.comment))
+        palette.apply(.navicat)
+        #expect(palette.preset == .navicat)
+        #expect(palette.isBold(.keyword) && palette.isBold(.type) && palette.isBold(.boolean))
+        #expect(!palette.isBold(.function) && !palette.isItalic(.comment))
+        palette.boldKeywords = false
+        #expect(!palette.isBold(.keyword) && !palette.isBold(.type))
+        palette.apply(.classic)
+        #expect(palette.isBold(.keyword) && !palette.isBold(.type) && palette.isItalic(.comment))
+        palette.apply(.xcode)
+        #expect(palette.isBold(.keyword) && palette.isBold(.boolean) && !palette.isBold(.type) && !palette.isItalic(.comment))
+        palette.apply(.github)
+        #expect(!palette.isBold(.keyword) && !palette.isItalic(.comment))
+        palette.apply(.catppuccin)
+        #expect(!palette.isBold(.keyword) && palette.isItalic(.comment))
+        #expect(EditorColorPreset.navicat.colors(for: mode)[.keyword] == (mode == .light ? "#1B94F6" : "#4AA8FF"))
     }
 
     @Test(arguments: [false, true])

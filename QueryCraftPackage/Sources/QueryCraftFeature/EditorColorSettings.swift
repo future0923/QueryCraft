@@ -64,25 +64,66 @@ enum EditorColorRole: String, CaseIterable, Identifiable, Sendable {
 }
 
 enum EditorColorPreset: String, CaseIterable, Identifiable, Codable, Sendable {
-    case classic, ocean, soft
+    case classic, navicat, github, xcode, catppuccin, ocean, soft
     var id: Self { self }
 
+    var names: (chinese: String, english: String) {
+        switch self {
+        case .classic: ("经典", "Classic")
+        case .navicat: ("Navicat", "Navicat")
+        case .github: ("GitHub", "GitHub")
+        case .xcode: ("Xcode", "Xcode")
+        case .catppuccin: ("Catppuccin", "Catppuccin")
+        case .ocean: ("海洋", "Ocean")
+        case .soft: ("柔和", "Soft")
+        }
+    }
+
+    /// Roles emphasized by the Bold Keywords style. Navicat and Xcode also bold some keyword-like literals.
+    var boldRoles: Set<EditorColorRole> {
+        switch self {
+        case .navicat: [.keyword, .type, .boolean]
+        case .xcode: [.keyword, .boolean]
+        default: [.keyword]
+        }
+    }
+
+    var boldKeywordsByDefault: Bool { ![.github, .catppuccin].contains(self) }
+
+    var italicCommentsByDefault: Bool { [.classic, .catppuccin, .ocean, .soft].contains(self) }
+
     func colors(for mode: EditorColorMode) -> [EditorColorRole: String] {
-        // In EditorColorRole order. Saturated syntax accents, quiet surfaces, and readable comments.
-        // Light palettes use deeper accents; dark palettes use brighter accents from the same hue families.
-        // Preserve at least 4.5:1 text contrast on normal, current-line and blended selection backgrounds.
+        // In EditorColorRole order. Light palettes keep identifiers and operators in the text color, use bright
+        // accents and light-gray comments. Navicat, GitHub (Primer), Xcode (Default) and Catppuccin (Latte/Mocha)
+        // follow their originals, nudged only where EditorColorReadability requires. Every palette passes it.
         let values: [String]
         switch (self, mode) {
         case (.classic, .light):
-            values = ["24283B", "8728B8", "006A61", "1660A6", "944B10", "624FAC", "236B31", "9D4410", "AD2860", "2F6383", "7F4797", "765A15", "9A3D6E", "535F72", "525F73", "FFFFFF", "F0F4FC", "579AFF", "8050CC"]
+            values = ["4B4F5A", "A23BE0", "0B9C8C", "4B4F5A", "D98200", "7B61FF", "22A33A", "F2621F", "E8457A", "4B4F5A", "B45CE0", "B88600", "4B4F5A", "4B4F5A", "A0A5AE", "FFFFFF", "F5F7FB", "579AFF", "8050CC"]
         case (.classic, .dark):
             values = ["E6EDF8", "F186D0", "65D3C1", "79B7F5", "F2D373", "BDA0EF", "A6D978", "F5AB65", "F18CA7", "85CBE5", "D9A4EF", "E8C680", "EB8CBD", "A4B5D0", "9DACC2", "1E1E1E", "282828", "335B9A", "D9A4EF"]
+        case (.navicat, .light):
+            values = ["535353", "1B94F6", "535353", "535353", "1B8CDA", "1B94F6", "FF3B5A", "10CC6C", "1B94F6", "535353", "535353", "1B94F6", "535353", "535353", "A3A3A3", "FFFFFF", "F7F9FC", "6AA6FF", "000000"]
+        case (.navicat, .dark):
+            values = ["D4D4D4", "4AA8FF", "D4D4D4", "D4D4D4", "6CB6EA", "4AA8FF", "FF6B82", "3DDC84", "4AA8FF", "D4D4D4", "D4D4D4", "4AA8FF", "D4D4D4", "D4D4D4", "969696", "1E1E1E", "282828", "2F6FB5", "D4D4D4"]
+        case (.github, .light):
+            values = ["1F2328", "CF222E", "953800", "1F2328", "8250DF", "CF222E", "0A3069", "0550AE", "0550AE", "1F2328", "953800", "0550AE", "CF222E", "1F2328", "59636E", "FFFFFF", "F6F8FA", "0969DA", "0969DA"]
+        case (.github, .dark):
+            values = ["E6EDF3", "FF7B72", "FFA657", "E6EDF3", "D2A8FF", "FF7B72", "A5D6FF", "79C0FF", "79C0FF", "E6EDF3", "FFA657", "79C0FF", "FF7B72", "E6EDF3", "8B949E", "0D1117", "161B22", "388BFD", "2F81F7"]
+        case (.xcode, .light):
+            values = ["262626", "9B2393", "1C464A", "262626", "6C36A9", "3900A0", "C41A16", "1C00CF", "9B2393", "262626", "262626", "815F03", "262626", "262626", "5D6C79", "FFFFFF", "E8F2FF", "4A90FF", "000000"]
+        case (.xcode, .dark):
+            values = ["DFDFE0", "FF7AB2", "ACF2E4", "DFDFE0", "B78BEE", "DABAFF", "FF8170", "D9C97C", "FF7AB2", "DFDFE0", "DFDFE0", "CC9768", "DFDFE0", "DFDFE0", "7F8C98", "292A30", "2F3239", "5A657A", "FFFFFF"]
+        case (.catppuccin, .light):
+            values = ["4C4F69", "8839EF", "DF8E1D", "4C4F69", "1E66F5", "DF8E1D", "40A02B", "FE640B", "FE640B", "4C4F69", "E64553", "DF8E1D", "04A5E5", "7C7F93", "7C7F93", "EFF1F5", "E6E9EF", "7C7F93", "1E66F5"]
+        case (.catppuccin, .dark):
+            values = ["CDD6F4", "CBA6F7", "F9E2AF", "CDD6F4", "89B4FA", "F9E2AF", "A6E3A1", "FAB387", "FAB387", "CDD6F4", "EBA0AC", "F9E2AF", "89DCEB", "9399B2", "9399B2", "1E1E2E", "2A2B3C", "9399B2", "F5E0DC"]
         case (.ocean, .light):
-            values = ["18344A", "6334DD", "005AB3", "006576", "006856", "9423AD", "1E6A1C", "9F3A00", "AE1C56", "135BA8", "8B349E", "755700", "A22970", "465E72", "495E6E", "F5FAFF", "E5F0FB", "379FF5", "006DDE"]
+            values = ["44515E", "7653F5", "0A8AE0", "44515E", "0EA07A", "C04FE0", "5AA30F", "F08A00", "E54C8A", "44515E", "C04FE0", "B88600", "44515E", "44515E", "98A6B3", "F7FAFD", "EEF4FB", "379FF5", "006DDE"]
         case (.ocean, .dark):
             values = ["E0F3FF", "BBA8FF", "55BDFF", "3EDFD8", "59F0AA", "DC9BFF", "AEED65", "FFB454", "FF93BD", "8DCFFF", "F29CEC", "F4DC70", "E997EF", "93BCD8", "9BB8CC", "1E1E1E", "282828", "146B8B", "48D9FF"]
         case (.soft, .light):
-            values = ["37312E", "A82377", "3B54BE", "00686B", "984400", "7C3BBB", "3D681A", "A33A17", "AF2258", "1F5F99", "983586", "755900", "A3345A", "665B55", "665B51", "FFF9F0", "F5EADC", "D196CE", "BC347C"]
+            values = ["5B514B", "E0438F", "5778E8", "5B514B", "D97706", "9B5DE5", "4C9A2A", "EF5D3A", "E0438F", "5B514B", "9B5DE5", "B07A00", "5B514B", "5B514B", "B3A79C", "FFFBF5", "F7EFE4", "D196CE", "BC347C"]
         case (.soft, .dark):
             values = ["F2E6D8", "FF87BE", "91AEFF", "63D8CD", "FFD16B", "CEA0FF", "BAE577", "FFA366", "FF8B9F", "81C9EE", "EFA0D8", "E6D37A", "F795BA", "C4AD9A", "BDAB9E", "1E1E1E", "282828", "854568", "FF96CC"]
         }
@@ -114,6 +155,10 @@ struct EditorColorPalette: Codable, Equatable, Sendable {
 
     var preset: EditorColorPreset { EditorColorPreset(rawValue: presetID) ?? .classic }
 
+    func isBold(_ role: EditorColorRole) -> Bool { boldKeywords && preset.boldRoles.contains(role) }
+
+    func isItalic(_ role: EditorColorRole) -> Bool { role == .comment && italicComments }
+
     func hex(for role: EditorColorRole, mode: EditorColorMode) -> String {
         overrides[role.rawValue].flatMap(EditorHexColor.normalized)
             ?? preset.colors(for: mode)[role] ?? "#000000"
@@ -129,8 +174,8 @@ struct EditorColorPalette: Codable, Equatable, Sendable {
     mutating func apply(_ preset: EditorColorPreset) {
         presetID = preset.rawValue
         overrides = [:]
-        boldKeywords = true
-        italicComments = true
+        boldKeywords = preset.boldKeywordsByDefault
+        italicComments = preset.italicCommentsByDefault
     }
 }
 
