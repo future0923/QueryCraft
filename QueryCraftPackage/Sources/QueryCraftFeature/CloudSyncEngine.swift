@@ -1,5 +1,6 @@
 import CloudKit
 import Foundation
+import os
 
 /// Platform storage behind iCloud sync (desktop SQLite, mobile JSON).
 protocol CloudSyncLocalStore: Sendable {
@@ -13,6 +14,12 @@ protocol CloudSyncLocalStore: Sendable {
     func apply(_ changes: [CloudSyncRemoteChange]) async throws -> [CloudSyncSavedQuery]
 }
 
+protocol CloudSyncEngineRunning: Sendable {
+    func start(initialMerge: Bool) async throws
+    func stop() async
+    func synchronize() async throws
+}
+
 enum CloudSyncEngineEvent: Sendable {
     case syncing
     case synced(Date)
@@ -24,13 +31,16 @@ enum CloudSyncEngineEvent: Sendable {
 /// Drives CKSyncEngine against the private database. Conflicts resolve per
 /// record by last writer (`modifiedAt`); a local edit made after a remote
 /// deletion recreates the item instead of losing it.
-actor CloudSyncEngine: CKSyncEngineDelegate {
+actor CloudSyncEngine: CKSyncEngineDelegate, CloudSyncEngineRunning {
     static let zoneID = CKRecordZone.ID(zoneName: CloudSyncKey.zoneName)
+    private static let logger = Logger(subsystem: "io.github.future0923.QueryCraft", category: "CloudSync")
 
     private let database: CKDatabase
     private let metadata: CloudSyncMetadataStore
     private let local: any CloudSyncLocalStore
     private let report: @Sendable (CloudSyncEngineEvent) async -> Void
+    private let hasAccess: @Sendable () async -> Bool
+    private let automaticallySync: Bool
     private var engine: CKSyncEngine?
     /// Outbox version captured when a record was handed to CloudKit.
     private var sentVersions: [String: Int] = [:]
@@ -39,12 +49,16 @@ actor CloudSyncEngine: CKSyncEngineDelegate {
         database: CKDatabase,
         metadata: CloudSyncMetadataStore,
         local: any CloudSyncLocalStore,
-        report: @escaping @Sendable (CloudSyncEngineEvent) async -> Void
+        report: @escaping @Sendable (CloudSyncEngineEvent) async -> Void,
+        hasAccess: @escaping @Sendable () async -> Bool = { true },
+        automaticallySync: Bool = false
     ) {
         self.database = database
         self.metadata = metadata
         self.local = local
         self.report = report
+        self.hasAccess = hasAccess
+        self.automaticallySync = automaticallySync
     }
 
     var isRunning: Bool { engine != nil }
@@ -60,7 +74,10 @@ actor CloudSyncEngine: CKSyncEngineDelegate {
             stateSerialization: serialization,
             delegate: self
         )
-        configuration.automaticallySync = true
+        // The shared controller schedules local-edit, foreground and periodic
+        // sync. CloudKit must not independently start requests past an expired
+        // entitlement, bypassing that authorization boundary.
+        configuration.automaticallySync = automaticallySync
         let engine = CKSyncEngine(configuration)
         self.engine = engine
         if serialization == nil {
@@ -79,21 +96,35 @@ actor CloudSyncEngine: CKSyncEngineDelegate {
         try await synchronize()
     }
 
-    func stop() {
+    func stop() async {
+        let previous = engine
         engine = nil
         sentVersions.removeAll()
+        // Cancellation must not inherit a CloudKit delegate task-local context.
+        try? await CloudSyncTaskBoundary.run { await previous?.cancelOperations() }
     }
 
     /// Fetches remote changes first, then sends pending local edits.
     func synchronize() async throws {
-        guard let engine else { return }
+        // Database observations can originate inside a CloudKit delegate
+        // callback. Task {} inherits CloudKit's task-local callback marker,
+        // even after a debounce sleep; crossing an actor does not clear it.
+        try await CloudSyncTaskBoundary.run { [weak self] in
+            try await self?.performSynchronization()
+        }
+    }
+
+    private func performSynchronization() async throws {
+        guard let engine, await hasAccess(), self.engine === engine else { return }
         await report(.syncing)
         do {
             try await engine.fetchChanges()
+            guard await hasAccess(), self.engine === engine else { return }
             await queueLocalChanges()
             try await engine.sendChanges()
             await report(.synced(.now))
         } catch {
+            Self.log(error, context: "synchronize")
             await report(.failed(Self.describe(error)))
             throw error
         }
@@ -171,6 +202,7 @@ actor CloudSyncEngine: CKSyncEngineDelegate {
         _ context: CKSyncEngine.SendChangesContext,
         syncEngine: CKSyncEngine
     ) async -> CKSyncEngine.RecordZoneChangeBatch? {
+        guard engine === syncEngine, await hasAccess(), engine === syncEngine else { return nil }
         let scope = context.options.scope
         let changes = syncEngine.state.pendingRecordZoneChanges.filter { scope.contains($0) }
         guard !changes.isEmpty else { return nil }
@@ -218,6 +250,7 @@ actor CloudSyncEngine: CKSyncEngineDelegate {
         }
         for (recordID, error) in sent.failedRecordDeletes {
             guard let key = CloudSyncKey(recordName: recordID.recordName) else { continue }
+            Self.log(error, context: "delete")
             if error.code == .unknownItem {
                 try metadata.removeSystemFields(for: key)
                 try metadata.completeOutbox(key, version: nil)
@@ -229,6 +262,7 @@ actor CloudSyncEngine: CKSyncEngineDelegate {
             let recordID = failure.record.recordID
             guard let key = CloudSyncKey(recordName: recordID.recordName) else { continue }
             sentVersions.removeValue(forKey: key.recordName)
+            Self.log(failure.error, context: "save \(failure.record.recordType)")
             switch failure.error.code {
             case .serverRecordChanged:
                 guard let serverRecord = failure.error.serverRecord else { continue }
@@ -315,14 +349,59 @@ actor CloudSyncEngine: CKSyncEngineDelegate {
     static func describe(_ error: any Error) -> String {
         guard let error = error as? CKError else { return error.localizedDescription }
         switch error.code {
+        case .partialFailure:
+            // Report the record-level cause, not the generic batch failure.
+            let causes = (error.partialErrorsByItemID ?? [:]).values.compactMap { $0 as? CKError }
+            if let cause = causes.first(where: { $0.code != .batchRequestFailed }) ?? causes.first {
+                return describe(cause)
+            }
+            return CloudSyncCopy.current.failed(code: error.code.rawValue)
         case .notAuthenticated:
             return CloudSyncCopy.current.notSignedIn
         case .quotaExceeded:
             return CloudSyncCopy.current.quotaExceeded
         case .networkFailure, .networkUnavailable:
             return CloudSyncCopy.current.networkUnavailable
+        case .serviceUnavailable, .requestRateLimited, .zoneBusy:
+            return CloudSyncCopy.current.serviceUnavailable
+        case .accountTemporarilyUnavailable:
+            return CloudSyncCopy.current.accountUnavailable
+        case .badContainer, .badDatabase, .missingEntitlement:
+            return CloudSyncCopy.current.configurationError
         default:
-            return error.localizedDescription
+            return CloudSyncCopy.current.failed(code: error.code.rawValue)
+        }
+    }
+
+    /// CloudKit error codes are not personal data; log them publicly so
+    /// failures can be diagnosed from the system log.
+    private static func log(_ error: any Error, context: String) {
+        guard let error = error as? CKError else {
+            logger.error("\(context, privacy: .public): error code \((error as NSError).code, privacy: .public)")
+            return
+        }
+        logger.error("\(context, privacy: .public): CKError \(error.code.rawValue, privacy: .public)")
+        for (_, item) in error.partialErrorsByItemID ?? [:] {
+            guard let item = item as? CKError else { continue }
+            logger.error("\(context, privacy: .public) item: CKError \(item.code.rawValue, privacy: .public)")
+        }
+    }
+}
+
+/// CloudKit requires fetch/send requests to start outside its delegate's
+/// task-local context. Keep this boundary shared by every sync entry point.
+enum CloudSyncTaskBoundary {
+    static func run<Value: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let task = Task.detached(priority: Task.currentPriority) {
+            try Task.checkCancellation()
+            return try await operation()
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
 }

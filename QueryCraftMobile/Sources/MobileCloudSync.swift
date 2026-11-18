@@ -20,7 +20,7 @@ final class MobileCloudSyncStore: CloudSyncLocalStore {
         guard let model else { return nil }
         switch key.entity {
         case .connectionGroup:
-            return nil
+            return model.library.connectionGroups.first(where: { $0.id == key.id }).map(CloudSyncValue.connectionGroup)
         case .connection:
             guard let profile = model.library.profiles.first(where: { $0.id == key.id }) else { return nil }
             return .connection(Self.connection(from: profile, secret: secret(for: profile, in: model)))
@@ -51,6 +51,8 @@ final class MobileCloudSyncStore: CloudSyncLocalStore {
     func apply(_ changes: [CloudSyncRemoteChange]) async throws -> [CloudSyncSavedQuery] {
         guard let model else { return [] }
         var connections: [CloudSyncConnection] = []
+        var groups: [CloudSyncConnectionGroup] = []
+        var deletedGroups = Set<UUID>()
         var deletedConnections = Set<UUID>()
         var queries: [SavedQuery] = []
         var deletedQueries = Set<UUID>()
@@ -64,16 +66,17 @@ final class MobileCloudSyncStore: CloudSyncLocalStore {
                                           defaultDatabase: value.defaultDatabase, name: value.name, sql: value.sql,
                                           createdAt: value.createdAt, updatedAt: value.updatedAt))
             case let .upsert(.snippet(value)): snippets.append(value)
-            case .upsert(.connectionGroup): break // groups exist only on the Mac
+            case let .upsert(.connectionGroup(value)): groups.append(value)
             case let .delete(key):
                 switch key.entity {
                 case .connection: deletedConnections.insert(key.id)
                 case .savedQuery: deletedQueries.insert(key.id)
                 case .snippet: deletedSnippets.append(key.id)
-                case .connectionGroup: break
+                case .connectionGroup: deletedGroups.insert(key.id)
                 }
             }
         }
+        try model.applyCloudConnectionGroups(groups, deletions: deletedGroups)
         try model.applyCloudConnections(connections, deletions: deletedConnections)
         let waiting = try model.applyCloudSavedQueries(queries, deletions: deletedQueries)
         if !snippets.isEmpty || !deletedSnippets.isEmpty {
@@ -126,12 +129,16 @@ enum MobileCloudSync {
         let created = CloudSyncController(
             containerIdentifier: CloudSyncController.bundleContainerIdentifier(),
             defaults: .standard,
-            makeMetadata: { try CloudSyncMetadataStore.standalone(at: metadataURL) },
+            makeMetadata: {
+                let metadata = try CloudSyncMetadataStore.standalone(at: metadataURL)
+                try prepareConnectionGroups(in: metadata)
+                return metadata
+            },
             makeLocal: { [weak model] metadata in
                 guard let model else { return EmptyCloudSyncStore() }
                 return MobileCloudSyncStore(model: model, metadata: metadata)
             },
-            hasAccess: { true }
+            hasAccess: { await CloudSyncBilling.shared.checkAccess() }
         )
         controller = created
         guard created.isAvailableInBuild else { return }
@@ -150,6 +157,15 @@ enum MobileCloudSync {
         // CKSyncEngine reacts to CloudKit pushes on its own once registered.
         UIApplication.shared.registerForRemoteNotifications()
         Task { await created.startIfEnabled() }
+    }
+
+    /// Earlier mobile builds consumed group records without storing them.
+    /// Re-fetch once after upgrading, preserving local data and pending edits.
+    nonisolated static func prepareConnectionGroups(in metadata: CloudSyncMetadataStore) throws {
+        let migrationKey = "mobileConnectionGroups.v1"
+        guard try metadata.state(migrationKey) == nil else { return }
+        try metadata.setState(nil, for: CloudSyncMetadataStore.engineStateKey)
+        try metadata.setState(Data([1]), for: migrationKey)
     }
 }
 
@@ -170,26 +186,43 @@ struct MobileCloudSyncSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle(copy.toggle, isOn: Binding(
+                Toggle(isOn: Binding(
                     get: { controller.isEnabled },
                     set: { enabled in
                         isChanging = true
                         Task { await controller.setEnabled(enabled); isChanging = false }
                     }
-                ))
+                )) {
+                    Label(copy.toggle, systemImage: "icloud")
+                }
+                .tint(.green)
                 .disabled(!controller.isAvailableInBuild || isChanging)
-                LabeledContent("状态") { status }
+                if showsStatus {
+                    LabeledContent("状态") { status.fixedSize(horizontal: false, vertical: true) }
+                }
             } footer: {
-                Text(copy.summary + "\n\n" + copy.localDataKept)
+                Text(controller.isEnabled ? "\(copy.syncOverview)\n\(copy.localDataKept)" : copy.syncOverview)
             }
-            Section {
-                Button(copy.syncNow) { Task { await controller.syncNow() } }
-                    .disabled(!controller.isEnabled || controller.status == .syncing)
-            }
+            CloudSyncPurchaseSection(billing: .shared, onAccessChanged: { controller.applicationBecameActive() })
         }
         .mobileSettingsCanvas()
         .navigationTitle(copy.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(copy.syncNow, systemImage: "arrow.triangle.2.circlepath") {
+                    Task { await controller.syncNow() }
+                }
+                .disabled(!controller.isEnabled || controller.status == .syncing || isChanging)
+            }
+        }
+    }
+
+    /// The switch already says "off"; only show a status row when it adds information.
+    private var showsStatus: Bool {
+        if controller.isEnabled { return true }
+        if case .off = controller.status { return false }
+        return true
     }
 
     @ViewBuilder

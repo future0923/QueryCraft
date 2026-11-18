@@ -341,6 +341,11 @@ targets:
       - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncEngine.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncController.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncCopy.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncEntitlement.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncStoreKit.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncBilling.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncAccountAccess.swift
+      - ../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncPurchaseSection.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/SQLSnippetSession.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/WorkspaceSchemaCatalogSnapshot.swift
       - ../QueryCraftPackage/Sources/QueryCraftFeature/EditorColorSettings.swift
@@ -424,7 +429,13 @@ targets:
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/WorkspaceDataImportStreamingTests.swift
       - ../QueryCraftDrivers/Tests/QueryCraftPostgreSQLDriverTests/PostgreSQLSchemaEditingProviderTests.swift
       - ../QueryCraftDrivers/Tests/QueryCraftPostgreSQLDriverTests/PostgreSQLCapabilitiesTests.swift
-      - Tests
+      - path: Tests
+        excludes:
+          - StoreKitFixtures
+      - path: Tests/StoreKitFixtures
+        type: folder
+        buildPhase: resources
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/CloudSyncBillingTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLCompletionEngineTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLFormatterTests.swift
       - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SQLSnippetTests.swift
@@ -475,3 +486,17 @@ schemes:
       config: Debug
       targets:
         - QueryCraftMobileSystemUITests
+
+  QueryCraftSyncPurchases:
+    build:
+      targets:
+        QueryCraftMobileProof: all
+    run:
+      config: Debug
+      storeKitConfiguration: Tests/StoreKitFixtures/QueryCraftSync.storekit
+    test:
+      config: Debug
+      environmentVariables:
+        QUERYCRAFT_STOREKIT_TESTS: "1"
+      targets:
+        - QueryCraftMobileProofTests

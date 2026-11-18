@@ -83,3 +83,7 @@ fastlane/test_output
 # Generated iOS proof project and machine-local build defaults
 QueryCraftMobile/QueryCraftMobile.xcodeproj/
 .xcodebuildmcp/
+
+# Generated StoreKit and Mac App Store projects
+Tests/StoreKitHost/QueryCraftPurchases.xcodeproj/
+QueryCraftStore/QueryCraftStore.xcodeproj/

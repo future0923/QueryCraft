@@ -615,3 +615,74 @@ Local validation issue: app certificate was mistakenly used for driver package s
 Release source pushed: 76b1c72 / v0.1.14. Official CI started; publication and online acceptance remain pending.
 
 User-directed waiting stop: CI continues remotely. Await user completion notification, then check workflow 41013248346 and postflight. No further polling requested.
+
+
+## Apple Developer distribution migration — 2026-11-09
+User authorized proceeding with Developer ID/notarization and mobile distribution configuration. No publication or installed-app replacement requested.
+1. Complete: Developer ID signing/CI, timestamps/runtime, nested Sparkle and compatibility dylib signing; explicit legacy recovery retained.
+2. Complete: Apple-anchored Team helper namespaces/common vault lock, native fixture tests and first-use authorization documentation; user old ACL remains release acceptance.
+3. Complete locally on x86_64: 11 actual Accepted notarizations (app/DMG/MCP/SSH/seven drivers), app/DMG/MCP tickets and Gatekeeper, seven-driver/native protocol/SSH checks. ARM remains CI acceptance; EdDSA keys unchanged.
+4. Complete configuration: automatic device/test signing, ad-hoc simulator, formal Release ID, pinned dependencies, archive/export script. Unsigned arm64 device Release build passed; signed Archive/IPA/TestFlight remain account/release steps.
+5. Complete: macOS main/MCP Release, mobile arm64 Release, native checks, 79 script tests, workflow/YAML/syntax/diff checks and distribution guide. Five new Actions secrets, version allocation, ARM/real-user migration and TestFlight acceptance remain explicitly documented release work.
+
+
+## GitHub Secrets and release validation — 2026-11-09
+User explicitly authorizes configuring GitHub Secrets and completing remaining signing/release verification. Preserve existing edits and installed apps.
+1. Complete: all five Developer ID and Apple ID notarization Secrets configured in QueryCraft only; private export protected by native Keychain and Apple authentication verified. API key is optional and unnecessary.
+2. Complete: new app/MCP/SSH/seven-driver staging identities and bilingual notes; Skill and Driver API 5 unchanged.
+3. Pending: commit reviewable source/version changes on codex branch, run a non-publishing dual-native workflow, repair failures and inspect final signed/notarized artifacts.
+4. Complete for local signing/mobile: signed iOS Release, Archive and App Store Connect IPA exported and verified (formal Bundle/Team/arm64, distribution profile, no debugging entitlement). No TestFlight upload; real legacy-user ACL/GUI upgrades remain an explicit acceptance limit. Production publication remains a separate final action after concrete validation.
+
+User-directed wait stop (2026-11-09): remote run 42582720235 continues; no cancellation. Resume only on user notice, inspect ARM Elasticsearch cache failure and newly failed Intel Redis, finish CI/artifact acceptance. Local IPA, Secrets and all required local test groups already complete.
+
+2026-11-09 current run: 42584905885 at 7bbd67d supersedes canceled 42582720235. Shared SwiftPM cache fix locally verified cold/warm and 53 selection/recovery tests. Await user notification for cloud results, then inspect any new failures and finish both native runtime/artifact gates.
+
+Current pending issue: Intel client ticket validation lost Apple CloudKit network (-1005). No new source pushed; optional network-retry candidate saved outside git. Wait for user notice of run 42584905885 completion, then rerun failed jobs at 7bbd67d without rebuilding successful drivers. GitHub disallows rerunning jobs while the containing run is active.
+
+## 2026-11-12 云同步付费接入
+用户已自行验证同步；iPad 明天补测，明确暂不上传 TestFlight。
+1. 完成：核对旧授权。数据库门禁已放行；云同步尚为恒 true；无 StoreKit/Creem 支付实现。
+2. 进行中：共享同步权益、StoreKit 2 购买/恢复/撤销，所有同步入口的生命周期门禁；本地功能永久免费。
+3. 待完成：30 天同步试用和官网下载授权跨设备桥接、Creem 支付通知；生产启用依赖商品/账户配置和验收。
+4. 待完成：Mac/iOS 自动化回归、构建和部署边界记录。不得上传 TestFlight或实际扣款。
+
+2026-11-12 phase update: shared billing/provider/controller implementation and deterministic regression validation complete (39 Mac + 17 iOS). Commercial integration remains incomplete: 30-day account trial, cross-channel bridge, real product configuration and Creem notifications. StoreKit environment integration explicitly unresolved (Code3), do not release paid mode. Existing installed preview apps preserved.
+
+2026-11-12 account-access continuation:
+1. Done: Apple-verifiable native iCloud identity and account-scoped 30-day trial; real production-container identity probe passed.
+2. Done in source/local integration: existing website license -> one iCloud account -> fresh client access without copying installation credentials. Repeated trial/link, expiry, suspension, account conflict, and Go race tests covered.
+3. In progress: final Mac/iOS shared regression validation and endpoint documentation. Keep current installed preview apps and production service unchanged.
+4. Still separate incomplete commercial prerequisites: App Store purchase -> website Mac server transaction validation/refunds, real StoreKit product setup, Creem webhooks/payment acceptance, iPad hardware, switching billing mode after acceptance.
+2026-11-12 account-access validation complete: 42 Mac + 20 iOS tests and Go race suites pass. Native Apple identity and isolated end-to-end direct-license restoration pass. Ephemeral server/database/credentials cleaned. Source remains uncommitted; commercial rollout and App Store reverse bridge remain explicit follow-up work.
+
+### 2026-11-12 App Store → 官网 Mac 当前验收
+- [x] 购买前服务端固定 appAccountToken，购买后 verified JWS 关联
+- [x] Apple 实时服务端校验、跨渠道签名权益、续费/过期/退款处理
+- [x] 服务端并发回归、Mac46/iOS24通过，保持preview
+- [x] 沙盒 API 凭据认证；三种订阅草稿
+- [x] 用户确认 Apple 价格档位并创建 Sandbox 测试账户
+- [x] 四项商品中英资料/价格/中国大陆可售已保存；订阅同级、多名额关闭；永久创建异常恢复
+- [ ] Apple 首个支持 StoreKit 的版本获批后关闭简化购买（当前后端拒绝关闭）；补审核资料
+- [x] 独立 Sandbox 服务、数据库、签名密钥、HTTPS 与真实 Mac iCloud 预检
+- [ ] 真机购买→官网Mac识别→续费/退款端到端验收（无线手机暂不可达，开发签名测试包构建中）
+- [ ] 正式部署/上架/收费（未执行）
+
+2026-11-12 Sandbox remote isolation ready: dedicated service/database/signing key and narrow HTTPS route. Both production and sandbox health 200; sandbox admin path404, malformed sync request400. Developer-signed iOS build5 in progress; installed preview app untouched. Wireless iPhone not available in tool discovery; no requirement to switch iCloud or transmit test password.
+
+### Universal candidate follow-up
+- Universal signed diagnostic app built; both architecture dependency closures passed. Running its Intel slice passed all sandbox probe checks, with build-output rpaths removed.
+- Missing Kafka libssl negative fixture correctly rejected by dependency gate.
+- Intel Release/App Store export passed; final universal Store app development build in progress (log mac-store-universal-app-build.log).
+- Four Apple products verified ready to submit; macOS metadata saved by user after contact completion. Browser task finished, Mac draft retained for review.
+- Still no upload, submission, production replacement or source commit.
+
+- Universal signed Store main application build succeeded (57s). Final dual-architecture structure and deep-signature checks recorded in mac-store-universal-app-validation.json. Not launched or installed over production.
+
+
+## MCP query export MVP — 2026-11-16
+User approved implementing the assessed local MySQL MVP. Preserve existing uncommitted changes. No production queries, commits or releases are part of this task.
+1. Complete: tool contracts, runtime ownership, strict read-only validation and file limits.
+2. Complete: shared streaming ZIP core for typed multi-query XLSX and CSV/ZIP; no result truncation.
+3. Complete: persistent asynchronous jobs, status/cancel/delete, capability ownership, cleanup, snapshot execution and cross-process quotas.
+4. Complete: final 60 tests pass; independently built/packaged MCP + MySQL pass disposable MySQL 8.4 integration (61,349 rows, concurrent snapshot, native cancel/timeout, failure atomicity), documentation and limits recorded. No installed component replacement or release.
+Deferred: remote HTTP artifact downloads, PostgreSQL/Doris exports and cursor resume.

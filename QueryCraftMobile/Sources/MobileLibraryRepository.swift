@@ -13,6 +13,43 @@ struct MobileLibraryState: Codable {
     var version = 1
     var profiles: [MobileConnectionProfile] = []
     var history: [MobileQueryHistoryItem] = []
+    var connectionGroups: [CloudSyncConnectionGroup] = []
+
+    enum CodingKeys: String, CodingKey { case version, profiles, history, connectionGroups }
+
+    init(version: Int = 1, profiles: [MobileConnectionProfile] = [],
+         history: [MobileQueryHistoryItem] = [], connectionGroups: [CloudSyncConnectionGroup] = []) {
+        self.version = version
+        self.profiles = profiles
+        self.history = history
+        self.connectionGroups = connectionGroups
+    }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        version = try values.decode(Int.self, forKey: .version)
+        profiles = try values.decode([MobileConnectionProfile].self, forKey: .profiles)
+        history = try values.decode([MobileQueryHistoryItem].self, forKey: .history)
+        connectionGroups = try values.decodeIfPresent([CloudSyncConnectionGroup].self, forKey: .connectionGroups) ?? []
+    }
+
+    var orderedConnectionGroups: [CloudSyncConnectionGroup] {
+        connectionGroups.sorted {
+            ConnectionDisplayOrder.precedes(index: $0.sortIndex, name: $0.name, index: $1.sortIndex, name: $1.name)
+        }
+    }
+
+    func profiles(in groupID: UUID?) -> [MobileConnectionProfile] {
+        let knownGroups = Set(connectionGroups.map(\.id))
+        return profiles.filter {
+            // A child may arrive before its group. Keep it visible until the
+            // parent arrives, without discarding its original membership.
+            let visibleGroup = $0.groupID.flatMap { knownGroups.contains($0) ? $0 : nil }
+            return visibleGroup == groupID
+        }.sorted {
+            ConnectionDisplayOrder.precedes(index: $0.sortIndex, name: $0.name, index: $1.sortIndex, name: $1.name)
+        }
+    }
 }
 
 @MainActor
@@ -36,6 +73,7 @@ struct MobileLibraryRepository: MobileLibraryPersisting {
         guard (size?.intValue ?? Int.max) <= 2_097_152 else { throw LibraryError.invalidFile }
         let state = try JSONDecoder().decode(MobileLibraryState.self, from: Data(contentsOf: file))
         guard state.version == 1, Set(state.profiles.map(\.id)).count == state.profiles.count,
+              Set(state.connectionGroups.map(\.id)).count == state.connectionGroups.count,
               state.profiles.allSatisfy({ !$0.name.isEmpty && !$0.host.isEmpty && (1...65535).contains($0.port) }) else {
             throw LibraryError.invalidFile
         }

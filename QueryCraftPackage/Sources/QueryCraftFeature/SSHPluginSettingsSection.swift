@@ -19,6 +19,9 @@ final class SSHPluginSettingsModel {
         guard !busy else { return }; busy = true; defer { busy = false }
         do { installed = try await manager.installedVersion(); error = nil }
         catch { self.error = error.localizedDescription }
+        guard ApplicationDistribution.current.supportsDownloadedCode else {
+            release = nil; availabilityError = nil; checked = true; return
+        }
         do { release = try await manager.available(); availabilityError = nil }
         catch is CancellationError {} catch { availabilityError = error.localizedDescription }
         checked = true

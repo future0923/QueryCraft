@@ -32,10 +32,6 @@ let package = Package(
             url: "https://github.com/groue/GRDB.swift.git",
             .upToNextMajor(from: "7.0.0")
         ),
-        .package(
-            url: "https://github.com/sparkle-project/Sparkle",
-            .upToNextMajor(from: "2.9.0")
-        ),
     ],
     targets: [
         .target(name: "CQueryCraftSSHPluginAPI"),
@@ -58,7 +54,6 @@ let package = Package(
                     package: "CodeEditTextView"
                 ),
                 .product(name: "GRDB", package: "GRDB.swift"),
-                .product(name: "Sparkle", package: "Sparkle"),
                 .product(
                     name: "SwiftTreeSitter",
                     package: "SwiftTreeSitter"

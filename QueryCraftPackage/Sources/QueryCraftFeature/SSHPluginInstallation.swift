@@ -21,6 +21,7 @@ enum SSHPluginInstallation {
     /// Install a locally supplied bundle in an immutable version directory.
     /// Existing processes retain the old library; new clients see one atomic link.
     static func install(source: URL, directory: URL, preventsDowngrade: Bool = false) throws -> URL {
+        try ApplicationDistribution.requireDownloadedCode()
         let source = source.resolvingSymlinksInPath()
         guard source.pathExtension == "bundle", source.lastPathComponent == "QueryCraftSSH.bundle" else {
             throw MCPFailure("Choose a signed QueryCraftSSH.bundle directory.")

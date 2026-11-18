@@ -1,0 +1,107 @@
+name: QueryCraftStore
+options:
+  developmentLanguage: zh-Hans
+  deploymentTarget:
+    macOS: "15.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    DEVELOPMENT_TEAM: 5975A7N3W3
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_APP_SANDBOX: YES
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_ENTITLEMENTS: QueryCraftStore.entitlements
+    CODE_SIGN_INJECT_BASE_ENTITLEMENTS: YES
+    GENERATE_INFOPLIST_FILE: NO
+    MARKETING_VERSION: 0.1.16
+    CURRENT_PROJECT_VERSION: 26
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) QUERYCRAFT_APP_STORE
+packages:
+  QueryCraftFeature:
+    path: ../QueryCraftPackage
+  QueryCraftMCP:
+    path: ../QueryCraftMCPPackage
+targets:
+  QueryCraftStore:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../QueryCraft
+        excludes:
+          - Info.plist
+          - SparkleSoftwareUpdateBackend.swift
+          - QueryCraft.xctestplan
+    settings:
+      base:
+        PRODUCT_NAME: QueryCraft
+        PRODUCT_DISPLAY_NAME: QueryCraft
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.Mobile
+        INFOPLIST_FILE: Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/../Frameworks
+    postBuildScripts:
+      - name: Embed reviewed database and SSH components
+        script: python3 "$SRCROOT/../scripts/embed-store-components.py"
+        basedOnDependencyAnalysis: false
+    dependencies:
+      - package: QueryCraftFeature
+        embed: true
+      - package: QueryCraftMCP
+        product: QueryCraftMCPRuntime
+  QueryCraftStoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - ../QueryCraftMCPPackage/Tests/QueryCraftMCPTests
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/SoftwareUpdateManagerTests.swift
+      - ../QueryCraftPackage/Tests/QueryCraftFeatureTests/LocalFileAuthorizationTests.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.StoreTests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_ENTITLEMENTS: ""
+    dependencies:
+      - package: QueryCraftFeature
+      - package: QueryCraftMCP
+        product: QueryCraftMCPRuntime
+  QueryCraftStoreProbe:
+    type: application
+    platform: macOS
+    sources:
+      - ../Tests/StoreSandboxHost
+    settings:
+      base:
+        PRODUCT_NAME: QueryCraftStoreProbe
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.Mobile
+        INFOPLIST_FILE: Info.plist
+        ENABLE_TESTABILITY: YES
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/../Frameworks
+    postBuildScripts:
+      - name: Embed reviewed database and SSH components
+        script: python3 "$SRCROOT/../scripts/embed-store-components.py"
+        basedOnDependencyAnalysis: false
+    dependencies:
+      - package: QueryCraftFeature
+        embed: true
+      - package: QueryCraftMCP
+        product: QueryCraftMCPRuntime
+schemes:
+  QueryCraftStoreProbe:
+    build:
+      targets:
+        QueryCraftStoreProbe: all
+    run:
+      config: Debug
+  QueryCraftStore:
+    build:
+      targets:
+        QueryCraftStore: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - QueryCraftStoreTests
+    archive:
+      config: Release

@@ -52,32 +52,34 @@ struct GeneralSettingsPane: View {
                 .pickerStyle(.menu)
             }
 
-            Section(copy.softwareUpdateSection) {
-                Toggle(
-                    isOn: $preferences.automaticallyChecksForUpdates
-                ) {
-                    SettingsControlLabel(
-                        title: copy.automaticallyCheckForUpdates,
-                        description:
-                            copy.automaticallyCheckForUpdatesDescription
-                    )
-                }
-                .onChange(
-                    of: preferences.automaticallyChecksForUpdates
-                ) { _, enabled in
-                    softwareUpdateManager
-                        .setAutomaticallyChecksForUpdates(enabled)
-                }
+            if softwareUpdateManager.isAvailable {
+                Section(copy.softwareUpdateSection) {
+                    Toggle(
+                        isOn: $preferences.automaticallyChecksForUpdates
+                    ) {
+                        SettingsControlLabel(
+                            title: copy.automaticallyCheckForUpdates,
+                            description:
+                                copy.automaticallyCheckForUpdatesDescription
+                        )
+                    }
+                    .onChange(
+                        of: preferences.automaticallyChecksForUpdates
+                    ) { _, enabled in
+                        softwareUpdateManager
+                            .setAutomaticallyChecksForUpdates(enabled)
+                    }
 
-                HStack {
-                    Spacer()
+                    HStack {
+                        Spacer()
 
-                    Button(
-                        copy.checkForUpdates,
-                        systemImage: "arrow.trianglehead.2.clockwise.rotate.90",
-                        action: softwareUpdateManager.checkForUpdates
-                    )
-                    .disabled(!softwareUpdateManager.canCheckForUpdates)
+                        Button(
+                            copy.checkForUpdates,
+                            systemImage: "arrow.trianglehead.2.clockwise.rotate.90",
+                            action: softwareUpdateManager.checkForUpdates
+                        )
+                        .disabled(!softwareUpdateManager.canCheckForUpdates)
+                    }
                 }
             }
 

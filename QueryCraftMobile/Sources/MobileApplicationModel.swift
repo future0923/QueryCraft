@@ -272,6 +272,23 @@ final class MobileApplicationModel {
 
     // MARK: iCloud sync
 
+    func applyCloudConnectionGroups(_ upserts: [CloudSyncConnectionGroup], deletions: Set<UUID>) throws {
+        guard libraryLoaded else { throw CocoaError(.fileReadCorruptFile) }
+        guard !upserts.isEmpty || !deletions.isEmpty else { return }
+        var state = library
+        for group in upserts {
+            if let index = state.connectionGroups.firstIndex(where: { $0.id == group.id }) {
+                state.connectionGroups[index] = group
+            } else { state.connectionGroups.append(group) }
+        }
+        state.connectionGroups.removeAll { deletions.contains($0.id) }
+        for index in state.profiles.indices where state.profiles[index].groupID.map(deletions.contains) == true {
+            state.profiles[index].groupID = nil
+        }
+        try repository.write(state)
+        library = state
+    }
+
     /// Applies connections received from iCloud without reporting them back
     /// as local edits. Passwords follow the connection; a deleted connection
     /// also drops its workspace unless it is open with unsaved work.
@@ -302,7 +319,8 @@ final class MobileApplicationModel {
                 username: connection.username,
                 database: connection.defaultDatabase ?? (driver == .milvus ? "default" : ""),
                 tlsMode: tlsMode, remembersPassword: remembers, requiresPassword: requiresPassword,
-                driver: driver, authentication: authentication, schemaName: connection.mobile?.schemaName)
+                driver: driver, authentication: authentication, schemaName: connection.mobile?.schemaName,
+                groupID: connection.desktop?.groupID, sortIndex: connection.desktop?.sortIndex ?? 0)
             if let index = state.profiles.firstIndex(where: { $0.id == profile.id }) { state.profiles[index] = profile }
             else { state.profiles.append(profile) }
         }

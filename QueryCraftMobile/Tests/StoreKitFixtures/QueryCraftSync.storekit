@@ -1,0 +1,105 @@
+{
+  "identifier": "51435359",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "39.9",
+      "familyShareable": false,
+      "internalID": "51430004",
+      "localizations": [
+        {
+          "description": "Lifetime iCloud sync. Local features are always free.",
+          "displayName": "QueryCraft Sync Lifetime",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "io.github.future0923.QueryCraft.sync.perpetual",
+      "referenceName": "Sync Lifetime",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_applicationInternalID": "",
+    "_developerTeamID": "5975A7N3W3",
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "CHN",
+    "_timeRate": 0
+  },
+  "subscriptionGroups": [
+    {
+      "id": "51430000",
+      "localizations": [],
+      "name": "QueryCraft Sync",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "3.8",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "51430001",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Sync connections, passwords, saved queries and snippets.",
+              "displayName": "QueryCraft Sync monthly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "io.github.future0923.QueryCraft.sync.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Sync monthly",
+          "subscriptionGroupID": "51430000",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "16.8",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "51430002",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Sync connections, passwords, saved queries and snippets.",
+              "displayName": "QueryCraft Sync halfYear",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "io.github.future0923.QueryCraft.sync.halfYear",
+          "recurringSubscriptionPeriod": "P6M",
+          "referenceName": "Sync halfYear",
+          "subscriptionGroupID": "51430000",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "26.8",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "51430003",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Sync connections, passwords, saved queries and snippets.",
+              "displayName": "QueryCraft Sync annual",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "io.github.future0923.QueryCraft.sync.annual",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Sync annual",
+          "subscriptionGroupID": "51430000",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 2,
+    "minor": 0
+  }
+}

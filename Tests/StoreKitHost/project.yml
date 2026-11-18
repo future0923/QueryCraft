@@ -1,0 +1,48 @@
+name: QueryCraftPurchases
+options:
+  deploymentTarget:
+    macOS: "15.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    GENERATE_INFOPLIST_FILE: YES
+    ENABLE_HARDENED_RUNTIME: NO
+targets:
+  QueryCraftPurchaseTestHost:
+    type: application
+    platform: macOS
+    sources:
+      - main.swift
+      - ../../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncStoreKit.swift
+      - ../../QueryCraftPackage/Sources/QueryCraftFeature/CloudSyncEntitlement.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.PurchaseTestHost
+        INFOPLIST_KEY_LSUIElement: YES
+  QueryCraftPurchaseTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - ../../QueryCraftMobile/Tests/CloudSyncStoreKitTests.swift
+      - path: ../../QueryCraftMobile/Tests/StoreKitFixtures
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: QueryCraftPurchaseTestHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.future0923.QueryCraft.PurchaseTests
+schemes:
+  QueryCraftSyncPurchases:
+    build:
+      targets:
+        QueryCraftPurchaseTestHost: all
+    test:
+      config: Debug
+      environmentVariables:
+        QUERYCRAFT_STOREKIT_TESTS: "1"
+      targets:
+        - QueryCraftPurchaseTests

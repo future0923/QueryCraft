@@ -16,10 +16,12 @@ actor SSHPluginManager {
         return Bundle(url: url.resolvingSymlinksInPath())?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     }
     func available() async throws -> MCPComponentRelease {
-        try await catalog.latest(.ssh, host: .current)
+        try ApplicationDistribution.requireDownloadedCode()
+        return try await catalog.latest(.ssh, host: .current)
     }
     func install(release: MCPComponentRelease,
                  progress: @escaping @Sendable (MCPComponentInstallationProgress) async -> Void) async throws {
+        try ApplicationDistribution.requireDownloadedCode()
         guard !busy else { throw MCPFailure("An SSH plugin operation is running.") }
         busy = true; defer { busy = false }
         guard release.component == .ssh else { throw MCPFailure("Invalid SSH release.") }
@@ -44,6 +46,7 @@ actor SSHPluginManager {
         _ = try SSHPluginInstallation.install(source: bundle, directory: directory, preventsDowngrade: true)
     }
     func importPackage(_ source: URL) async throws {
+        try ApplicationDistribution.requireDownloadedCode()
         guard !busy else { throw MCPFailure("An SSH plugin operation is running.") }
         busy = true; defer { busy = false }
         let staging = try makeStage(); defer { try? FileManager.default.removeItem(at: staging) }
@@ -53,6 +56,7 @@ actor SSHPluginManager {
         _ = try SSHPluginInstallation.install(source: bundle, directory: directory)
     }
     func uninstall() throws {
+        try ApplicationDistribution.requireDownloadedCode()
         guard !busy else { throw MCPFailure("An SSH plugin operation is running.") }
         let root = directory.appending(path: "Plugins/SSH")
         let lock = try MCPComponentLock(directory: root, filename: ".install.lock"); defer { withExtendedLifetime(lock) {} }

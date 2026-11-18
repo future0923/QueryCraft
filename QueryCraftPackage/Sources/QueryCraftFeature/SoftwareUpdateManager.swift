@@ -1,43 +1,38 @@
-import AppKit
 import Combine
-import Sparkle
+
+/// Supplied only by the directly distributed app. The shared feature framework
+/// and Mac App Store app have no dependency on Sparkle or its installer.
+@MainActor
+public protocol SoftwareUpdateBackend: AnyObject {
+    func start(automaticallyChecks: Bool, availabilityChanged: @escaping @MainActor (Bool) -> Void)
+    func checkForUpdates()
+    func setAutomaticallyChecksForUpdates(_ enabled: Bool)
+}
 
 @MainActor
-public final class SoftwareUpdateManager: NSObject, ObservableObject {
+public final class SoftwareUpdateManager: ObservableObject {
     public static let shared = SoftwareUpdateManager()
-
-    private let controller: SPUStandardUpdaterController
-
     @Published public private(set) var canCheckForUpdates = false
+    @Published public private(set) var isAvailable = false
+    private var backend: (any SoftwareUpdateBackend)?
 
-    private override init() {
-        controller = SPUStandardUpdaterController(
-            startingUpdater: false,
-            updaterDelegate: nil,
-            userDriverDelegate: nil
-        )
-        super.init()
+    init() {}
 
-        controller.updater.automaticallyChecksForUpdates =
-            ApplicationPreferences.shared.automaticallyChecksForUpdates
-        controller.updater.publisher(for: \.canCheckForUpdates)
-            .assign(to: &$canCheckForUpdates)
-    }
-
-    public func start() {
-        #if !DEBUG
-        controller.startUpdater()
-        #endif
+    public func start(using backend: any SoftwareUpdateBackend) {
+        guard self.backend == nil else { return }
+        self.backend = backend
+        isAvailable = true
+        backend.start(automaticallyChecks: ApplicationPreferences.shared.automaticallyChecksForUpdates) { [weak self] available in
+            self?.canCheckForUpdates = available
+        }
     }
 
     public func checkForUpdates() {
-        #if !DEBUG
-        NSApp.activate(ignoringOtherApps: true)
-        controller.checkForUpdates(nil)
-        #endif
+        guard canCheckForUpdates else { return }
+        backend?.checkForUpdates()
     }
 
     func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
-        controller.updater.automaticallyChecksForUpdates = enabled
+        backend?.setAutomaticallyChecksForUpdates(enabled)
     }
 }

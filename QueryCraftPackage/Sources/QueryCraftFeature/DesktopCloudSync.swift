@@ -31,7 +31,7 @@ public enum DesktopCloudSync {
                     snippets: { SQLSnippetStore.shared }
                 )
             },
-            hasAccess: { true }
+            hasAccess: { await CloudSyncBilling.shared.checkAccess() }
         )
     }
 

@@ -28,12 +28,14 @@ struct CloudSyncSettingsPane: View {
                         .disabled(!controller.isEnabled || controller.status == .syncing)
                 } label: {
                     statusLabel
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             } footer: {
                 Text(copy.localDataKept)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            CloudSyncPurchaseSection(billing: .shared, onAccessChanged: { controller.applicationBecameActive() })
         }
         .formStyle(.grouped)
     }

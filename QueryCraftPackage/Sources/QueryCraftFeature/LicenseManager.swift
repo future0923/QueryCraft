@@ -75,6 +75,26 @@ public final class LicenseManager {
         await preparationTask?.value
     }
 
+    /// The direct-download sync channel can reuse an existing paid activation
+    /// without enabling the retired full-app paywall or consuming an old app
+    /// trial. Cloud trials have a separate lifecycle and account identity.
+    /// Device credentials are only sent to the existing first-party service.
+    /// This action explicitly links the purchase; it never starts an old trial.
+    func cloudSyncLicenseLink() async throws -> CloudSyncLicenseLink {
+        guard let credential = try await credentialStore.deviceCredential() else {
+            throw CloudSyncAccountError.unavailable
+        }
+        return try await CloudSyncLicenseLink(installationId: installationID(), deviceCredential: credential)
+    }
+
+    func paidCloudSyncGrant() async -> CloudSyncGrant? {
+        guard service != nil, verifier != nil,
+              (try? await credentialStore.deviceCredential()) != nil else { return nil }
+        do { try await refresh() } catch { /* refresh applies signed offline policy */ }
+        guard let grant = state.cloudSyncGrant, grant.source == .directLicense else { return nil }
+        return grant
+    }
+
     func activate(licenseKey: String) async throws {
         try await withWorkingState {
             guard let service, let verifier else {
@@ -352,7 +372,7 @@ public final class LicenseManager {
             usesOfflineGrace: usesOfflineGrace
         )
         state = resolvedState
-        if resolvedState.permitsDatabaseAccess {
+        if resolvedState.hasValidEntitlement {
             scheduleNextBoundary(
                 payload: payload,
                 now: effectiveNow,
@@ -368,7 +388,7 @@ public final class LicenseManager {
     private func updateState(_ newState: LicenseState) async {
         state = newState
         await accessGate.update(for: newState)
-        if !newState.permitsDatabaseAccess {
+        if !newState.hasValidEntitlement {
             boundaryTask?.cancel()
             boundaryTask = nil
         }

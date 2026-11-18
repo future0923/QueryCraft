@@ -87,11 +87,20 @@ struct CloudSyncConnection: Equatable, Sendable {
     var mobile: MobileFields?
 }
 
-struct CloudSyncConnectionGroup: Equatable, Sendable {
+struct CloudSyncConnectionGroup: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var name: String
     var sortIndex: Int
     var createdAt: Date
+}
+
+/// Connection lists use the same ordering on Mac, iPhone and iPad.
+enum ConnectionDisplayOrder {
+    static func precedes(index leftIndex: Int, name leftName: String,
+                         index rightIndex: Int, name rightName: String) -> Bool {
+        if leftIndex != rightIndex { return leftIndex < rightIndex }
+        return leftName.localizedStandardCompare(rightName) == .orderedAscending
+    }
 }
 
 struct CloudSyncSavedQuery: Equatable, Sendable {

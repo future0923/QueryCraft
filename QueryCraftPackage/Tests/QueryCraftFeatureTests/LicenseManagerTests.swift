@@ -8,6 +8,29 @@ import Testing
 struct LicenseManagerTests {
     private let currentTime = Date(timeIntervalSince1970: 1_700_000_000)
 
+    @Test func syncGrantDoesNotConsumeLegacyTrialAndReusesPaidActivation() async throws {
+        let key = Curve25519.Signing.PrivateKey()
+        let entitlement = try signedEntitlement(privateKey: key)
+        let service = RecordingLicenseService(entitlement: entitlement)
+        let store = InMemoryLicenseCredentialStore(installationID: "installation-a", deviceCredential: nil, entitlement: nil)
+        let manager = LicenseManager(
+            configuration: .init(isEnabled: false, apiBaseURL: URL(string: "https://license.example/api/v1/"),
+                                 publicKey: key.publicKey.rawRepresentation, purchaseURL: nil),
+            service: service, credentialStore: store,
+            installationIDProvider: FixedInstallationIDProvider(value: "installation-a"),
+            verifier: try LicenseTokenVerifier(publicKeyData: key.publicKey.rawRepresentation),
+            accessGate: LicenseAccessGate(), now: { currentTime }, deviceName: "Test Mac"
+        )
+        #expect(await manager.paidCloudSyncGrant() == nil)
+        #expect(await service.trialCount() == 0)
+        try await store.saveDeviceCredential("qcd-test-credential")
+        let grant = await manager.paidCloudSyncGrant()
+        #expect(grant?.source == .directLicense)
+        #expect(grant?.allowsSync(at: currentTime) == true)
+        #expect(await service.validationCount() == 1)
+        #expect(await service.trialCount() == 0)
+    }
+
     @Test
     func usesSignedOfflineGraceWhenValidationServerIsUnavailable() async throws {
         let fixture = try makeFixture(serviceError: .serverUnavailable)
@@ -312,18 +335,21 @@ private actor FailingLicenseService: LicenseServiceClient {
 private actor RecordingLicenseService: LicenseServiceClient {
     private let entitlement: SignedLicenseEntitlement
     private var validations = 0
+    private var trials = 0
 
     init(entitlement: SignedLicenseEntitlement) {
         self.entitlement = entitlement
     }
 
     func validationCount() -> Int { validations }
+    func trialCount() -> Int { trials }
 
     func startTrial(
         installationID: String,
         deviceName: String
     ) async throws -> SignedLicenseEntitlement {
-        entitlement
+        trials += 1
+        return entitlement
     }
 
     func activate(

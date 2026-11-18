@@ -35,6 +35,12 @@
 	</dict>
 	<key>QCCloudSyncContainer</key>
 	<string>iCloud.io.github.future0923.QueryCraft</string>
+	<key>QCCloudSyncEnvironment</key>
+	<string>production</string>
+	<key>QCCloudKitAPIToken</key>
+	<string>477be17bc3e3227346d84f9413f4bc288be4b9180c9a3236c6771e51978f96cf</string>
+	<key>QCCloudSyncBillingMode</key>
+	<string>preview</string>
 	<key>QCLicenseAPIBaseURL</key>
 	<string>https://querycraft.debug-tools.cc/api/v1/</string>
 	<key>QCDriverCatalogBaseURL</key>
@@ -45,6 +51,8 @@
 	<string>ioLd6mSv/vXpxVJ8ABFg3FWXZiIwTJNIR2LCxsLZmto=</string>
 	<key>QCLicensePurchaseURL</key>
 	<string>https://querycraft.debug-tools.cc/</string>
+	<key>QCPrivacyPolicyURL</key>
+	<string>https://querycraft.debug-tools.cc/privacy</string>
 	<key>SUEnableInstallerLauncherService</key>
 	<string>$(QUERYCRAFT_SPARKLE_INSTALLER_LAUNCHER_ENABLED)</string>
 	<key>SUFeedURL</key>

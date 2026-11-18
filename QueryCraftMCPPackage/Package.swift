@@ -4,7 +4,10 @@ import PackageDescription
 let package = Package(
     name: "QueryCraftMCP",
     platforms: [.macOS(.v15)],
-    products: [.executable(name: "querycraft-mcp", targets: ["QueryCraftMCPExecutable"])],
+    products: [
+        .executable(name: "querycraft-mcp", targets: ["QueryCraftMCPExecutable"]),
+        .library(name: "QueryCraftMCPRuntime", targets: ["QueryCraftMCPRuntime"]),
+    ],
     dependencies: [
         // Refer to the dynamic product, not its target: drivers and MCP must
         // resolve their shared types and registry to exactly one Feature image.

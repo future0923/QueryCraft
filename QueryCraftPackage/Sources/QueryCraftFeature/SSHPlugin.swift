@@ -136,7 +136,10 @@ final class SSHPlugin: SSHTransport, Sendable {
     let runtimeInfo: SSHPluginRuntimeInfo?
 
     static func bundleURL(in directory: URL) -> URL {
-        directory.appending(path: "Plugins/SSH/Current/QueryCraftSSH.bundle", directoryHint: .isDirectory)
+        if ApplicationDistribution.current == .appStore {
+            return Bundle.main.bundleURL.appending(path: "Contents/PlugIns/QueryCraftSSH.bundle", directoryHint: .isDirectory)
+        }
+        return directory.appending(path: "Plugins/SSH/Current/QueryCraftSSH.bundle", directoryHint: .isDirectory)
     }
 
     init(bundleURL: URL) throws {
@@ -325,6 +328,15 @@ final class SSHPlugin: SSHTransport, Sendable {
     }
     private func makeOperation(_ request: SSHRequest, file: SSHFileRequest?, terminal: (Int32, Int, Int)? = nil) throws -> Operation {
         let profile = request.connection
+        let keyAccess: [LocalFileAuthorization.Access]
+        if ApplicationDistribution.current == .appStore {
+            // Fingerprint scans skip target authentication, but jump hosts still
+            // authenticate and therefore need their selected key grants.
+            let endpoints = request.jumps.map(\.connection) + (request.scanHostKey ? [] : [profile])
+            let paths = Set(endpoints
+                .filter { $0.authenticationMethod == .privateKey }.compactMap(\.privateKeyPath))
+            keyAccess = try paths.map { try LocalFileAuthorization.shared.access(path: $0) }
+        } else { keyAccess = [] }
         let values: [String?] = [profile.host, profile.username, profile.hostFingerprint, profile.privateKeyPath, request.secret, request.command,
                                  file?.remotePath, file?.localPath, file?.temporaryPath]
         // create copies its inputs before these temporary C strings are freed.
@@ -360,7 +372,7 @@ final class SSHPlugin: SSHTransport, Sendable {
         }
         catch { functions.destroy(task); throw error }
         return Operation(task: task, functions: functions, pool: terminal == nil && request.jumps.isEmpty && request.agentSocket == nil && !request.scanHostKey ? pool : nil, scope: profile.id.uuidString, progress: file?.progress,
-                         endpoints: request.jumps.map(\.connection) + [profile])
+                         endpoints: request.jumps.map(\.connection) + [profile], keyAccess: keyAccess)
     }
 
     private func configureRoute(_ task: OpaquePointer, request: SSHRequest) throws {
@@ -433,9 +445,11 @@ final class SSHPlugin: SSHTransport, Sendable {
         // Retained until run/destroy finish; C only borrows this context.
         private let progress: ProgressSink?
         private let endpoints: [SSHConnection]
-        init(task: OpaquePointer, functions: Functions, pool: Pool?, scope: String, progress: (@Sendable (SSHTransferProgress) -> Void)?, endpoints: [SSHConnection]) {
+        private let keyAccess: [LocalFileAuthorization.Access]
+        init(task: OpaquePointer, functions: Functions, pool: Pool?, scope: String, progress: (@Sendable (SSHTransferProgress) -> Void)?, endpoints: [SSHConnection], keyAccess: [LocalFileAuthorization.Access]) {
             self.task = task; self.functions = functions; self.pool = pool; self.scope = scope
             self.endpoints = endpoints
+            self.keyAccess = keyAccess
             self.progress = progress.map(ProgressSink.init)
             if let sink = self.progress, let set = functions.setProgress {
                 set(task, { context, value in

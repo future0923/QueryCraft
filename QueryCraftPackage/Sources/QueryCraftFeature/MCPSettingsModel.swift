@@ -20,7 +20,15 @@ final class MCPSettingsModel {
     @ObservationIgnored private var componentTask: Task<Void, Never>?
     private let skillHomeDirectory: URL
     var serverIdentity: MCPServerIdentity { MCPServerIdentity(directory: directory) }
-    var skillDirectory: URL { skillTarget.directory(in: skillHomeDirectory, identity: serverIdentity) }
+    var isAppStoreDistribution: Bool { ApplicationDistribution.current == .appStore }
+    var selectedSkillParents: [MCPSkillTarget: URL] = [:]
+    var skillDirectory: URL {
+        if isAppStoreDistribution, let parent = selectedSkillParents[skillTarget] {
+            return parent.appending(path: serverIdentity.skillName)
+        }
+        return skillTarget.directory(in: skillHomeDirectory, identity: serverIdentity)
+    }
+    var needsSkillFolder: Bool { isAppStoreDistribution && selectedSkillParents[skillTarget] == nil }
     private let historyStore: MCPHistoryStore
     var profiles: [ConnectionProfile] = []
     var sshProfiles: [SSHConnection] = []
@@ -61,7 +69,7 @@ final class MCPSettingsModel {
     private let clientRegistrar: MCPClientRegistration
     private var clientInspectionID = UUID()
     private var clientInspectionKey = ""
-    var transport = "stdio"
+    var transport = ApplicationDistribution.current == .appStore ? "http" : "stdio"
     var section = "access"
     var authorizationStep = "connections"
     var connectionFilterVisible = false
@@ -90,7 +98,7 @@ final class MCPSettingsModel {
          runtimeChecker: (@Sendable () async throws -> MCPSettingsRuntimeStatus)? = nil,
          databaseDiscoverer: (@Sendable (ConnectionProfile) async throws -> [String])? = nil) {
         self.databaseDiscoverer = databaseDiscoverer
-        self.checksRemoteComponents = runtimeChecker == nil
+        self.checksRemoteComponents = runtimeChecker == nil && ApplicationDistribution.current.supportsDownloadedCode
         self.skillInstaller = skillInstaller ?? MCPSkillInstallation(cache: directory.appending(path: "SkillPackages"))
         self.directory = directory; self.installation = installation; self.service = service
         self.skillHomeDirectory = skillHomeDirectory
@@ -132,7 +140,7 @@ final class MCPSettingsModel {
         let key = client + configuration
         if clientInspectionKey != key { clientRegistration = nil; clientInspectionKey = key }
         clientRegistrationError = nil; clientRegistrationChecking = false
-        guard MCPClientRegistration.supports(client) else { return }
+        guard ApplicationDistribution.current.supportsDownloadedCode, MCPClientRegistration.supports(client) else { return }
         clientRegistrationChecking = true
         defer { if clientInspectionID == requestID { clientRegistrationChecking = false } }
         do {
@@ -212,6 +220,7 @@ final class MCPSettingsModel {
         }
     }
     func checkComponentUpdates() async {
+        guard ApplicationDistribution.current.supportsDownloadedCode else { return }
         guard !checkingComponents else { return }; checkingComponents = true; defer { checkingComponents = false }
         var failures: [String] = []
         do { availableVersion = try await installation.availableVersion() }
@@ -269,25 +278,49 @@ final class MCPSettingsModel {
     }
     func inspectSkill() async {
         let target = skillTarget
+        if isAppStoreDistribution, selectedSkillParents[target] == nil,
+           let path = UserDefaults.standard.string(forKey: "StoreSkillParent." + target.rawValue) {
+            selectedSkillParents[target] = URL(fileURLWithPath: path)
+        }
+        guard !needsSkillFolder else { skillStatus = nil; installedSkillVersion = nil; skillError = nil; return }
+        let destination = skillDirectory
         do {
-            let state = try await skillInstaller.status(at: target.directory(in: skillHomeDirectory, identity: serverIdentity))
-            guard skillTarget == target else { return }
-            skillStatus = state; installedSkillVersion = await skillInstaller.installedVersion(at: target.directory(in: skillHomeDirectory, identity: serverIdentity)); skillError = nil
-        } catch { if skillTarget == target { skillError = error.localizedDescription; skillStatus = nil } }
+            let access = try skillFolderAccess()
+            defer { withExtendedLifetime(access) {} }
+            let state = try await skillInstaller.status(at: destination)
+            let version = await skillInstaller.installedVersion(at: destination)
+            guard skillTarget == target, skillDirectory == destination else { return }
+            skillStatus = state; installedSkillVersion = version; skillError = nil
+        } catch { if skillTarget == target, skillDirectory == destination { skillError = error.localizedDescription; skillStatus = nil } }
+    }
+    func selectSkillFolder(_ url: URL) async {
+        do {
+            try LocalFileAuthorization.shared.remember(url, readOnly: false)
+            selectedSkillParents[skillTarget] = url
+            UserDefaults.standard.set(url.path, forKey: "StoreSkillParent." + skillTarget.rawValue)
+            await inspectSkill()
+        } catch { skillError = error.localizedDescription }
+    }
+    private func skillFolderAccess() throws -> LocalFileAuthorization.Access? {
+        guard isAppStoreDistribution else { return nil }
+        guard let parent = selectedSkillParents[skillTarget] else { throw LocalFileAuthorization.AccessError.selectAgain }
+        return try LocalFileAuthorization.shared.access(path: parent.path, writable: true)
     }
     func changeSkillInstallation(install: Bool) async {
         guard !isBusy else { return }; isBusy = true
         defer { isBusy = false; installationProgress = nil }
         error = nil; skillError = nil; status = ""
-        let target = skillTarget
+        let destination = skillDirectory
         do {
+            let access = try skillFolderAccess()
+            defer { withExtendedLifetime(access) {} }
             if install {
                 installationProgress = .init(phase: .checking)
-                try await skillInstaller.install(at: target.directory(in: skillHomeDirectory, identity: serverIdentity), mcpVersion: installedVersion) { [weak self] progress in
+                try await skillInstaller.install(at: destination, mcpVersion: installedVersion) { [weak self] progress in
                     await self?.updateInstallationProgress(progress)
                 }
             }
-            else { try await skillInstaller.uninstall(at: target.directory(in: skillHomeDirectory, identity: serverIdentity)) }
+            else { try await skillInstaller.uninstall(at: destination) }
             await inspectSkill()
             status = AppCopy.current.text("Skill 已更新，重新打开客户端后生效", "Skill updated; reopen your client to load it")
         } catch { skillError = error.localizedDescription }
@@ -443,6 +476,11 @@ actor MCPServiceManager {
     let directory: URL
     private let label: String
     private let agentsDirectory: URL
+    private var embeddedHost: (any MCPEmbeddedServiceHosting)?
+    func setEmbeddedHost(_ host: any MCPEmbeddedServiceHosting) {
+        guard embeddedHost == nil else { return }
+        embeddedHost = host
+    }
     init(directory: URL = QueryCraftStorageLocation.applicationSupportDirectory,
          agentsDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/LaunchAgents")) {
         self.directory = directory
@@ -452,10 +490,18 @@ actor MCPServiceManager {
     private var domain: String { "gui/\(getuid())" }
     private var plist: URL { agentsDirectory.appending(path: "\(label).plist") }
     func isRunning() async -> Bool {
-        (try? await MCPProcess.run(URL(fileURLWithPath: "/bin/launchctl"), arguments: ["print", "\(domain)/\(label)"]))?.contains("state = running") == true
+        if ApplicationDistribution.current == .appStore { return await embeddedHost?.isRunning() ?? false }
+        return (try? await MCPProcess.run(URL(fileURLWithPath: "/bin/launchctl"), arguments: ["print", "\(domain)/\(label)"]))?.contains("state = running") == true
     }
     func start(executable: String, settings: MCPHTTPSettings) async throws {
         try settings.validate()
+        if ApplicationDistribution.current == .appStore {
+            guard let embeddedHost else { throw MCPFailure("The bundled MCP service is unavailable.") }
+            try await embeddedHost.start(directory: directory)
+            do { try await checkReadiness(settings: settings) }
+            catch { try? await embeddedHost.stop(); throw error }
+            return
+        }
         guard FileManager.default.isExecutableFile(atPath: executable) else { throw MCPFailure("Install MCP before starting HTTP.") }
         if FileManager.default.fileExists(atPath: plist.path) { try await stop() }
         let log = directory.appending(path: "MCP/http.log")
@@ -465,7 +511,10 @@ actor MCPServiceManager {
         try FileManager.default.createDirectory(at: plist.deletingLastPathComponent(), withIntermediateDirectories: true)
         try PropertyListSerialization.data(fromPropertyList: configuration, format: .xml, options: 0).write(to: plist, options: .atomic)
         _ = try await MCPProcess.run(URL(fileURLWithPath: "/bin/launchctl"), arguments: ["bootstrap", domain, plist.path])
-        // Verify the endpoint rather than reporting success merely because launchd accepted a job.
+        try await checkReadiness(settings: settings)
+    }
+    private func checkReadiness(settings: MCPHTTPSettings) async throws {
+        // Verify the endpoint for both launchd and the in-process Store runtime.
         var request = URLRequest(url: URL(string: settings.endpoint)!)
         request.httpMethod = "POST"; request.timeoutInterval = 2
         request.setValue("Bearer " + settings.token, forHTTPHeaderField: "Authorization")
@@ -491,6 +540,10 @@ actor MCPServiceManager {
         throw MCPFailure("HTTP did not pass its readiness check. Check the address, port and MCP/http.log.")
     }
     func stop() async throws {
+        if ApplicationDistribution.current == .appStore {
+            try await embeddedHost?.stop()
+            return
+        }
         if await isRunning() { _ = try await MCPProcess.run(URL(fileURLWithPath: "/bin/launchctl"), arguments: ["bootout", "\(domain)/\(label)"]) }
         else { _ = try? await MCPProcess.run(URL(fileURLWithPath: "/bin/launchctl"), arguments: ["bootout", "\(domain)/\(label)"]) }
         if FileManager.default.fileExists(atPath: plist.path) { try FileManager.default.removeItem(at: plist) }

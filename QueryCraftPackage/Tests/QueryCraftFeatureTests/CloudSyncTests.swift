@@ -6,6 +6,79 @@ import Testing
 
 struct CloudSyncTests {
     private let zone = CKRecordZone.ID(zoneName: CloudSyncKey.zoneName)
+    @TaskLocal static var insideDelegate = false
+
+    @Test func syncRequestDoesNotInheritDelegateTaskContext() async throws {
+        try await Self.$insideDelegate.withValue(true) {
+            // Match the database observation -> Task -> actor entry path.
+            let inherited = Task {
+                #expect(Self.insideDelegate)
+                return try await CloudSyncTaskBoundary.run { Self.insideDelegate }
+            }
+            let callbackContext = try await inherited.value
+            #expect(callbackContext == false)
+            #expect(Self.insideDelegate, "the caller's context must remain intact")
+        }
+    }
+
+    @Test func syncTaskBoundaryPropagatesCancellation() async {
+        let caller = Task {
+            try await CloudSyncTaskBoundary.run {
+                try await Task.sleep(for: .seconds(60))
+            }
+        }
+        caller.cancel()
+        do {
+            try await caller.value
+            Issue.record("expected cancellation")
+        } catch {
+            #expect(error is CancellationError)
+        }
+    }
+
+    @Test func syncTaskBoundaryPropagatesFailures() async {
+        do {
+            try await CloudSyncTaskBoundary.run { throw CKError(.quotaExceeded) }
+            Issue.record("expected CloudKit failure")
+        } catch {
+            #expect((error as? CKError)?.code == .quotaExceeded)
+        }
+    }
+
+
+    @Test func partialFailureReportsUnderlyingCause() {
+        let failure = CKError(.partialFailure, userInfo: [CKPartialErrorsByItemIDKey: [
+            "one": CKError(.batchRequestFailed),
+            "two": CKError(.quotaExceeded),
+        ]])
+        #expect(CloudSyncEngine.describe(failure) == CloudSyncCopy.current.quotaExceeded)
+    }
+
+    @Test func actionableCloudErrorsKeepTheirSpecificReason() {
+        let cases: [(CKError.Code, String)] = [
+            (.quotaExceeded, CloudSyncCopy.current.quotaExceeded),
+            (.notAuthenticated, CloudSyncCopy.current.notSignedIn),
+            (.networkFailure, CloudSyncCopy.current.networkUnavailable),
+            (.serviceUnavailable, CloudSyncCopy.current.serviceUnavailable),
+            (.requestRateLimited, CloudSyncCopy.current.serviceUnavailable),
+            (.accountTemporarilyUnavailable, CloudSyncCopy.current.accountUnavailable),
+            (.missingEntitlement, CloudSyncCopy.current.configurationError),
+        ]
+        for (code, expected) in cases {
+            let wrapped = CKError(.partialFailure, userInfo: [CKPartialErrorsByItemIDKey: [
+                "batch": CKError(.batchRequestFailed), "cause": CKError(code),
+            ]])
+            #expect(CloudSyncEngine.describe(wrapped) == expected)
+        }
+        #expect(CloudSyncCopy(isChinese: true).quotaExceeded.contains("本机数据已保留"))
+        #expect(CloudSyncCopy(isChinese: true).quotaExceeded.contains("清理"))
+    }
+
+    @Test func genericCloudFailureUsesInterfaceLanguage() {
+        let failure = CKError(.invalidArguments, userInfo: [NSLocalizedDescriptionKey: "Failed to send changes"])
+        #expect(CloudSyncEngine.describe(failure) == CloudSyncCopy.current.failed(code: CKError.invalidArguments.rawValue))
+        #expect(CloudSyncCopy(isChinese: true).failed(code: 12).contains("请稍后重试"))
+    }
 
     @Test func connectionRecordRoundTripsWithEncryptedPassword() throws {
         let id = UUID()

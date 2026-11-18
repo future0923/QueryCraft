@@ -703,3 +703,62 @@ Original upload omitted max_transfer_bytes. The file is 221054869 bytes; host de
 - Public catalogs checked for all twelve driver/architecture combinations: each has API 5. MySQL/Doris 1.0.9+10 and Kafka 1.0.1+2 already exist, so their identities must increase.
 - Kafka references newly added shared optional protocols and requires minimumAppVersion 0.1.14. MySQL/Doris transport change retains current public ABI.
 - Existing docs/MCP_BATCH_SCHEMA_VERIFICATION.md records 104 core methods plus final 18-method rerun, signed native MCP/6-driver tests and explicit real-service/ARM limits. Existing logs record SQL loopback >10s/cancellation/paired transport upgrade and Dev Kafka package loading acceptance. CI must perform native ARM/Intel gates for final artifacts.
+
+
+## Apple Developer migration — 2026-11-09
+- Local Developer ID Application certificate fingerprint 396A45C4BE148A0EABC4FC632B7FA8941AD3805E, Team 5975A7N3W3 is available. Repo still pins self-signed distribution identity; CI has no notarization.
+- Credential helper client validates exact host leaf; installed legacy v1/shared-v2 must never be overwritten by new identity. Paid helpers need separate install namespace with Apple-anchored same-Team requirements; existing Keychain services/data remain unchanged, possible one-time user authorization.
+- Installer already strictly enforces matching Team ID for Apple hosts; old ad-hoc drivers cannot be silently accepted. All seven signed driver packages must be staged with new package identities/minimum host during eventual release, preserving old catalog history. No Driver API change is needed.
+- Apple notarization requires Developer ID, trusted timestamp and hardened runtime. Sparkle update signing keys remain unchanged. App Store distribution is separate scope.
+
+2026-11-09 final: PiDeck-Isolated-Notary is reusable locally; profile name only is stored in ignored local configuration. All 11 final notarizations have Accepted status with no issues. Sparkle's ad-hoc embedded helpers and Swift compatibility dylibs needed explicit nested signing; host Library Validation remains enabled. GitHub has only legacy signing P12/password plus Sparkle: five new Developer ID/API-key secrets are still absent. iOS Development certificate matches Team but no relevant provisioning profiles are installed. No remote publication or app replacement was done.
+
+2026-11-09 CI failure diagnosis: four first-run failures share Sparkle binary artifact download EEXIST at the runner global SwiftPM cache. Per-invocation package cache isolation added in build_scheme (7bbd67d). Real cold/warm Sparkle builds and pinned archive digest passed locally; remote fix acceptance pending new run 42584905885. Credentials/import/history checks passed in failed runs. No PiDeck source, tasks or credentials modified.
+
+## 2026-11-12 云同步授权调查
+- LicenseAccessGate 已是无条件放行；LicenseState.permitsDatabaseAccess 仍被旧授权调度使用，需澄清语义。
+- Mac/iOS CloudSyncController 的 hasAccess 均为 true；手动/编辑/激活同步缺少逐次授权判断，自动 CKSyncEngine 也会绕过控制器。
+- 旧 token 绑定硬件 installation ID，不能作为另一设备的授权凭据；未找到 StoreKit 或 Creem 支付处理。
+- Apple 官方 currentEntitlements 包含订阅宽限期与非消耗品；需要 verified 检查、商品白名单、退款/撤销与宽限期处理。
+- Apple universal purchase 要在同一个 App Store Connect 记录增加 macOS；官网下载版仍需签名服务端权益桥接。
+
+2026-11-12 live billing readiness: ego-browser task 9 opened App Store Connect, which requires login (no authenticated product list available). Creem future0923 dashboard is signed in and shows 0/3 onboarding steps: business details, identity/business verification, product creation. No mutations or messages sent. Local StoreKit tests use a test-only fixture; commercial activation remains pending.
+
+2026-11-12 native account identity evidence:
+- CKFetchWebAuthTokenOperation works in the existing Developer ID/Production CloudKit identity. Apple users/caller currently returns a flat userRecordName, although archived docs describe a one-element users array. Verifier supports both, rejects conflicts/multiple identities, and hashes container+environment+recordName exactly as the native client.
+- Raw URL transport errors contain query credentials; the verifier returns constant sanitized errors, disallows redirects, and never emits user tokens. User web tokens are sent to our API only in POST JSON bodies.
+- Account access uses a separate signed audience and random nonce, maximum ten-minute lease; automatic checks share at most a 60-second cache to avoid several Apple authentications per sync cycle. Manual check/restore bypass cache; iCloud notification clears account grants and revision-invalidates pending work.
+
+
+## 2026-11-13 Mac App Store channel validation continuation
+
+- Apple Development signed Intel Store build passed; same-team seven drivers and SSH embedded, no Sparkle.
+- Signed sandbox probe: external unselected fixture denied; 7 drivers loaded; SSH ABI/renderer verified; MCP unauthorized 401, authorized initialize 200, stop; local bookmark and Skill fixture install/remove passed.
+- Added device-local read-only SSH key/config bookmarks and writable explicitly selected Skill folder grants. Jump-host key access remains necessary during target fingerprint scans. Never sync bookmark data.
+- Store tests passed: 13 tests; StoreKit prior 7 parameter cases passed (2 test declarations).
+- App Store Connect macOS platform added under existing 6832782588; 0.1.16 metadata saved, user supplied review contact, manual release. All four IAP products ready to submit; no review submission.
+- Intel Release archive + App Store installer export succeeded. Exported app passed signing/provisioning/sandbox/CloudKit/Intel dependency gates. Evidence .build/sync-billing/mac-store-export-validation.json. This is an intermediate Intel artifact, not final universal release.
+- Seven ARM drivers + SSH downloaded with hashes/Apple signature (SSH catalog Ed25519 verified); universal Store-only copies assembled. Kafka OpenSSL 3 Intel vs 4 ARM kept as separate architecture-specific leaves; lipo only merges same path libraries. Strict final check follows actual dependencies per architecture.
+- Universal development probe build running in .build/mac-store-universal; log .build/sync-billing/mac-store-universal-build.log.
+- Remaining: universal build/runtime/Release export, ARM hardware, iPad, external file picker/SSH agent/config Include/SFTP, StoreKit production vs TestFlight routing/no-token ownership, screenshots and review.
+- No commit/push/client upload, no production replacement/deployment.
+
+### Universal candidate follow-up
+- Universal signed diagnostic app built; both architecture dependency closures passed. Running its Intel slice passed all sandbox probe checks, with build-output rpaths removed.
+- Missing Kafka libssl negative fixture correctly rejected by dependency gate.
+- Intel Release/App Store export passed; final universal Store app development build in progress (log mac-store-universal-app-build.log).
+- Four Apple products verified ready to submit; macOS metadata saved by user after contact completion. Browser task finished, Mac draft retained for review.
+- Still no upload, submission, production replacement or source commit.
+
+- Universal signed Store main application build succeeded (57s). Final dual-architecture structure and deep-signature checks recorded in mac-store-universal-app-validation.json. Not launched or installed over production.
+
+
+## MCP query export MVP — 2026-11-16
+- Existing WorkspaceDataExporter has bounded ZIP streaming, but a single source and text-only XLSX. Reuse low-level ZIP/XML helpers without changing existing desktop/mobile behavior.
+- MySQL ordinary queries already stream with one-batch backpressure. PostgreSQL ordinary query path buffers; Doris cannot inherit MySQL snapshot guarantees. Advertise MySQL only.
+- Existing MCPRuntime belongs to a protocol session. Export tasks need independent lifetime and persisted records; separate processes need shared quota/ownership locks.
+- Existing App Store embedded service is uncommitted unrelated work; retain its host boundary.
+
+- Export acceptance confirms full native stream under server/chat row caps; SET SQL_SELECT_LIMIT must use explicit UINT64_MAX because DEFAULT can inherit a limiting global value. Snapshot validated against real concurrent mutation, not only mocks.
+- macOS unzip requires Unix creator metadata as well as UTF-8 ZIP flags for these Chinese entry names; shared exporter regression tests pass after correction. Buffering per-batch output at 256 KiB reduces per-row compression overhead while retaining bounded memory.
+- Local native acceptance: 61,349 rows, 1,495,614 bytes, 9.202s, sampled 62.7 MiB RSS peak. Build/test artifacts are isolated; current installed QueryCraft/MCP remains unchanged.

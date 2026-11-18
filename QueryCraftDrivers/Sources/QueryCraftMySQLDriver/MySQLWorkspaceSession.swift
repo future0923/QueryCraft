@@ -14,6 +14,12 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
     private let configuration: MySQLConnectionConfiguration
     private var client: MariaDBClient?
     private var cachedSchemaChoices: WorkspaceDatabaseSchemaChoices?
+    private var exportMaximumRowBytes: Int?
+
+    func configureQueryExport(maximumRowBytes: Int) async throws {
+        guard maximumRowBytes > 0, maximumRowBytes <= 8_388_608 else { throw WorkspaceSessionError.notConnected }
+        exportMaximumRowBytes = maximumRowBytes
+    }
 
     init(configuration: MySQLConnectionConfiguration) {
         self.configuration = configuration
@@ -564,7 +570,11 @@ actor MySQLWorkspaceSession: WorkspaceSession, WorkspaceSQLObjectOverviewProvidi
             )
         }
         do {
+            #if os(iOS)
             let execution = try await client.queryStream(sql, onBatch: onBatch)
+            #else
+            let execution = try await client.queryStream(sql, maximumRowBytes: exportMaximumRowBytes, onBatch: onBatch)
+            #endif
             if maximumRows != nil {
                 _ = try await client.query("SET SESSION SQL_SELECT_LIMIT = DEFAULT")
             }
@@ -635,3 +645,7 @@ private extension WorkspaceQueryExecutionResult {
         )
     }
 }
+
+#if !os(iOS)
+extension MySQLWorkspaceSession: WorkspaceQueryExportConfiguring {}
+#endif
