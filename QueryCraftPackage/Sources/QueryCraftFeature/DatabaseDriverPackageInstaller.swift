@@ -112,6 +112,7 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
     }
 
     func uninstall(_ databaseType: DatabaseType) async throws {
+        try ApplicationDistribution.requireDownloadedCode()
         do {
             for directory in [driversDirectory, pendingUpdatesDirectory] {
                 let bundles = driverBundles(in: directory).filter { url in
@@ -135,6 +136,7 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
     func resolvePackages(
         for entry: DatabaseDriverCatalogEntry
     ) async throws -> [DatabaseDriverPackage] {
+        try ApplicationDistribution.requireDownloadedCode()
         guard let manifestURL = entry.manifestURL else {
             throw DatabaseDriverInstallError.downloadSourceUnavailable(
                 entry.databaseType
@@ -161,6 +163,7 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
             DatabaseDriverInstallationProgress
         ) async -> Void
     ) async throws -> any DatabaseDriver {
+        try ApplicationDistribution.requireDownloadedCode()
         let prepared = try await prepareBundle(
             package,
             onProgress: onProgress
@@ -188,6 +191,7 @@ actor DatabaseDriverPackageInstaller: DatabaseDriverInstaller {
             DatabaseDriverInstallationProgress
         ) async -> Void
     ) async throws {
+        try ApplicationDistribution.requireDownloadedCode()
         let prepared = try await prepareBundle(
             package,
             onProgress: onProgress

@@ -38,6 +38,16 @@ python3 scripts/notarize.py /absolute/path/QueryCraft.app --log /absolute/path/a
 
 `lastLegacyAppVersion` 记录已发布旧渠道的上限 0.1.15。正式 CI 会先要求新主程序版本和待发布 MCP/SSH 的 minimumAppVersion 高于该上限；驱动打包自动使用本次新主程序版本作为 minimumAppVersion。待验证身份为主程序 0.1.16 (26)、MCP 0.1.6 (7)、SSH 0.9.1 (12) 及七类驱动的新版本，最低主程序均为 0.1.16，不能直接以旧身份重新发布。
 
+## iCloud 同步
+
+容器为 `iCloud.io.github.future0923.QueryCraft`，Mac、iPhone、iPad 共用同一个私有数据库，同步连接配置、连接分组、保存的查询和代码片段。密码写入 CloudKit 加密字段 `secret`，由用户 iCloud 钥匙串中的密钥加密，Apple 无法读取。同步默认关闭，用户在设置中开启。
+
+数据结构以 `Config/CloudKitSchema.ckdb` 为准，2026-11-10 已导入 Development 并部署到 Production。新增字段时先修改该文件，在 CloudKit Console 的 Development 环境 Import Schema，再 Deploy Schema Changes 到 Production。Production 只能新增，不能删除或改类型。`CloudSyncTests` 会检查代码写入的每个字段都已在该文件中声明。
+
+macOS 直接分发版使用 iCloud 需要嵌入描述文件：`Config/QueryCraft-DeveloperID.provisionprofile`（Developer ID 类型，含该容器，2044 年到期）和 `Config/DeveloperID.entitlements`（`icloud-container-environment=Production`）。`scripts/developer-id-signing.py` 只对正式包 `io.github.future0923.QueryCraft` 嵌入描述文件并使用这份 entitlements，签名前核对 Team、Bundle ID、容器和有效期；`.Dev` 包不带 iCloud。应用启动时会检查当前签名是否真的带有 iCloud entitlement，没有时同步入口显示不可用，不会崩溃。描述文件不含私钥，可以提交。
+
+iOS/iPadOS 使用 `QueryCraftMobile/QueryCraftMobile.entitlements` 与自动签名；导出到 App Store Connect 时 Xcode 把 `aps-environment` 换成 production。Debug 真机包连接 Development 环境，TestFlight 与商店包连接 Production 环境，两边数据互不相通。
+
 ## 凭据助手与旧版升级
 
 旧安装目录 `v1/`、`shared-v2/` 及旧证书备份不删除。新助手安装到各自目录内的 `developer-id-5975A7N3W3/`。协议版本、Keychain service、连接 UUID、vault ID 保持不变；新旧共享助手使用同一 vault.lock，避免并发写入丢失。新助手调用者要求 Apple 信任链、Developer ID 类型、相同 Team 和既有允许的 Bundle ID；宿主在每次请求前验证助手。

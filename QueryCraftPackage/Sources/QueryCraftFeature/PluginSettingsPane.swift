@@ -17,25 +17,32 @@ struct PluginSettingsPane: View {
 
     var body: some View {
         Form {
-            Section {
-                HStack(spacing: 10) {
-                    SettingsControlLabel(
-                        title: copy.checkPluginUpdates,
-                        description: model.isRefreshing
-                            ? copy.checkingPluginUpdates
-                            : copy.pluginUpdatesChecked
-                    )
-                    Spacer()
-                    Button(
-                        copy.checkPluginUpdates,
-                        systemImage: "arrow.trianglehead.2.clockwise.rotate.90"
-                    ) {
-                        requestedAction = nil
-                        actionRequestID = UUID()
+            if ApplicationDistribution.current.supportsDownloadedCode {
+                Section {
+                    HStack(spacing: 10) {
+                        SettingsControlLabel(
+                            title: copy.checkPluginUpdates,
+                            description: model.isRefreshing
+                                ? copy.checkingPluginUpdates
+                                : copy.pluginUpdatesChecked
+                        )
+                        Spacer()
+                        Button(
+                            copy.checkPluginUpdates,
+                            systemImage: "arrow.trianglehead.2.clockwise.rotate.90"
+                        ) {
+                            requestedAction = nil
+                            actionRequestID = UUID()
+                        }
+                        .labelStyle(.iconOnly)
+                        .help(copy.checkPluginUpdates)
+                        .disabled(model.isRefreshing)
                     }
-                    .labelStyle(.iconOnly)
-                    .help(copy.checkPluginUpdates)
-                    .disabled(model.isRefreshing)
+                }
+            } else {
+                Section {
+                    Text(AppCopy.current.text("连接插件已随应用内置，由 App Store 统一更新。", "Connection plugins are included and updated through the App Store."))
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -57,8 +64,10 @@ struct PluginSettingsPane: View {
                         update: { Task { await sshModel.install() } },
                         uninstall: { removingSSH = true })
                     .contextMenu {
-                        Button(AppCopy.current.text("选择本地安装包…", "Choose local package…")) { importingSSH = true }
-                            .disabled(sshModel.busy)
+                        if ApplicationDistribution.current.supportsDownloadedCode {
+                            Button(AppCopy.current.text("选择本地安装包…", "Choose local package…")) { importingSSH = true }
+                                .disabled(sshModel.busy)
+                        }
                     }
                 }
             }

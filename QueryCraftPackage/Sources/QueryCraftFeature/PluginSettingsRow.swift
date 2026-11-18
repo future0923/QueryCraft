@@ -37,7 +37,7 @@ struct PluginSettingsRow: View {
             }
 
             Spacer(minLength: 12)
-            actionControls
+            if ApplicationDistribution.current.supportsDownloadedCode { actionControls }
         }
         .padding(.vertical, 7)
     }

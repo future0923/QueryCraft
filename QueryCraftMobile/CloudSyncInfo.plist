@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>QCCloudKitAPIToken</key>
+	<string>477be17bc3e3227346d84f9413f4bc288be4b9180c9a3236c6771e51978f96cf</string>
+	<key>QCCloudSyncBillingMode</key>
+	<string>preview</string>
+	<key>QCCloudSyncContainer</key>
+	<string>$(QUERYCRAFT_CLOUD_CONTAINER)</string>
+	<key>QCCloudSyncEnvironment</key>
+	<string>production</string>
+	<key>QCLicenseAPIBaseURL</key>
+	<string>https://querycraft.debug-tools.cc/api/v1/</string>
+	<key>QCLicensePublicKey</key>
+	<string>ioLd6mSv/vXpxVJ8ABFg3FWXZiIwTJNIR2LCxsLZmto=</string>
+	<key>QCPrivacyPolicyURL</key>
+	<string>https://querycraft.debug-tools.cc/privacy</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+</dict>
+</plist>

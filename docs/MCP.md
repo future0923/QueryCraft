@@ -1,5 +1,7 @@
 # QueryCraft MCP 使用说明
 
+SQL 查询结果直接导出 XLSX / CSV 的本地 MySQL MVP：见 [查询导出说明](MCP_QUERY_EXPORT.md)。
+
 开发版使用 `QueryCraft Dev` 服务显示名和 `querycraft-dev` 客户端配置项；正式版保持 `QueryCraft` / `querycraft`。命名根据数据目录区分，stdio 与 HTTP 一致。Dev 安装后的程序目录名为 `QueryCraft Dev MCP.app`，Skill 安装到各客户端的 `skills/querycraft-dev`，正式版仍为 `skills/querycraft`。重新“一键添加”会迁移能验证归属的旧开发版 `querycraft` 配置；正式版及手动修改的冲突项保留。两种环境的客户端配置收据分别管理。
 
 QueryCraft MCP 是独立的原生 macOS 程序。安装后，数据库工具不依赖

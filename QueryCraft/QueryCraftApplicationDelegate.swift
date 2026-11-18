@@ -1,6 +1,9 @@
 import AppKit
 import QueryCraftFeature
 import SwiftUI
+#if QUERYCRAFT_APP_STORE
+import QueryCraftMCPRuntime
+#endif
 
 @MainActor
 final class QueryCraftApplicationDelegate: NSObject, NSApplicationDelegate {
@@ -25,7 +28,12 @@ final class QueryCraftApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationCenter.default.addObserver(self, selector: #selector(showConnectionsRequested(_:)), name: WelcomeWindowPresentation.requestNotification, object: nil)
-        softwareUpdateManager.start()
+        #if QUERYCRAFT_APP_STORE
+        Task { await MCPEmbeddedService.install(QueryCraftMCPEmbeddedService()) }
+        #else
+        softwareUpdateManager.start(using: SparkleSoftwareUpdateBackend())
+        #endif
+        DesktopCloudSync.start()
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(1))
             self?.showWelcomeWindowIfNeeded()

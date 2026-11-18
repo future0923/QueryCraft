@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MCPSettingsPane: View {
     @State private var model: MCPSettingsModel
@@ -7,6 +8,7 @@ struct MCPSettingsPane: View {
     @State private var showsReview = false
     @State private var pendingIndexDestination: MCPSettingsDestination?
     @State private var reviewPolicy = MCPPolicy()
+    @State private var choosingSkillFolder = false
 
     init(model: MCPSettingsModel) {
         _model = State(initialValue: model)
@@ -71,6 +73,12 @@ struct MCPSettingsPane: View {
         .font(MCPSettingsType.body)
         .controlSize(.regular)
         .task { await model.activate() }
+        .fileImporter(isPresented: $choosingSkillFolder, allowedContentTypes: [.folder]) { result in
+            do {
+                let url = try result.get()
+                Task { await model.selectSkillFolder(url) }
+            } catch { model.skillError = error.localizedDescription }
+        }
         .task(id: model.section) { if model.section == "activity" { await model.loadHistory() } }
         .confirmationDialog(copy("卸载 MCP 程序？连接和权限设置将保留。", "Uninstall MCP? Connections and permissions are preserved."), isPresented: $confirmUninstall) {
             Button(copy("卸载", "Uninstall"), role: .destructive) { Task { await model.uninstall() } }
@@ -145,6 +153,7 @@ struct MCPSettingsPane: View {
     private var feedback: String { model.error ?? model.runtimeError ?? model.status }
     private var runtimeDescription: String {
         if let version = model.installedVersion {
+            if ApplicationDistribution.current == .appStore { return copy("随应用内置 \(version)", "Included with the app · \(version)") }
             if model.availableVersion == version {
                 return copy("已安装 \(version) · 已是最新", "Version \(version) installed · Up to date")
             }
@@ -170,40 +179,57 @@ struct MCPSettingsPane: View {
                     }
                 }
                 Spacer(minLength: 8)
-                if model.runtimeUpdateAvailable { runtimeInstallButton.buttonStyle(.borderedProminent) }
-                else { runtimeInstallButton }
-                if model.installedVersion != nil {
-                    Button(copy("卸载…", "Uninstall…"), role: .destructive) { confirmUninstall = true }
-                        .disabled(model.isCheckingRuntime)
+                if ApplicationDistribution.current.supportsDownloadedCode {
+                    if model.runtimeUpdateAvailable { runtimeInstallButton.buttonStyle(.borderedProminent) }
+                    else { runtimeInstallButton }
+                    if model.installedVersion != nil {
+                        Button(copy("卸载…", "Uninstall…"), role: .destructive) { confirmUninstall = true }
+                            .disabled(model.isCheckingRuntime)
+                    }
                 }
+
             }
-            HStack {
-                MCPSettingsControlLabel(title: copy("已保存的密码", "Saved credentials"),
-                    description: copy("一次授权已选连接，主程序与 MCP 共用安全凭据助手。", "Authorize selected connections once through the shared secure credential helper."))
-                Spacer(minLength: 8)
-                Button { Task { await model.authorizeCredentials() } } label: {
-                    Text(copy("授权…", "Authorize…"))
+            if ApplicationDistribution.current.supportsDownloadedCode {
+                HStack {
+                    MCPSettingsControlLabel(title: copy("已保存的密码", "Saved credentials"),
+                        description: copy("一次授权已选连接，主程序与 MCP 共用安全凭据助手。", "Authorize selected connections once through the shared secure credential helper."))
+                    Spacer(minLength: 8)
+                    Button { Task { await model.authorizeCredentials() } } label: {
+                        Text(copy("授权…", "Authorize…"))
+                    }
+                        .disabled(model.installedVersion == nil || !model.policy.enabled)
                 }
-                    .disabled(model.installedVersion == nil || !model.policy.enabled)
+            } else {
+                Text(copy("MCP 使用当前应用保存的密码，并遵守你设置的连接和工具权限。", "MCP uses this app’s saved credentials and your connection and tool permissions."))
+                    .font(MCPSettingsType.detail).foregroundStyle(.secondary)
             }
+
         } footer: {
+            if ApplicationDistribution.current == .appStore {
+                Text(copy("商店版提供 HTTP 接入；使用 MCP 时请保持 QueryCraft 运行。请在“连接权限”中选择允许的连接。", "The App Store version provides HTTP access while QueryCraft is running. Choose allowed connections in Connections."))
+            } else {
             Text(copy("安装后可在 QueryCraft 退出时独立运行。请在“连接权限”中选择允许的连接。", "Works after QueryCraft quits. Choose allowed connections in Connections."))
+            }
         }
         .id("access-runtime")
 
         Section(copy("连接客户端", "Connect a client")) {
             Picker(copy("客户端", "Client"), selection: $model.client) {
-                ForEach(MCPClientConfiguration.clients, id: \.self) { Text($0).tag($0) }
+                ForEach(MCPClientConfiguration.clients.filter { ApplicationDistribution.current.supportsDownloadedCode || MCPClientConfiguration.supportsHTTP($0) }, id: \.self) { Text($0).tag($0) }
             }.pickerStyle(.menu)
             Picker(copy("连接方式", "Transport"), selection: $model.transport) {
-                Text(copy("本地进程（stdio）", "Local process (stdio)")).tag("stdio")
+                if ApplicationDistribution.current.supportsDownloadedCode {
+                    Text(copy("本地进程（stdio）", "Local process (stdio)")).tag("stdio")
+                }
                 Text(copy("HTTP 服务", "HTTP service")).tag("http")
             }.pickerStyle(.menu)
-            if MCPClientRegistration.supports(model.client) {
+            if ApplicationDistribution.current.supportsDownloadedCode, MCPClientRegistration.supports(model.client) {
                 clientRegistrationControls
             }
             HStack(alignment: .top) {
-                Text(MCPClientConfiguration.guidance(model.client)).font(MCPSettingsType.detail).foregroundStyle(.secondary)
+                Text(ApplicationDistribution.current == .appStore
+                     ? copy("复制下方配置，添加到 AI 客户端的 MCP 设置中。", "Copy the configuration below into your AI client’s MCP settings.")
+                     : MCPClientConfiguration.guidance(model.client)).font(MCPSettingsType.detail).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Button { model.copyConfiguration() } label: {
@@ -320,7 +346,14 @@ struct MCPSettingsPane: View {
                 Picker(copy("安装位置", "Destination"), selection: $model.skillTarget) {
                     ForEach(MCPSkillTarget.allCases, id: \.self) { Text($0.title).tag($0) }
                 }.pickerStyle(.menu)
-                Text(model.skillDirectory.path).font(MCPSettingsType.detail.monospaced()).textSelection(.enabled)
+                if model.isAppStoreDistribution {
+                    Text(copy("选择 AI 客户端的 skills 文件夹，QueryCraft 会在其中安装自己的 Skill。只授权所选文件夹。", "Choose your AI client's skills folder. QueryCraft installs its skill there and accesses only the selected folder."))
+                        .font(MCPSettingsType.detail).foregroundStyle(.secondary)
+                    Button(copy("选择…", "Choose…")) { choosingSkillFolder = true }.buttonStyle(.borderless)
+                }
+                if !model.needsSkillFolder {
+                    Text(model.skillDirectory.path).font(MCPSettingsType.detail.monospaced()).textSelection(.enabled)
+                }
                 LabeledContent(copy("状态", "Status"), value: skillStatusText)
                 HStack {
                     Spacer()
@@ -342,7 +375,9 @@ struct MCPSettingsPane: View {
     }
 
     private var skillStatusText: String {
-        switch model.skillStatus {
+        if model.needsSkillFolder { return copy("请选择客户端的 skills 文件夹", "Choose the client's skills folder") }
+        if model.skillError != nil { return copy("检查失败，请重新选择或重试", "Check failed; choose the folder again or retry") }
+        return switch model.skillStatus {
         case .notInstalled: copy("未安装", "Not installed")
         case .current: copy("已安装 \(model.installedSkillVersion ?? "")", "Installed \(model.installedSkillVersion ?? "")")
         case .updateAvailable: copy("可更新到 \(model.availableSkillVersion ?? "")", "Update available: \(model.availableSkillVersion ?? "")")

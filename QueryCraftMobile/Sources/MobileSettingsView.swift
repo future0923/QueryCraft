@@ -8,6 +8,14 @@ struct MobileSettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                if let sync = MobileCloudSync.controller {
+                    Section {
+                        NavigationLink { MobileCloudSyncSettingsView(controller: sync) } label: {
+                            Label(CloudSyncCopy.current.title, systemImage: "icloud")
+                        }
+                        .accessibilityIdentifier("settings.cloudSync")
+                    }
+                }
                 Section {
                     NavigationLink { MobileAppearanceSettingsView(preferences: preferences) } label: { Label("外观", systemImage: "paintpalette") }
                         .accessibilityIdentifier("settings.appearanceLink")

@@ -22,11 +22,13 @@ struct QueryCraftApp: App {
         .restorationBehavior(.disabled)
         .commands {
             CommandGroup(after: .appInfo) {
-                Button(
-                    String(localized: "Check for Updates..."),
-                    action: softwareUpdateManager.checkForUpdates
-                )
-                .disabled(!softwareUpdateManager.canCheckForUpdates)
+                if softwareUpdateManager.isAvailable {
+                    Button(
+                        String(localized: "Check for Updates..."),
+                        action: softwareUpdateManager.checkForUpdates
+                    )
+                    .disabled(!softwareUpdateManager.canCheckForUpdates)
+                }
             }
             CommandGroup(replacing: .appSettings) {
                 Button(

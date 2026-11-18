@@ -322,6 +322,12 @@ final class WorkspaceWindowGroup {
         await controller?.presentSavedQueryExternalChanges(changes)
     }
 
+    /// Reloads saved queries in every database context, e.g. after iCloud sync.
+    func refreshAllSavedQueries() async {
+        await refreshActiveSavedQueries()
+        await refreshInactiveSavedQueries()
+    }
+
     private func refreshInactiveSavedQueries() async {
         let activeContextID = selectedDatabaseContextID
         for context in databaseContexts where context.id != activeContextID {

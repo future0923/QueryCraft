@@ -31,7 +31,12 @@ final class SSHConfigImportModel {
             // Bounded local file I/O stays off the main/cooperative executors.
             let result: SSHConfigPreview = try await withCheckedThrowingContinuation { continuation in
                 DispatchQueue.global(qos: .utility).async {
-                    do { continuation.resume(returning: try SSHConfigImporter().preview(path: path)) }
+                    do {
+                        let access = try ApplicationDistribution.current == .appStore
+                            ? LocalFileAuthorization.shared.access(path: path) : nil
+                        let result = try withExtendedLifetime(access) { try SSHConfigImporter().preview(path: path) }
+                        continuation.resume(returning: result)
+                    }
                     catch { continuation.resume(throwing: error) }
                 }
             }
@@ -131,7 +136,12 @@ struct SSHConfigImportPane: View {
         .onDisappear { operation?.cancel() }
         .sheet(item: $draft, onDismiss: { Task { await model.refreshAccounts(service: service) } }) { SSHConnectionEditor(draft: $0, service: service) }
         .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.plainText, .item]) { result in
-            if case .success(let url) = result { model.path = url.path; operation = Task { await model.load(service: service) } }
+            do {
+                let url = try result.get()
+                if ApplicationDistribution.current == .appStore { try LocalFileAuthorization.shared.remember(url) }
+                model.path = url.path
+                operation = Task { await model.load(service: service) }
+            } catch { model.error = error.localizedDescription }
         }
     }
 }

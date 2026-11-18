@@ -9,7 +9,7 @@ struct MCPToolDefinition: Sendable {
     var localizedTitle: String {
         let sshTitles = ["ssh_list_connections": "列出 SSH 连接", "ssh_add_connection": "添加 SSH 连接", "ssh_remove_connection": "删除 SSH 连接",
                          "ssh_test_connection": "测试 SSH 连接", "ssh_execute": "执行 SSH 命令"]
-        if let title = sshTitles[name] ?? MCPToolCatalog.extraSSHTitles[name] ?? MCPToolCatalog.shellTitles[name] { return AppCopy.current.text(title, name.replacingOccurrences(of: "_", with: " ").capitalized) }
+        if let title = sshTitles[name] ?? MCPToolCatalog.extraSSHTitles[name] ?? MCPToolCatalog.shellTitles[name] ?? MCPToolCatalog.exportTitles[name] { return AppCopy.current.text(title, name.replacingOccurrences(of: "_", with: " ").capitalized) }
         return AppCopy.current.text(Self.titles[name] ?? name, name.replacingOccurrences(of: "_", with: " ").capitalized)
     }
 
@@ -18,8 +18,8 @@ struct MCPToolDefinition: Sendable {
              inputSchema: .object(["type": "object", "properties": .object(properties),
                                    "required": .array(required.map { .string($0) }), "additionalProperties": false]),
              annotations: .init(readOnlyHint: MCPToolCatalog.readTools.contains(name),
-                                destructiveHint: !MCPToolCatalog.readTools.contains(name),
-                                idempotentHint: MCPToolCatalog.readTools.contains(name)))
+                                destructiveHint: !MCPToolCatalog.readTools.contains(name) && name != "export_query" && name != "cancel_export",
+                                idempotentHint: MCPToolCatalog.readTools.contains(name) || name == "export_query" || name == "cancel_export"))
     }
 }
 
@@ -29,7 +29,7 @@ enum MCPToolCatalog {
     static let metadataTools: Set<String> = ["list_databases", "list_tables", "describe_table", "get_schema_context", "list_routines", "get_routine_source"]
     static let metaTools: Set<String> = ["plugin_list", "plugin_tools", "plugin_call"]
     static let readTools = metadataTools.union(["get_batch_results", "runtime_info", "list_connections", "plugin_list", "plugin_tools", "peek_messages", "consumer_groups", "execute_milvus_request", "ssh_list_connections", "ssh_test_connection"])
-        .union(sshFileReads).union(sshRecoveryReads).union(sshTaskReads).union(shellReads)
+        .union(sshFileReads).union(sshRecoveryReads).union(sshTaskReads).union(shellReads).union(["get_export_status"])
     static let guidedInstructions = """
     Use QueryCraft to inspect authorized saved connections and query through installed drivers.
     Use runtime_info to inspect loaded host/plugin versions and whether this client needs reconnection.
@@ -44,6 +44,11 @@ enum MCPToolCatalog {
     list_connections.mcp_access reports default_mode, object_modes and the independent object scope.
     Full access to a selected SQL database permits supported table DDL with confirm_high_risk;
     explicit read-only object overrides still apply to cross-database/index operations.
+    For complete MySQL detail files use export_query, not repeated chat pagination. Confirm SQL/fields first;
+    retain idempotency_key and job access_token, poll get_export_status, and report success only when succeeded.
+    XLSX preserves text/large integers/decimals; native dates require an explicit format. CSV applies documented escaping.
+    Local export paths require the caller to share the server filesystem. Remote downloads are not implemented.
+    Exports have independent hard budgets and expire after 24 hours. cancel_export/delete_export clean up owned jobs.
     Start with bounded queries. Strings default to 200 characters. Where the tool schema exposes
     cell windows, narrow to one row/column before using cell_char_offset and next_offset.
     For Kafka use peek_messages timestamp_ms/offset/latest_count and exact key/event_id filters;
@@ -80,7 +85,9 @@ enum MCPToolCatalog {
             case "integer": valid = value.intValue != nil
             case "boolean": valid = value.boolValue != nil
             case "object": valid = value.objectValue != nil
-            case "array": valid = value.arrayValue.map { $0.allSatisfy { $0.stringValue != nil } } == true
+            case "array": valid = value.arrayValue.map { values in
+                name == "export_query" && key == "queries" ? values.allSatisfy { $0.objectValue != nil } : values.allSatisfy { $0.stringValue != nil }
+            } == true
             default: valid = false
             }
             if let choices = schema["enum"]?.arrayValue, !choices.contains(value) { throw MCPFailure("Invalid argument choice: \(key)") }
@@ -144,6 +151,7 @@ enum MCPToolCatalog {
         case .milvus: names.insert("execute_milvus_request")
         }
         if [.mysql, .postgresql].contains(type) { names.formUnion(["open_session", "close_session", "begin_transaction", "commit_transaction", "rollback_transaction"]) }
+        if type == .mysql { names.formUnion(exportTools) }
         return names
     }
     static let definitions: [MCPToolDefinition] = [
@@ -218,5 +226,5 @@ enum MCPToolCatalog {
             "confirm_high_risk": .object(["type": "boolean"]), "timeout_seconds": integer("Total timeout, 1–300 seconds, default 30; bounded by MCP timeout. Timeout/cancel does not prove the remote process stopped."),
             "max_output_bytes": integer("Combined stdout/stderr byte cap, 1–1048576, default 16384; also bounded by MCP result limit. Invalid UTF-8 is replaced for display.")
         ], required: ["connection_id", "command"])
-    ] + shellDefinitions + sshFileDefinitions + sshManagementDefinitions + sshTaskDefinitions + sshTrackingDefinitions
+    ] + exportDefinitions + shellDefinitions + sshFileDefinitions + sshManagementDefinitions + sshTaskDefinitions + sshTrackingDefinitions
 }

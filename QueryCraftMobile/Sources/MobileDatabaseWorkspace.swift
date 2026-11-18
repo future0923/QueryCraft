@@ -16,6 +16,8 @@ final class MobileDatabaseWorkspace: Identifiable {
     var navigationMode = "tables"
     @ObservationIgnored var externalWriteFence: () -> Bool = { false }
     @ObservationIgnored var didExecuteQuery: ((String, String, String?) -> Void)?
+    /// Saved queries changed by the user on this device (for iCloud sync).
+    @ObservationIgnored var savedQueriesDidChange: ((_ changed: [UUID], _ deleted: [UUID]) -> Void)?
     @ObservationIgnored private let makeQueryModel: () -> MobileQueryModel
     @ObservationIgnored private let workspaceRepository: any MobileWorkspacePersisting
     @ObservationIgnored private var persistenceTask: Task<Void, Never>?
@@ -247,6 +249,8 @@ final class MobileDatabaseWorkspace: Identifiable {
         if !persistWorkspace() {
             savedQueries = previous; document.savedQueryID = oldID
             document.persistedSQL = oldSQL; document.persistedDatabase = oldDatabase
+        } else {
+            savedQueriesDidChange?([saved.id], [])
         }
     }
 
@@ -263,10 +267,38 @@ final class MobileDatabaseWorkspace: Identifiable {
         let previous = savedQueries
         savedQueries.removeAll { $0.id == id }
         guard persistWorkspace() else { savedQueries = previous; return }
+        savedQueriesDidChange?([], [id])
         for document in documents where document.savedQueryID == id {
             document.savedQueryID = nil; document.persistedSQL = ""; document.persistedDatabase = document.query.database
         }
         persistWorkspace()
+    }
+
+    /// Applies saved queries received from iCloud. Open documents keep their
+    /// text; a document whose saved query was deleted elsewhere becomes an
+    /// unsaved draft, and a clean document follows the new saved version.
+    @discardableResult
+    func applyRemoteSavedQueries(upserts: [SavedQuery], deletions: Set<UUID>) -> Bool {
+        guard archiveReadable else { return false }
+        let previous = savedQueries
+        savedQueries.removeAll { deletions.contains($0.id) || upserts.map(\.id).contains($0.id) }
+        savedQueries.append(contentsOf: upserts)
+        guard persistWorkspace() else { savedQueries = previous; return false }
+        for document in documents {
+            guard let id = document.savedQueryID else { continue }
+            if deletions.contains(id) {
+                document.savedQueryID = nil; document.persistedSQL = ""; document.persistedDatabase = document.query.database
+            } else if let saved = upserts.first(where: { $0.id == id }) {
+                if !document.isDirty, !document.query.isLoading {
+                    document.query.sql = saved.sql
+                    document.query.database = saved.defaultDatabase ?? profile.database
+                    document.title = saved.name
+                }
+                document.persistedSQL = saved.sql; document.persistedDatabase = saved.defaultDatabase
+            }
+        }
+        persistWorkspace()
+        return true
     }
 
     func recoverArchiveAfterBackup() {

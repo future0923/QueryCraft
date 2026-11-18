@@ -16,10 +16,12 @@ actor SSHPluginManager {
         return Bundle(url: url.resolvingSymlinksInPath())?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     }
     func available() async throws -> MCPComponentRelease {
-        try await catalog.latest(.ssh, host: .current)
+        try ApplicationDistribution.requireDownloadedCode()
+        return try await catalog.latest(.ssh, host: .current)
     }
     func install(release: MCPComponentRelease,
                  progress: @escaping @Sendable (MCPComponentInstallationProgress) async -> Void) async throws {
+        try ApplicationDistribution.requireDownloadedCode()
         guard !busy else { throw MCPFailure("An SSH plugin operation is running.") }
         busy = true; defer { busy = false }
         guard release.component == .ssh else { throw MCPFailure("Invalid SSH release.") }
@@ -31,11 +33,10 @@ actor SSHPluginManager {
         let bundle = try await extract(archive, into: staging.appending(path: "unpacked"))
         guard let info = Bundle(url: bundle), info.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String == release.version,
               info.object(forInfoDictionaryKey: "CFBundleVersion") as? String == release.build else { throw MCPFailure("SSH package version does not match the catalog.") }
-        if let installed = try installedVersion() {
-            let current = Bundle(url: SSHPlugin.bundleURL(in: directory).resolvingSymlinksInPath())
-            let identity = DatabaseDriverReleaseIdentity(version: installed,
-                build: current?.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0")
-            guard !identity.isNewer(than: .init(version: release.version, build: release.build)) else {
+        // An installed plugin this host rejects (another signing channel) is
+        // replaced by the verified release instead of failing every retry.
+        if let installed = try SSHPluginInstallation.usableActiveIdentity(in: directory) {
+            guard !installed.isNewer(than: .init(version: release.version, build: release.build)) else {
                 throw MCPFailure("Refusing an automatic SSH plugin downgrade.")
             }
         }
@@ -45,6 +46,7 @@ actor SSHPluginManager {
         _ = try SSHPluginInstallation.install(source: bundle, directory: directory, preventsDowngrade: true)
     }
     func importPackage(_ source: URL) async throws {
+        try ApplicationDistribution.requireDownloadedCode()
         guard !busy else { throw MCPFailure("An SSH plugin operation is running.") }
         busy = true; defer { busy = false }
         let staging = try makeStage(); defer { try? FileManager.default.removeItem(at: staging) }
@@ -54,6 +56,7 @@ actor SSHPluginManager {
         _ = try SSHPluginInstallation.install(source: bundle, directory: directory)
     }
     func uninstall() throws {
+        try ApplicationDistribution.requireDownloadedCode()
         guard !busy else { throw MCPFailure("An SSH plugin operation is running.") }
         let root = directory.appending(path: "Plugins/SSH")
         let lock = try MCPComponentLock(directory: root, filename: ".install.lock"); defer { withExtendedLifetime(lock) {} }

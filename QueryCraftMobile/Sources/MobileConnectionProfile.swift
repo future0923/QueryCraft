@@ -16,6 +16,8 @@ struct MobileConnectionProfile: Codable, Equatable, Identifiable, Sendable {
     var driver: MobileDriver = .mysql
     var authentication: MobileAuthentication = .usernamePassword
     var schemaName: String? = nil
+    var groupID: UUID? = nil
+    var sortIndex: Int = 0
 
     func configuration(password: String?, database: String? = nil) -> MobileSQLConfiguration {
         .init(host: host, port: port, username: username, password: password,
@@ -39,9 +41,13 @@ final class MobileConnectionDraft: Identifiable {
     var remembersPassword: Bool
     var message: String?
     var isTesting = false
+    private let groupID: UUID?
+    private let sortIndex: Int
 
     init(profile: MobileConnectionProfile? = nil, password: String = "") {
         id = profile?.id ?? UUID()
+        groupID = profile?.groupID
+        sortIndex = profile?.sortIndex ?? 0
         driver = profile?.driver ?? .mysql
         authentication = profile?.authentication ?? .usernamePassword
         name = profile?.name ?? ""
@@ -67,13 +73,13 @@ final class MobileConnectionDraft: Identifiable {
             throw MobileQueryError.invalidConnection
         }
         return .init(id: id, name: name, host: host, port: port, username: username,
-            database: database, tlsMode: tlsMode, remembersPassword: remembersPassword, requiresPassword: authentication != .none && !password.isEmpty, driver: driver, authentication: authentication, schemaName: schemaName.isEmpty ? nil : schemaName)
+            database: database, tlsMode: tlsMode, remembersPassword: remembersPassword, requiresPassword: authentication != .none && !password.isEmpty, driver: driver, authentication: authentication, schemaName: schemaName.isEmpty ? nil : schemaName, groupID: groupID, sortIndex: sortIndex)
     }
 }
 
 // Decode pre-driver libraries as MySQL without changing their IDs or credentials.
 extension MobileConnectionProfile {
-    enum CodingKeys: String, CodingKey { case id, name, host, port, username, database, tlsMode, remembersPassword, requiresPassword, driver, authentication, schemaName }
+    enum CodingKeys: String, CodingKey { case id, name, host, port, username, database, tlsMode, remembersPassword, requiresPassword, driver, authentication, schemaName, groupID, sortIndex }
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -87,6 +93,8 @@ extension MobileConnectionProfile {
         requiresPassword = try c.decode(Bool.self, forKey: .requiresPassword)
         driver = try c.decodeIfPresent(MobileDriver.self, forKey: .driver) ?? .mysql
         schemaName = try c.decodeIfPresent(String.self, forKey: .schemaName)
+        groupID = try c.decodeIfPresent(UUID.self, forKey: .groupID)
+        sortIndex = try c.decodeIfPresent(Int.self, forKey: .sortIndex) ?? 0
         authentication = try c.decodeIfPresent(MobileAuthentication.self, forKey: .authentication) ?? .usernamePassword
     }
 }

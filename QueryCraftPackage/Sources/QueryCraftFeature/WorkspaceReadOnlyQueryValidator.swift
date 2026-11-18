@@ -4,6 +4,16 @@ import QueryCraftMobileCore
 #endif
 
 enum WorkspaceReadOnlyQueryValidator {
+    /// Conservative export gate also covers dialect tails recovered by the editor parser.
+    /// Quoted values/identifiers and comments are skipped by the same lexical scanner.
+    static func validateExport(_ sql: String) throws {
+        let scan = scan(in: sql)
+        let forbidden: Set<String> = ["FOR", "LOCK", "INTO"]
+        guard !scan.containsVariable, !scan.containsExecutableComment,
+              !scan.tokens.compactMap(\.word).contains(where: forbidden.contains) else {
+            throw WorkspaceReadOnlyQueryValidationError.exportSideEffect
+        }
+    }
     static func validate(
         _ sql: String,
         policy: SQLExecutionPolicy = .readOnly
@@ -30,6 +40,7 @@ enum WorkspaceReadOnlyQueryValidator {
     private struct ScanResult {
         var tokens: [Token] = []
         var containsExecutableComment = false
+        var containsVariable = false
     }
 
     private static func scan(in sql: String) -> ScanResult {
@@ -77,6 +88,7 @@ enum WorkspaceReadOnlyQueryValidator {
                 index = sql.index(after: index)
                 continue
             }
+            if character == "@" { result.containsVariable = true }
             if character.isLetter || character == "_" {
                 let start = index
                 repeat {
@@ -144,12 +156,15 @@ enum WorkspaceReadOnlyQueryValidator {
 }
 
 enum WorkspaceReadOnlyQueryValidationError: LocalizedError, Equatable {
+    case exportSideEffect
     case empty
     case serverFileWrite
     case executableCommentRequiresWriteAccess
 
     var errorDescription: String? {
         switch self {
+        case .exportSideEffect:
+            "Export does not allow locking reads, INTO, executable comments or session variables."
         case .empty:
             AppCopy.current.text("请输入要运行的 SQL 语句。", "Enter a SQL statement to run.")
         case .serverFileWrite:

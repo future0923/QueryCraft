@@ -1,0 +1,95 @@
+DEFINE SCHEMA
+
+    RECORD TYPE Connection (
+        "___createTime"         TIMESTAMP,
+        "___createdBy"          REFERENCE,
+        "___etag"               STRING,
+        "___modTime"            TIMESTAMP,
+        "___modifiedBy"         REFERENCE,
+        "___recordID"           REFERENCE QUERYABLE,
+        "authenticationMethod"  STRING,
+        "createdAt"             TIMESTAMP,
+        "databaseProduct"       STRING,
+        "databaseType"          STRING,
+        "defaultDatabase"       STRING,
+        "groupID"               STRING,
+        "host"                  STRING,
+        "kafkaSASLMechanism"    STRING,
+        "modifiedAt"            TIMESTAMP,
+        "name"                  STRING,
+        "port"                  INT64,
+        "schemaName"            STRING,
+        "secret"                ENCRYPTED STRING,
+        "sortIndex"             INT64,
+        "storesCredential"      INT64,
+        "tlsMode"               STRING,
+        "username"              STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE ConnectionGroup (
+        "___createTime"         TIMESTAMP,
+        "___createdBy"          REFERENCE,
+        "___etag"               STRING,
+        "___modTime"            TIMESTAMP,
+        "___modifiedBy"         REFERENCE,
+        "___recordID"           REFERENCE QUERYABLE,
+        "createdAt"             TIMESTAMP,
+        "modifiedAt"            TIMESTAMP,
+        "name"                  STRING,
+        "sortIndex"             INT64,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE SavedQuery (
+        "___createTime"         TIMESTAMP,
+        "___createdBy"          REFERENCE,
+        "___etag"               STRING,
+        "___modTime"            TIMESTAMP,
+        "___modifiedBy"         REFERENCE,
+        "___recordID"           REFERENCE QUERYABLE,
+        "connectionID"          STRING,
+        "createdAt"             TIMESTAMP,
+        "defaultDatabase"       STRING,
+        "modifiedAt"            TIMESTAMP,
+        "name"                  STRING,
+        "sql"                   STRING,
+        "updatedAt"             TIMESTAMP,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE Snippet (
+        "___createTime"         TIMESTAMP,
+        "___createdBy"          REFERENCE,
+        "___etag"               STRING,
+        "___modTime"            TIMESTAMP,
+        "___modifiedBy"         REFERENCE,
+        "___recordID"           REFERENCE QUERYABLE,
+        "content"               STRING,
+        "isEnabled"             INT64,
+        "modifiedAt"            TIMESTAMP,
+        "name"                  STRING,
+        "sortIndex"             INT64,
+        "trigger"               STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE Users (
+        "___createTime"         TIMESTAMP,
+        "___createdBy"          REFERENCE,
+        "___etag"               STRING,
+        "___modTime"            TIMESTAMP,
+        "___modifiedBy"         REFERENCE,
+        "___recordID"           REFERENCE,
+        "roles"                 LIST<INT64>,
+        GRANT WRITE TO "_creator",
+        GRANT READ TO "_world"
+    );

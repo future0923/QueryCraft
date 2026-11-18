@@ -710,7 +710,7 @@ private enum WorkspaceSQLExporter {
 
 }
 
-private enum WorkspaceXLSXExporter {
+enum WorkspaceXLSXExporter {
     private static let maximumRowsPerSheet = 1_048_576
 
     static func write(
@@ -928,7 +928,7 @@ private enum WorkspaceXLSXExporter {
         data.appendUTF8("</t></is></c>")
     }
 
-    private static func columnLetters(for index: Int) -> String {
+    static func columnLetters(for index: Int) -> String {
         var result = ""
         var value = index
         repeat {
@@ -965,7 +965,7 @@ private enum WorkspaceXLSXExporter {
         return candidate
     }
 
-    private static func contentTypesXML(sheetCount: Int) -> Data {
+    static func contentTypesXML(sheetCount: Int) -> Data {
         var value =
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
             + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
@@ -980,7 +980,7 @@ private enum WorkspaceXLSXExporter {
         return Data(value.utf8)
     }
 
-    private static func packageRelsXML() -> Data {
+    static func packageRelsXML() -> Data {
         Data(
             (
                 "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
@@ -991,7 +991,7 @@ private enum WorkspaceXLSXExporter {
         )
     }
 
-    private static func workbookXML(sheetNames: [String]) -> Data {
+    static func workbookXML(sheetNames: [String]) -> Data {
         var data = Data(
             (
                 "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
@@ -1009,7 +1009,7 @@ private enum WorkspaceXLSXExporter {
         return data
     }
 
-    private static func workbookRelsXML(sheetCount: Int) -> Data {
+    static func workbookRelsXML(sheetCount: Int) -> Data {
         var value =
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
             + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
@@ -1021,7 +1021,7 @@ private enum WorkspaceXLSXExporter {
         return Data(value.utf8)
     }
 
-    private static func stylesXML() -> Data {
+    static func stylesXML() -> Data {
         Data(
             (
                 "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
@@ -1038,7 +1038,7 @@ private enum WorkspaceXLSXExporter {
     }
 }
 
-private struct WorkspaceStreamingZIPWriter {
+struct WorkspaceStreamingZIPWriter {
     private static let flushThreshold = 256 * 1_024
 
     struct Entry {
@@ -1060,11 +1060,16 @@ private struct WorkspaceStreamingZIPWriter {
 
     private let fileHandle: FileHandle
     private var offset: UInt32 = 0
+    private let maximumFileBytes: Int
+    private let maximumRawBytes: Int
+    private var rawBytes = 0
     private var entries: [CompletedEntry] = []
     private var outputBuffer = Data()
 
-    init(fileHandle: FileHandle) {
+    init(fileHandle: FileHandle, maximumFileBytes: Int = Int(UInt32.max), maximumRawBytes: Int = Int.max) {
         self.fileHandle = fileHandle
+        self.maximumFileBytes = maximumFileBytes
+        self.maximumRawBytes = maximumRawBytes
         outputBuffer.reserveCapacity(Self.flushThreshold)
     }
 
@@ -1076,7 +1081,7 @@ private struct WorkspaceStreamingZIPWriter {
         var header = Data()
         header.appendUInt32(0x04034B50)
         header.appendUInt16(20)
-        header.appendUInt16(0x0008)
+        header.appendUInt16(0x0808)
         header.appendUInt16(8)
         header.appendUInt16(0)
         header.appendUInt16(0)
@@ -1096,6 +1101,8 @@ private struct WorkspaceStreamingZIPWriter {
     }
 
     mutating func write(_ data: Data, to entry: inout Entry) throws {
+        guard data.count <= maximumRawBytes - rawBytes else { throw WorkspaceDataExportError.fileTooLarge }
+        rawBytes += data.count
         guard data.count <= UInt32.max - entry.uncompressedSize else {
             throw WorkspaceDataExportError.fileTooLarge
         }
@@ -1159,10 +1166,11 @@ private struct WorkspaceStreamingZIPWriter {
         let centralDirectoryOffset = offset
         for entry in entries {
             var record = Data()
+            // ZIP host OS must match UTF-8 Unix paths; macOS unzip recodes DOS-host names.
             record.appendUInt32(0x02014B50)
+            record.appendUInt16(0x0314)
             record.appendUInt16(20)
-            record.appendUInt16(20)
-            record.appendUInt16(0x0008)
+            record.appendUInt16(0x0808)
             record.appendUInt16(8)
             record.appendUInt16(0)
             record.appendUInt16(0)
@@ -1174,7 +1182,7 @@ private struct WorkspaceStreamingZIPWriter {
             record.appendUInt16(0)
             record.appendUInt16(0)
             record.appendUInt16(0)
-            record.appendUInt32(0)
+            record.appendUInt32(0o100600 << 16)
             record.appendUInt32(entry.localHeaderOffset)
             record.append(entry.pathData)
             try append(record)
@@ -1194,6 +1202,7 @@ private struct WorkspaceStreamingZIPWriter {
     }
 
     private mutating func append(_ data: Data) throws {
+        guard data.count <= maximumFileBytes - Int(offset) else { throw WorkspaceDataExportError.fileTooLarge }
         guard data.count <= UInt32.max - offset else {
             throw WorkspaceDataExportError.fileTooLarge
         }
@@ -1215,7 +1224,7 @@ private struct WorkspaceStreamingZIPWriter {
     }
 }
 
-private final class WorkspaceRawDeflater {
+final class WorkspaceRawDeflater {
     private static let outputChunkSize = 256 * 1_024
 
     private var stream = z_stream()
@@ -1355,7 +1364,7 @@ private enum WorkspaceCRC32 {
     }
 }
 
-private extension Data {
+extension Data {
     mutating func appendUTF8(_ string: String) {
         string.utf8.withContiguousStorageIfAvailable { buffer in
             if let baseAddress = buffer.baseAddress {

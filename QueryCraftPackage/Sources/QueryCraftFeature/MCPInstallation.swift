@@ -24,6 +24,9 @@ actor MCPInstallation {
         self.root = root; self.localPackage = localPackage; self.catalog = catalog ?? MCPComponentCatalog(identity: self.identity); self.host = host
     }
     func installedVersion() async throws -> String? {
+        if ApplicationDistribution.current == .appStore {
+            return Bundle.main.object(forInfoDictionaryKey: "QCMCPVersion") as? String
+        }
         let binary = appURL.appending(path: "Contents/MacOS/querycraft-mcp")
         guard FileManager.default.fileExists(atPath: binary.path) else { return nil }
         if FileManager.default.fileExists(atPath: root.appending(path: "Current").path),
@@ -33,12 +36,17 @@ actor MCPInstallation {
         try verify(appURL)
         return try await MCPProcess.run(binary, arguments: ["--version"])
     }
-    func availableRelease() async throws -> MCPComponentRelease { try await catalog.latest(.mcp, host: host) }
+    func availableRelease() async throws -> MCPComponentRelease {
+        try ApplicationDistribution.requireDownloadedCode()
+        return try await catalog.latest(.mcp, host: host)
+    }
     func availableVersion() async throws -> String? {
+        if ApplicationDistribution.current == .appStore { return try await installedVersion() }
         if let localPackage { return Bundle(url: localPackage)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String }
         return try await availableRelease().version
     }
     func install(onProgress: @escaping @Sendable (MCPComponentInstallationProgress) async -> Void = { _ in }) async throws {
+        try ApplicationDistribution.requireDownloadedCode()
         guard !installing else { throw MCPFailure("MCP installation is already running.") }
         installing = true; defer { installing = false }
         await onProgress(.init(phase: .checking))
@@ -121,6 +129,7 @@ actor MCPInstallation {
         // Keep old versions and the legacy app until clients/sessions no longer use them.
     }
     func rollback() async throws {
+        try ApplicationDistribution.requireDownloadedCode()
         let lock = try MCPComponentLock(directory: root); defer { withExtendedLifetime(lock) {} }
         let previous = root.appending(path: "Previous").resolvingSymlinksInPath()
         guard previous.path.hasPrefix(root.appending(path: "Versions").resolvingSymlinksInPath().path + "/"),
@@ -137,6 +146,7 @@ actor MCPInstallation {
         try MCPComponentArchive.replaceLink(at: root.appending(path: "Previous"), with: current)
     }
     func uninstall() throws {
+        try ApplicationDistribution.requireDownloadedCode()
         guard !installing else { throw MCPFailure("Wait for MCP installation to finish.") }
         let lock = try MCPComponentLock(directory: root); defer { withExtendedLifetime(lock) {} }
         // Connections, authorization and history are siblings of this installation.

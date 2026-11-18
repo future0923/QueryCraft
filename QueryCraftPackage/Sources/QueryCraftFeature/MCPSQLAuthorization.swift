@@ -8,7 +8,16 @@ struct MCPSQLStatement: Sendable {
 }
 
 enum MCPSQLAuthorization {
-    static func statements(_ sql: String, profile: ConnectionProfile, database: String?, policy: MCPPolicy) async throws -> [MCPSQLStatement] {
+    static func statements(_ sql: String, profile: ConnectionProfile, database: String?, policy originalPolicy: MCPPolicy, forceReadOnly: Bool = false) async throws -> [MCPSQLStatement] {
+        var policy = originalPolicy
+        if forceReadOnly {
+            do { try WorkspaceReadOnlyQueryValidator.validateExport(sql) }
+            catch { throw MCPFailure(error.localizedDescription, code: .accessDenied) }
+            var rule = policy.connectionRule(profile)
+            rule.mode = .readOnly
+            rule.databaseModes = rule.databaseModes.mapValues { _ in .readOnly }
+            policy.connections[profile.id.uuidString] = rule
+        }
         guard [.mysql, .postgresql, .doris].contains(profile.databaseType), sql.utf8.count <= 1_048_576 else {
             throw MCPFailure("SQL requires a SQL driver and a script no larger than 1 MB.")
         }
@@ -34,6 +43,13 @@ enum MCPSQLAuthorization {
             }
         }
         let tree = try await parser.authorizationTree(revision: .init(1))
+        if forceReadOnly {
+            guard snapshot.statements.count == 1, snapshot.statements[0].kind == .read,
+                  tree.descendants(named: "keyword_select").isEmpty == false,
+                  ["keyword_into", "keyword_for", "keyword_lock", "keyword_show", "keyword_explain", "assignment", "variable", "@", "@@", "parameter", "ERROR", "MISSING"].allSatisfy({ tree.descendants(named: $0).isEmpty }) else {
+                throw MCPFailure("Export accepts one non-locking SELECT (or read-only CTE) per query, without session variables or INTO.", code: .accessDenied)
+            }
+        }
         let scope = MCPSQLScope(source: sql as NSString, profile: profile, database: database, policy: policy)
         return try snapshot.statements.map { statement in
             let text = (sql as NSString).substring(with: statement.range.nsRange)

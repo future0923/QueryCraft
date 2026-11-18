@@ -44,7 +44,10 @@ extension DatabaseDriverInstaller {
 
 actor DatabaseDriverManager {
     static let shared = DatabaseDriverManager(
-        installer: DatabaseDriverPackageInstaller()
+        installer: DatabaseDriverPackageInstaller(
+            driversDirectory: ApplicationDistribution.current == .appStore ? ApplicationDistribution.bundledDriversDirectory : nil,
+            maintainsInstalledDrivers: ApplicationDistribution.current.supportsDownloadedCode
+        )
     )
 
     private struct InFlightInstallation: Sendable {
@@ -151,7 +154,8 @@ actor DatabaseDriverManager {
 
     @discardableResult
     func refreshCatalog() async -> [DatabaseDriverCatalogItem] {
-        guard let installer else { return await catalogItems() }
+        guard ApplicationDistribution.current.supportsDownloadedCode,
+              let installer else { return await catalogItems() }
         for entry in DatabaseDriverCatalog.entries where entry.isDownloadable {
             do {
                 try Task.checkCancellation()

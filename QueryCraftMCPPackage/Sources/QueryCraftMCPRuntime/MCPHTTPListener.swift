@@ -72,7 +72,30 @@ actor MCPHTTPRouter {
 }
 
 enum MCPHTTPListener {
+    struct Running: Sendable {
+        let channel: any Channel
+        let group: MultiThreadedEventLoopGroup
+        let router: MCPHTTPRouter
+
+        func stop() async throws {
+            if channel.isActive { try await channel.close().get() }
+            await router.shutdown()
+            try await group.shutdownGracefully()
+        }
+    }
+
     static func run(directory: URL) async throws {
+        let running = try await start(directory: directory)
+        do {
+            try await running.channel.closeFuture.get()
+        } catch {
+            try? await running.stop()
+            throw error
+        }
+        try await running.stop()
+    }
+
+    static func start(directory: URL) async throws -> Running {
         let configuration = try JSONDecoder().decode(MCPHTTPConfiguration.self, from: MCPHost.httpConfiguration(directory: directory))
         let router = MCPHTTPRouter(directory: directory, settings: configuration)
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 2)
@@ -86,9 +109,7 @@ enum MCPHTTPListener {
                     }
                 }.bind(host: configuration.host, port: configuration.port).get()
             FileHandle.standardError.write(Data("QueryCraft MCP HTTP listening at \(configuration.endpoint)\n".utf8))
-            try await server.closeFuture.get()
-            await router.shutdown()
-            try await group.shutdownGracefully()
+            return Running(channel: server, group: group, router: router)
         } catch {
             await router.shutdown(); try? await group.shutdownGracefully(); throw error
         }

@@ -8,6 +8,8 @@ final class Shield: NSObject, NSApplicationDelegate {
     var tap: CFMachPort?
     var timer: Timer?
     var remaining = 300
+    var isReady = false
+    var allowedPIDs: Set<Int64> = []
     let buttonRects: [NSRect] = []
     func applicationDidFinishLaunching(_ notification: Notification) {
         let mask = [CGEventType.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp, .mouseMoved, .leftMouseDragged, .rightMouseDragged, .scrollWheel].reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
@@ -22,8 +24,7 @@ final class Shield: NSObject, NSApplicationDelegate {
             }
             // Only explicitly registered automation processes may inject global events.
             // Native XCTest events stay inside the test process and need no exception.
-            if let allowed = try? String(contentsOf: taskRoot.appendingPathComponent("allowed-pids"), encoding: .utf8),
-               allowed.split(separator: "\n").contains(Substring(String(event.getIntegerValueField(.eventSourceUnixProcessID)))) {
+            if controller.allowedPIDs.contains(event.getIntegerValueField(.eventSourceUnixProcessID)) {
                 return Unmanaged.passUnretained(event)
             }
             return nil
@@ -37,16 +38,24 @@ final class Shield: NSObject, NSApplicationDelegate {
             let panel = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()) + 1)
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            panel.backgroundColor = NSColor(calibratedWhite: 0.06, alpha: 1)
-            panel.isOpaque = true
+            // Keep the operation visible to the user while the event tap
+            // continues to isolate physical mouse and keyboard input.
+            panel.backgroundColor = NSColor.black.withAlphaComponent(0.12)
+            panel.isOpaque = false
             panel.isReleasedWhenClosed = false
             panel.ignoresMouseEvents = false
-            let text = NSTextField(wrappingLabelWithString: "QueryCraft 界面测试隔离中\n\n按 Esc 随时退出并停止测试\n最多 5 分钟自动解除\n\n测试结束后自动恢复桌面")
+            let badge = NSView(frame: NSRect(x: max(12, screen.frame.width - 340),
+                                            y: max(12, screen.frame.height - 112), width: 320, height: 72))
+            badge.wantsLayer = true
+            badge.layer?.backgroundColor = NSColor(calibratedWhite: 0.10, alpha: 0.88).cgColor
+            badge.layer?.cornerRadius = 12
+            let text = NSTextField(wrappingLabelWithString: "QueryCraft 正在操作 · 可观看\n按 Esc 立即恢复控制 · 最多 5 分钟")
             text.textColor = .white
-            text.font = .systemFont(ofSize: 23)
-            text.alignment = .center
-            text.frame = NSRect(x: max(0, (screen.frame.width - 620)/2), y: max(0, (screen.frame.height - 180)/2), width: 620, height: 180)
-            panel.contentView?.addSubview(text)
+            text.font = .systemFont(ofSize: 14, weight: .medium)
+            text.alignment = .left
+            text.frame = NSRect(x: 16, y: 12, width: 288, height: 48)
+            badge.addSubview(text)
+            panel.contentView?.addSubview(badge)
             panel.orderFrontRegardless()
             windows.append(panel)
         }
@@ -56,11 +65,18 @@ final class Shield: NSObject, NSApplicationDelegate {
             guard self.windows.allSatisfy({ window in visible.contains { ($0[kCGWindowNumber as String] as? Int) == window.windowNumber } }) else {
                 self.stop(reason: "Not all displays were covered"); return
             }
+            // Creating windows can briefly stall the main run loop on a busy
+            // machine. Establish input isolation again before advertising readiness.
+            CGEvent.tapEnable(tap: tap, enable: true)
+            guard CGEvent.tapIsEnabled(tap: tap) else { self.stop(reason: "Input isolation unavailable"); return }
+            self.isReady = true
             try? "\(ProcessInfo.processInfo.processIdentifier)".write(to: taskRoot.appendingPathComponent("shield.ready"), atomically: true, encoding: .utf8)
         }
         timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
             if fm.fileExists(atPath: taskRoot.appendingPathComponent("stop").path) { controller.stop(reason: "Completed") }
-            if let tap = controller.tap, !CGEvent.tapIsEnabled(tap: tap) { controller.stop(reason: "Input isolation was disabled") }
+            let allowed = (try? String(contentsOf: taskRoot.appendingPathComponent("allowed-pids"), encoding: .utf8)) ?? ""
+            controller.allowedPIDs = Set(allowed.split(separator: "\n").compactMap { Int64($0) })
+            if controller.isReady, let tap = controller.tap, !CGEvent.tapIsEnabled(tap: tap) { controller.stop(reason: "Input isolation was disabled") }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 300) { controller.stop(reason: "Five minute limit reached") }
     }

@@ -58,6 +58,7 @@ actor MCPRuntime {
         }
     }
     private func maintainSessions() async {
+        await MCPExportJobs.shared.maintain(directory: store.url.deletingLastPathComponent())
         await reconcileSSHConnections()
         let policy = try? store.load()
         pruneBatchResults()
@@ -131,6 +132,7 @@ actor MCPRuntime {
         }
         let tool = String(name.dropFirst("querycraft_".count))
         try MCPToolCatalog.validate(tool, arguments: args)
+        if MCPToolCatalog.exportTools.contains(tool) { return try await callExport(tool, args: args) }
         // Revoking execution permissions must not prevent resource cleanup.
         if tool == "close_session" || tool == "rollback_transaction" {
             let id = try args.requiredString("session_id")

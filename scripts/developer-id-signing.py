@@ -10,6 +10,7 @@ import plistlib
 import re
 import secrets
 import shlex
+import shutil
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -177,6 +178,36 @@ def verify(path):
     print('Verified Developer ID signature: ' + str(path))
 
 
+PROFILE = ROOT / 'Config/QueryCraft-DeveloperID.provisionprofile'
+PROFILE_ENTITLEMENTS = ROOT / 'Config/DeveloperID.entitlements'
+DISTRIBUTED_BUNDLE_ID = 'io.github.future0923.QueryCraft'
+
+
+def checked_profile():
+    """The Developer ID provisioning profile that authorizes iCloud (CloudKit).
+
+    iCloud entitlements without a matching embedded profile stop the app from
+    launching, so every field that macOS checks is verified before signing.
+    """
+    from datetime import datetime, timezone
+    profile = plistlib.loads(run('security', 'cms', '-D', '-i', PROFILE))
+    team = configuration()['teamID']
+    granted = profile.get('Entitlements', {})
+    requested = plistlib.loads(PROFILE_ENTITLEMENTS.read_bytes())
+    if profile.get('TeamIdentifier') != [team] or not profile.get('ProvisionsAllDevices'):
+        raise RuntimeError('Provisioning profile is not a Developer ID profile for team ' + team)
+    if granted.get('com.apple.application-identifier') != team + '.' + DISTRIBUTED_BUNDLE_ID:
+        raise RuntimeError('Provisioning profile does not match ' + DISTRIBUTED_BUNDLE_ID)
+    if requested.get('com.apple.application-identifier') != granted.get('com.apple.application-identifier'):
+        raise RuntimeError('Developer ID entitlements do not match the provisioning profile.')
+    containers = set(granted.get('com.apple.developer.icloud-container-identifiers', []))
+    if not set(requested.get('com.apple.developer.icloud-container-identifiers', [])) <= containers:
+        raise RuntimeError('Provisioning profile does not grant the iCloud container.')
+    if profile['ExpirationDate'].replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
+        raise RuntimeError('Developer ID provisioning profile expired; regenerate it.')
+    return PROFILE
+
+
 def sign(app):
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     if info['CFBundleIdentifier'] not in ('io.github.future0923.QueryCraft', 'io.github.future0923.QueryCraft.Dev'):
@@ -193,7 +224,16 @@ def sign(app):
     for component in sorted((app / 'Contents/Frameworks').iterdir()):
         if component.name != 'Sparkle.framework' and component.suffix in ('.framework', '.dylib'):
             sign_code(component)
-    sign_code(app, entitlements=ROOT / 'Config/Release.entitlements')
+    embedded = app / 'Contents/embedded.provisionprofile'
+    if info['CFBundleIdentifier'] == DISTRIBUTED_BUNDLE_ID:
+        # Distributed builds sync through iCloud; local Dev installs do not.
+        shutil.copyfile(checked_profile(), embedded)
+        # Must stay readable for every account that launches the installed app.
+        os.chmod(embedded, 0o644)
+        sign_code(app, entitlements=PROFILE_ENTITLEMENTS)
+    else:
+        embedded.unlink(missing_ok=True)
+        sign_code(app, entitlements=ROOT / 'Config/Release.entitlements')
     verify(app)
 
 
@@ -225,6 +265,7 @@ def main():
         print('Developer ID ready: ' + activate())
     elif args.command == 'check-release':
         validate_release()
+        print('Developer ID provisioning profile ready: ' + str(checked_profile()))
     elif args.app is None:
         parser.error('sign/sign-path/verify require an artifact path')
     elif args.command == 'sign':

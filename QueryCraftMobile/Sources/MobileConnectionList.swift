@@ -3,20 +3,32 @@ import SwiftUI
 struct MobileConnectionList: View {
     @Bindable var app: MobileApplicationModel
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var collapsedGroups: Set<UUID> = []
     var body: some View {
         List {
-            ForEach(app.library.profiles) { profile in
-                Button { app.open(profile) } label: { MobileConnectionRow(profile: profile) }
-                    .accessibilityIdentifier("connection." + profile.id.uuidString)
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        Button("编辑", systemImage: "pencil") { app.edit(profile) }
-                        Button("删除连接", systemImage: "trash", role: .destructive) { app.pendingDeletion = profile }
+            if app.library.connectionGroups.isEmpty {
+                connectionRows(app.library.profiles(in: nil))
+            } else {
+                let ungrouped = app.library.profiles(in: nil)
+                if !ungrouped.isEmpty {
+                    Section("未分组") { connectionRows(ungrouped) }
+                }
+                ForEach(app.library.orderedConnectionGroups) { group in
+                    Section {
+                        DisclosureGroup(isExpanded: Binding(
+                            get: { !collapsedGroups.contains(group.id) },
+                            set: { expanded in
+                                if expanded { collapsedGroups.remove(group.id) }
+                                else { collapsedGroups.insert(group.id) }
+                            }
+                        )) {
+                            connectionRows(app.library.profiles(in: group.id))
+                        } label: {
+                            Label(group.name, systemImage: "folder")
+                                .accessibilityIdentifier("connectionGroup." + group.id.uuidString)
+                        }
                     }
-                    .swipeActions(edge: .trailing) {
-                        Button("删除") { app.pendingDeletion = profile }.tint(.red)
-                        Button("编辑") { app.edit(profile) }.tint(MobileAppearance.swipeAction)
-                    }
+                }
             }
             if let message = app.message {
                 Section { Text(message).font(.footnote).foregroundStyle(.red) }
@@ -28,7 +40,7 @@ struct MobileConnectionList: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .accessibilityIdentifier("connectionHome")
         .overlay {
-            if app.libraryLoaded, app.library.profiles.isEmpty, app.message == nil {
+            if app.libraryLoaded, app.library.profiles.isEmpty, app.library.connectionGroups.isEmpty, app.message == nil {
                 ContentUnavailableView {
                     Label("添加第一个连接", systemImage: "externaldrive.connected.to.line.below")
                 } description: {
@@ -57,6 +69,22 @@ struct MobileConnectionList: View {
                     Button("重新加载连接", systemImage: "arrow.clockwise", action: app.reloadLibrary)
                 }
             }
+        }
+    }
+
+    private func connectionRows(_ profiles: [MobileConnectionProfile]) -> some View {
+        ForEach(profiles) { profile in
+            Button { app.open(profile) } label: { MobileConnectionRow(profile: profile) }
+                .accessibilityIdentifier("connection." + profile.id.uuidString)
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button("编辑", systemImage: "pencil") { app.edit(profile) }
+                    Button("删除连接", systemImage: "trash", role: .destructive) { app.pendingDeletion = profile }
+                }
+                .swipeActions(edge: .trailing) {
+                    Button("删除") { app.pendingDeletion = profile }.tint(.red)
+                    Button("编辑") { app.edit(profile) }.tint(MobileAppearance.swipeAction)
+                }
         }
     }
 }

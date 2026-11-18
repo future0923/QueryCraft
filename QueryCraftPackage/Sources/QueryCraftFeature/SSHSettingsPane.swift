@@ -125,7 +125,11 @@ struct SSHConnectionEditor: View {
         .onDisappear { operation?.cancel(); draft.secret = "" }
         .interactiveDismissDisabled(draft.busy)
         .fileImporter(isPresented: $selectingKey, allowedContentTypes: [.data, .item]) { result in
-            if case .success(let url) = result { draft.keyPath = url.path }
+            do {
+                let url = try result.get()
+                if ApplicationDistribution.current == .appStore { try LocalFileAuthorization.shared.remember(url) }
+                draft.keyPath = url.path
+            } catch { draft.error = error.localizedDescription }
         }
     }
 }

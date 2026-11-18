@@ -495,10 +495,7 @@ final class WelcomeModel {
         _ left: ConnectionProfile,
         _ right: ConnectionProfile
     ) -> Bool {
-        if left.sortIndex != right.sortIndex {
-            return left.sortIndex < right.sortIndex
-        }
-        return left.name.localizedStandardCompare(right.name)
-            == .orderedAscending
+        ConnectionDisplayOrder.precedes(index: left.sortIndex, name: left.name,
+                                        index: right.sortIndex, name: right.name)
     }
 }
